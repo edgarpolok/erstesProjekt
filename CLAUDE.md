@@ -23,7 +23,7 @@ Persönlicher Lernplaner eines Jurastudenten als Web-App. Antworten und Texte in
 - Vergangene Tage: frei bearbeitbar bis 23:59 des Folgetags; danach nur nach unten korrigieren (Haken weg, Zeit verringern, Text, Löschen). Hinzufügen nur über „Fehler korrigieren“, dann mit Schildchen „nachgetragen“.
 - Timer über Mitternacht: Zeit zählt für den Starttag; holt man einen Block danach in einen neuen Tag, bleibt die alte Zeit beim alten Tag (`zeitFrueher`).
 - Wiederholung: Abstände 1, 3, 7, 14, 30, 60, 90, 120 Tage, jeweils ab der letzten Wiederholung; Zeit der Woche verteilt sich nach Fälligkeit, Überfälliges über die restlichen Tage. Neues (und seine Folgewiederholungen) bekommt in geplanten Wochen Zeit dazu.
-- Jede datenändernde Aktion geht über `undoable(...)` und ist 5 Sekunden lang rückgängig zu machen. Löschen fragt vorher nach.
+- Datenändernde Aktionen gehen über `undoable(...)` und sind 5 Sekunden lang rückgängig zu machen. Ausnahme: Abhaken und Bewerten nimmt man durch nochmaliges Tippen zurück. Nachfrage vor dem Löschen nur bei Themen; Blöcke, Pausen, Routinen, Termine und Vorhaben löschen sofort, mit Rückgängig.
 
 ## Testen
 
@@ -52,7 +52,7 @@ Playwright und Chromium sind in der Cloud-Umgebung vorinstalliert. Jede Testdate
 | `termine-kalender.js` | Termine (einmalig, ganztägig, wöchentlich), Pausen, Etappen, Zeitstrahl, Statistik |
 | `themen.js` | Baum, Eingang, Zustände, Zusammenlegen, Löschen mit Nachfrage, Beispiele, Suche, Notizen, Stand |
 | `einstellungen.js` | Stellschrauben mit Eingabeprüfung, Routinen, wiederkehrende Termine, hell/dunkel |
-| `rueckgaengig.js` | Rückgängig je Aktion (stellt den alten Stand genau her), 5 Sekunden, Nachfrage vor dem Löschen |
+| `rueckgaengig.js` | Rückgängig je Aktion (stellt den alten Stand genau her), nochmal tippen bei Abhaken/Bewerten, 5 Sekunden |
 | `kein-druck.js` | keine roten Markierungen außer dem gedämpften X, keine Serien, Statistik nur unter Kalender → „Statistik“ |
 | `app-offline.js` | über einen eigenen Webserver: Neuladen, Service Worker offline, Updates sofort, Sichern/Laden, keine fremden Dienste |
 

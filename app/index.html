@@ -3867,7 +3867,9 @@ const ACT = {
     const von = F.tfVon || ''; const bis = F.tfBis || '';
     F.tfErr = terminCheck(F.tfTitel, von, bis, F.tfGanz);
     if (F.tfErr) return 'keep';
-    if (addTerminOnce(d.d, F.tfTitel, von, bis, F.tfGanz)) { S.tfOpen = false; toast('Termin eingetragen', false); }
+    let ok = false;
+    undoable('Termin eingetragen', () => { ok = addTerminOnce(d.d, F.tfTitel, von, bis, F.tfGanz); });
+    if (ok) S.tfOpen = false;
   },
   goPlanNext: () => { S.wk = addDays(mondayOf(today()), 7); window.scrollTo(0, 0); },
   planShow: (d) => { S.planShow[d.w] = true; },
