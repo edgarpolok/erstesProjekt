@@ -31,11 +31,38 @@ Persönlicher Lernplaner eines Jurastudenten als Web-App. Antworten und Texte in
 bash tests/run-all.sh
 ```
 
-Playwright und Chromium sind in der Cloud-Umgebung vorinstalliert. Die Tests laden `app/index.html` mit Testdaten (`tests/mock-app.js` schreibt `window.__seed` in den Speicher, `window.__store` liest ihn) und simulieren die Uhr über `#sim-JJJJ-MM-TT-HHMM`. `window.__ls` gibt Zugriff auf interne Funktionen. Vor jedem Push alle Tests laufen lassen; neue Funktionen bekommen einen eigenen Test in `tests/`.
+Playwright und Chromium sind in der Cloud-Umgebung vorinstalliert. Jede Testdatei bringt ihre eigenen Testdaten mit und baut auf `tests/lib.js` auf:
 
-Persönliche Daten (Sicherungen, Umzugsdateien) gehören nie ins Repository; `.gitignore` schließt `*.json` aus.
+- `L.run(async () => { … })` startet den Browser, sammelt Ergebnisse und setzt den Exit-Code.
+- `L.open(seed, 'sim-JJJJ-MM-TT-HHMM', breite)` öffnet die App in einem frischen Browser-Kontext mit diesen Daten und dieser Uhrzeit; `L.click`, `L.fill`, `L.go(p, 'woche')`, `L.sim(p, datum, minuten)`, `L.store(p)`, `L.text(p, sel)`, `L.toast(p)`, `L.noHScroll(p, wo)`.
+- Prüfungen: `L.expect(text, ist, erwartet)`, `L.ok(text, bedingung, ist)`, `L.has` / `L.hasNot` für Texte. Ein Fehlschlag schreibt „FEHLER: text: erwartet X, ist Y“. Skriptfehler, Konsolenfehler und „konnte nicht angezeigt“ nach jedem Klick zählen automatisch als Fehler.
+- `L.known(…)` markiert eine bekannte Abweichung der App von einer Regel unten: wird als „BEKANNT“ gemeldet, lässt den Lauf aber grün, bis der Nutzer entschieden hat. Ist sie behoben, meldet der Test „BEHOBEN?“; dann in `L.expect` umwandeln.
+- `tests/mock-app.js` schreibt `window.__seed` beim ersten Laden in den Speicher, `window.__store` liest ihn; `window.__ls` gibt Zugriff auf interne Funktionen.
 
-Randfall-Tests (Jahreswechsel, Zeitumstellung, Timer über Mitternacht, lange Namen, Sonderzeichen, extreme Einstellungen) liegen getrennt in `tests/rand/`, weil sie langsamer sind: `bash tests/rand/run-rand.sh`. Nach größeren Umbauten laufen lassen.
+`run-all.sh` führt jede `*.js` in `tests/` aus (neue Dateien laufen automatisch mit). Bestanden ist ein Test nur mit Exit-Code 0 und mindestens einer Prüfung. Eine andere Fassung prüfen: `bash tests/run-all.sh pfad/zur/index.html`.
+
+| Datei | prüft |
+|---|---|
+| `heute.js` | Hinzufügen, Abhaken, Zeit, Rest bei Teilerledigung, Termine und Routinen des Tages |
+| `woche-planen.js` | Vorhaben planen, Termin aus der Woche, Liegengebliebenes mitnehmen/streichen, spätere Tage |
+| `verteilen.js` | `allocRegel` (Kapazität, alles verteilt, am Stück), Termine verrutschen nie, Blöcke weichen aus |
+| `wiederholung.js` | Abstände 1–120 ab der letzten Wiederholung, Verteilung nach Fälligkeit, Zeit für Neues und Folgewiederholungen |
+| `timer.js` | Timer über Neuladen und Mitternacht, `zeitFrueher` |
+| `nachtragen.js` | Kulanzfenster bis 23:59 des Folgetags, nur nach unten korrigieren, „Fehler korrigieren“ → „nachgetragen“ |
+| `termine-kalender.js` | Termine (einmalig, ganztägig, wöchentlich), Pausen, Etappen, Zeitstrahl, Statistik |
+| `themen.js` | Baum, Eingang, Zustände, Zusammenlegen, Löschen mit Nachfrage, Beispiele, Suche, Notizen, Stand |
+| `einstellungen.js` | Stellschrauben mit Eingabeprüfung, Routinen, wiederkehrende Termine, hell/dunkel |
+| `rueckgaengig.js` | Rückgängig je Aktion (stellt den alten Stand genau her), 5 Sekunden, Nachfrage vor dem Löschen |
+| `kein-druck.js` | keine roten Markierungen außer dem gedämpften X, keine Serien, Statistik nur unter Kalender → „Statistik“ |
+| `app-offline.js` | über einen eigenen Webserver: Neuladen, Service Worker offline, Updates sofort, Sichern/Laden, keine fremden Dienste |
+
+Unter `file://` hält Chromium localStorage/sessionStorage beim Neuladen nicht zuverlässig; alles, was das Neuladen überstehen muss, prüft deshalb `app-offline.js` über http.
+
+Gegenprobe nach größeren Testumbauten: einen kleinen Fehler in eine Kopie der App einbauen (z. B. im Scratchpad), `bash tests/run-all.sh kopie/index.html` laufen lassen, der zuständige Test muss „FEHLER“ melden. Die Kopie danach löschen.
+
+Persönliche Daten (Sicherungen, Umzugsdateien) gehören nie ins Repository; `.gitignore` schließt `*.json` aus, und `run-all.sh` meldet einen Fehler, wenn außer `app/*.json` eine JSON-Datei eingecheckt ist.
+
+Randfall-Tests liegen getrennt in `tests/rand/`, weil sie langsamer sind: `bash tests/rand/run-rand.sh`. Nach größeren Umbauten laufen lassen. Dateien: `zeitumstellung.js`, `jahreswechsel.js` (KW 53), `timer-grenzen.js` (Silvester, 12-h-Grenze, Löschen während der Timer läuft), `lange-namen.js`, `sonderzeichen.js` (HTML in Namen wird nie ausgeführt), `themen-baum.js` (vier Ebenen), `einstellungen-extrem.js`.
 
 ## Zusammenarbeit
 
