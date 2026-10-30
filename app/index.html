@@ -506,6 +506,14 @@ select.inp { padding: 0 8px; }
 <div id="app"></div>
 <script>
 'use strict';
+// Darstellung vor dem ersten Zeichnen setzen, damit nichts aufblitzt
+const DESIGN_KEY = 'lernsystem-design';
+function designGet() { try { const v = localStorage.getItem(DESIGN_KEY); return v === 'hell' || v === 'dunkel' ? v : 'auto'; } catch (e) { return 'auto'; } }
+function designApply(v) {
+  const r = document.documentElement;
+  if (v === 'hell') r.setAttribute('data-theme', 'light'); else if (v === 'dunkel') r.setAttribute('data-theme', 'dark'); else r.removeAttribute('data-theme');
+}
+designApply(designGet());
 /* ================= Grundlagen: Datum, Format, Speicher, Darstellung ================= */
 const TZ = 'Europe/Berlin';
 const WD = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
@@ -866,6 +874,7 @@ function cfg() {
   if (!Array.isArray(c.abstaende) || !c.abstaende.length || c.abstaende.some((x) => typeof x !== 'number' || x < 1)) c.abstaende = DEF_CFG.abstaende.slice();
   if (!Array.isArray(c.tagesumfang) || c.tagesumfang.length !== 7) c.tagesumfang = DEF_CFG.tagesumfang.slice();
   c.tagesumfang = c.tagesumfang.map((x) => (FACTOR[x] != null ? x : 'voll'));
+  c.bloeckeProTag = Math.min(10, Math.max(1, Math.round(num(c.bloeckeProTag, DEF_CFG.bloeckeProTag))));
   ['zeitKurz', 'zeitMittel', 'zeitLang', 'bloeckeProTag', 'obergrenze', 'maxAbstand', 'pufferTag', 'planungstag'].forEach((k) => { c[k] = num(c[k], DEF_CFG[k]); });
   c.pufferTag = Math.min(6, Math.max(0, Math.round(c.pufferTag)));
   c.planungstag = Math.min(6, Math.max(0, Math.round(c.planungstag)));
@@ -1112,11 +1121,21 @@ function splitWdh(W, total, from, list) {
   if (!days.length || total <= 0) return out;
   const due = days.map(() => 0);
   let left = total;
+  // Künftig Fälliges kommt an seinen Tag; Überfälliges und heute Fälliges verteilt sich (ältestes zuerst) auf den Tag mit der wenigsten Wiederholung
   (Array.isArray(list) ? list : []).filter((x) => !x.neu).slice().sort((x, y) => (x.d < y.d ? -1 : x.d > y.d ? 1 : 0)).forEach((x) => {
     if (left < x.m) return; // passt nicht mehr: wartet auf die nächste Woche
     let k = days.findIndex((d) => d >= x.d);
     if (k < 0) return;
-    if (isPufferDay(days[k]) && due[k] + x.m > 30) { const j = days.findIndex((d, i) => i > k && !isPufferDay(d)); if (j >= 0) k = j; }
+    if (x.d <= days[0]) { // Stau: auf normale Tage mit der wenigsten Wiederholung, den Puffer nur, wenn es keinen anderen gibt
+      const norm = days.map((d, i) => i).filter((i) => !isPufferDay(days[i]));
+      const pool = norm.length ? norm : days.map((d, i) => i);
+      k = pool[0]; pool.forEach((i) => { if (due[i] < due[k]) k = i; });
+    }
+    if (isPufferDay(days[k]) && due[k] + x.m > 30) {
+      let j = days.findIndex((d, i) => i > k && !isPufferDay(d));
+      if (j < 0) days.forEach((d, i) => { if (!isPufferDay(d) && (j < 0 || due[i] < due[j])) j = i; }); // sonst ein früherer normaler Tag
+      if (j >= 0) k = j;
+    }
     due[k] += x.m; left -= x.m;
   });
   const rest = spreadWdh(days, left);
@@ -1167,7 +1186,7 @@ const wdhMinAt = (date) => num(weekWdh(mondayOf(date)).split[date], 0);
 const tag = (date) => D.tage[date] || {};
 function wdhState(date) {
   const w = tag(date).wdh || {};
-  const liste = Array.isArray(w.liste) ? w.liste.filter((x) => x && srByRef(x.ref)) : null;
+  const liste = Array.isArray(w.liste) ? w.liste.filter((x) => x && srByRef(x.ref)) : null; // null: noch nicht gefüllt
   const bew = isObj(w.bew) ? w.bew : {};
   const rated = liste ? liste.filter((x) => bew[x.ref] && bew[x.ref].r).length : 0;
   return { liste: liste, bew: bew, rated: rated, done: !!(liste && liste.length && rated === liste.length), aus: !!w.ausgelassen, zeit: num(w.zeit, 0), min: num(w.min, 0) };
@@ -1418,7 +1437,27 @@ let popId = null;
 function pop(id) { popId = id; setTimeout(() => { if (popId === id) { popId = null; scheduleRender(); } }, 400); }
 function ensureThemaSr(themaId, date) {
   const t = thema(themaId);
-  if (t && !validSr(t.sr)) patch('themen', themaId, { sr: srNeu(date) });
+  if (t && !validSr(t.sr)) { patch('themen', themaId, { sr: srNeu(date) }); return true; }
+  return false;
+}
+// In einer Woche mit fester Verteilung: Minuten für eine neu fällige Einheit am Fälligkeitstag dazulegen (Rückgabe für das Rückgängigmachen)
+function wdhZeitDazu(faellig) {
+  const W = mondayOf(faellig);
+  const wk = D.wochen[W] || {};
+  if (!isObj(wk.wdhVerteilung) || (wk.wdhAuto && !wk.status)) return null; // ungeplante Wochen rechnen jeden Morgen neu
+  const day = weekDates(W).find((d) => d >= faellig && d >= today() && !pauseAt(d).frei && !pauseAt(d).wdh);
+  if (!day) return null;
+  const m = minFor(1);
+  patch('wochen', W, { wdhVerteilung: { [day]: num(wk.wdhVerteilung[day], 0) + m }, wdhMin: num(wk.wdhMin, 0) + m });
+  const st = wdhState(day);
+  if (st.liste && !st.rated) patch('tage', day, { wdh: { liste: null, min: null } }); // am Tag neu füllen
+  return { tag: day, min: m };
+}
+function wdhZeitWeg(z) {
+  if (!z || !isDate(z.tag)) return;
+  const W = mondayOf(z.tag); const wk = D.wochen[W] || {};
+  if (!isObj(wk.wdhVerteilung)) return;
+  patch('wochen', W, { wdhVerteilung: { [z.tag]: Math.max(0, num(wk.wdhVerteilung[z.tag], 0) - num(z.min, 0)) }, wdhMin: Math.max(0, num(wk.wdhMin, 0) - num(z.min, 0)) });
 }
 function setBlockDone(id, done) {
   const b = D.bloecke[id];
@@ -1432,13 +1471,16 @@ function setBlockDone(id, done) {
     else {
       const w = typeof b.wiederholen === 'boolean' ? b.wiederholen : cfg().wdhStandard;
       part.wiederholen = w;
-      if (w) { if (b.thema) ensureThemaSr(b.thema, date); else if (!validSr(b.sr)) part.sr = srNeu(date); }
+      let neu = false;
+      if (w) { if (b.thema) neu = ensureThemaSr(b.thema, date); else if (!validSr(b.sr)) { part.sr = srNeu(date); neu = true; } }
+      if (neu) part.wdhZeit = wdhZeitDazu(addDays(date, abstand(1)));
     }
     patch('bloecke', id, part);
     pop('b' + id);
     syncRest(id, true);
   } else {
-    const part = { status: 'offen', erledigtAm: null, restAus: null };
+    const part = { status: 'offen', erledigtAm: null, restAus: null, wdhZeit: null };
+    if (b.wdhZeit) wdhZeitWeg(b.wdhZeit);
     if (!b.thema && b.sr && !b.sr.letzte) part.sr = null;
     if (b.wdhVon && isObj(b.bewertung)) { unrateBlock(b); part.bewertung = null; }
     patch('bloecke', id, part);
@@ -2049,7 +2091,8 @@ function rowBlock(b) {
     h += '<button class="switch" role="switch" aria-checked="' + keep + '" aria-label="Wiederholen: ' + esc(b.titel) + '" data-a="keepB" data-id="' + esc(b.id) + '"><span class="tr"></span>wiederholen</button>';
   }
   if (on && b.wdhVon && thema(b.wdhVon)) {
-    h += '<div class="ratebox"><span>Wie lief die Wiederholung?</span>' + rateSeg(themaLabel(b.wdhVon), (((tag(b.erledigtAm || today()).wdh || {}).bew || {})['t:' + b.wdhVon] || {}).r || null, 'rateB', ' data-id="' + esc(b.id) + '"') + '</div>';
+    const rb = (((tag(b.erledigtAm || today()).wdh || {}).bew || {})['t:' + b.wdhVon] || {}).r || null;
+    h += '<div class="ratebox"><span>Wie lief die Wiederholung?</span>' + notizHtml(thema(b.wdhVon).notiz) + rateSeg(themaLabel(b.wdhVon), rb, 'rateB', ' data-id="' + esc(b.id) + '"') + (rb ? notizFeld(b.wdhVon, 'b_' + b.id) : '') + '</div>';
   }
   return h + '</div>';
 }
@@ -2079,7 +2122,8 @@ function wdhBlock(t) {
       h += '<div class="item" data-k="w-' + esc(x.ref) + '"><div style="display:flex;align-items:center;gap:10px;min-width:0"><span class="mini' + (r ? ' on' : '') + '">' + CHECK_SVG + '</span>' +
         '<div style="display:flex;flex-direction:column;gap:1px;min-width:0">' + (x.gebiet ? '<span class="gname"' + gStyle(x.gebiet) + ' style="flex-wrap:wrap"><span class="dot"></span>' + esc(gName(x.gebiet)) + '<span style="font-weight:500;color:var(--quiet);white-space:nowrap"> · ' + x.min + ' min</span></span>' : '<span class="small">' + x.min + ' min · noch keinem Thema zugeordnet</span>') +
         '<span style="font-size:15px;font-weight:600;overflow-wrap:anywhere">' + esc(x.titel) + nachTag(r && st.bew[x.ref]) + '</span></div></div>' +
-        rateSeg(x.titel, r, 'rateW', ' data-ref="' + esc(x.ref) + '"') + '</div>';
+        (x.kind === 't' && thema(x.id) ? notizHtml(thema(x.id).notiz) : '') +
+        rateSeg(x.titel, r, 'rateW', ' data-ref="' + esc(x.ref) + '"') + (r && x.kind === 't' ? notizFeld(x.id, x.ref.replace(':', '_')) : '') + '</div>';
     });
     h += '<div class="foot"><span style="flex:1 1 auto;font-size:13px;font-weight:600;color:var(--quiet)">Zeit für den Block</span>' +
       (running ? '<span class="running">läuft</span>' : (S.day ? '' : '<button class="play" style="margin:0" aria-label="Timer starten: Wiederholung" data-a="startT" data-art="w" data-id="' + t + '"><span>' + PLAY_SVG + '</span></button>')) +
@@ -2860,7 +2904,7 @@ Object.assign(EXTRA_ACT, {
 });
 
 /* ================= Ansicht: Themen ================= */
-const TH = { sel: null, open: {}, q: '', closedOpen: false, form: null, allE: false, allU: false, confirm: null };
+const TH = { tab: 'baum', sel: null, open: {}, q: '', closedOpen: false, form: null, allE: false, allU: false, confirm: null };
 const MAX_TIEFE = 4; // bis zu vier Ebenen
 const descDate = (a, b) => String(b.erledigtAm || '').localeCompare(String(a.erledigtAm || '')) || num(b.erstellt, 0) - num(a.erstellt, 0);
 const thParent = (id) => (thema(id) && thema(thema(id).eltern) ? thema(id).eltern : null);
@@ -3105,6 +3149,27 @@ function searchHtml(q) {
   }
   return h + '</section>';
 }
+// Wie oft ein Thema bewertet wurde (eine Bewertung pro Tag zählt)
+function wdhCount(id) {
+  const ref = 't:' + id; let n = 0;
+  Object.keys(D.tage).forEach((d) => { const b = ((D.tage[d].wdh || {}).bew || {})[ref]; if (b && b.r) n++; });
+  return n;
+}
+function notizHtml(notiz) {
+  if (!notiz) return '';
+  return '<div class="infobox" style="padding:8px 12px;gap:2px"><span class="small" style="font-weight:700">Notiz</span><span style="font-size:14px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere">' + esc(notiz) + '</span></div>';
+}
+function notizDazu(themaId, date, text) {
+  const t = thema(themaId); text = String(text || '').trim();
+  if (!t || !text) return false;
+  const p = dmy(date);
+  const zeile = p.d + '.' + p.m + '.' + String(p.y).slice(2) + ': ' + text;
+  undoable('Notiz ergänzt', () => patch('themen', themaId, { notiz: t.notiz ? String(t.notiz).replace(/\s+$/, '') + '\n' + zeile : zeile }));
+  return true;
+}
+function notizFeld(themaId, key) {
+  return '<div style="display:flex;gap:6px;flex-wrap:wrap"><label class="sr-only" for="wn-' + esc(key) + '">Notiz ergänzen</label><input id="wn-' + esc(key) + '" class="inp grow" data-in="wn_' + esc(key) + '" value="' + esc(fv('wn_' + key)) + '" placeholder="Notiz ergänzen, z. B. was gehakt hat" data-enter="wNote" data-id="' + esc(themaId) + '" data-k="' + esc(key) + '" autocomplete="off"><button class="btn line" data-a="wNote" data-id="' + esc(themaId) + '" data-k="' + esc(key) + '">Notiz</button></div>';
+}
 function thDetail(id) {
   const t = thema(id);
   if (!t) return '';
@@ -3129,6 +3194,13 @@ function thDetail(id) {
   if (validSr(t.sr) && t.sr.bewertung && isDate(t.sr.letzte)) info.push('Zuletzt: ' + t.sr.bewertung + ' am ' + fmtShort(t.sr.letzte));
   else if (wOn && hatEinheiten(id)) info.push('Noch nicht bewertet.');
   h += '<div class="infobox">' + info.map((x) => '<span style="font-size:14px;line-height:1.45">' + esc(x) + '</span>').join('') + '</div>';
+  // Durchgearbeitet und Wiederholungen
+  const nW = wdhCount(id);
+  h += '<button class="switch ink" role="switch" aria-checked="' + isDate(t.durchAm) + '" data-a="thDurch" data-id="' + esc(id) + '"><span class="tr"></span>durchgearbeitet' + (isDate(t.durchAm) ? ' am ' + esc(fmtDMonY(t.durchAm)) : '') + '</button>' +
+    '<span class="small">' + (nW ? nW + '× wiederholt' : 'Noch nicht wiederholt') + '</span>';
+  // Notiz
+  h += '<label for="th-notiz" style="font-size:14px;font-weight:700;margin-top:4px">Notiz</label><textarea id="th-notiz" class="inp" style="min-height:96px;padding:10px 12px;line-height:1.45;resize:vertical" data-ch="thNotiz" data-id="' + esc(id) + '" placeholder="Was gut klappt, wo es hakt, worauf du beim nächsten Mal achten willst">' + esc(t.notiz || '') + '</textarea>' +
+    '<span class="small">Wird beim Verlassen des Feldes gespeichert und erscheint in der Wiederholung, wenn das Thema wieder dran ist.</span>';
   // Lerneinheiten
   h += '<h3 style="font-size:14px;font-weight:700;margin-top:4px">Lerneinheiten · ' + units.length + '</h3>';
   if (units.length) {
@@ -3156,13 +3228,49 @@ function thDetail(id) {
     : '<button class="btn ghost" style="align-self:flex-start;text-decoration:underline;padding-left:4px" data-a="thDelAsk" data-id="' + esc(id) + '">Thema löschen' + (nd ? ' samt Unterthemen' : '') + '</button>';
   return h + '</section>';
 }
+// Stand: pro Gebiet Abdeckung (durchgearbeitet, angefangen, offen) und Festigkeit (Wiederholungen, Stufe, nächster Termin)
+const stufeWort = (sr) => { const a = abstand(num(sr.stufe, 1)); return a <= 3 ? 'frisch' : (a <= 30 ? 'im Aufbau' : 'gefestigt'); };
+function standZeile(id, depth) {
+  const t = D.themen[id];
+  const n = unitsOf(id).length; const nW = wdhCount(id);
+  const zu = t.zustand === 'abgeschlossen';
+  const abd = isDate(t.durchAm) ? '<span style="display:inline-flex;align-items:center;gap:4px;color:var(--ok-text);font-weight:700">' + ico('check', 'xs') + 'durchgearbeitet ' + esc(fmtDM(t.durchAm)) + '</span>'
+    : (n ? '<span>angefangen · ' + n + (n === 1 ? ' Einheit' : ' Einheiten') + '</span>' : '<span style="color:var(--quiet)">noch nicht begonnen</span>');
+  const sr = validSr(t.sr) && t.wiederholen !== false && hatEinheiten(id) ? t.sr : null;
+  const fest = (nW ? nW + '× wiederholt' : '') + (sr ? (nW ? ' · ' : '') + stufeWort(sr) + (effZustand(id) === 'aktiv' ? ' · ' + thNext(id) : ' · ruht') : '');
+  const note = String(t.notiz || '').split('\n').filter((x) => x.trim()).pop() || '';
+  return '<button class="trow" style="width:100%;border:0;background:transparent;text-align:left;padding:8px 6px 8px ' + (6 + depth * 16) + 'px;border-top:1px solid var(--line);border-radius:0;display:flex;flex-direction:column;align-items:stretch;gap:2px" data-a="thStandSel" data-id="' + esc(id) + '" data-k="st-' + esc(id) + '">' +
+    '<span style="display:flex;align-items:center;gap:8px;min-width:0"><span class="dot"' + gStyle(topOf(id)) + '></span><span style="font-size:15px;font-weight:600;overflow-wrap:anywhere;' + (zu ? 'color:var(--quiet)' : '') + '">' + esc(t.name) + '</span>' + (zu ? '<span class="tag-bsp">abgeschlossen</span>' : '') + '</span>' +
+    '<span class="small" style="display:flex;flex-wrap:wrap;gap:2px 12px;padding-left:16px">' + abd + (fest ? '<span>' + esc(fest) + '</span>' : '') + '</span>' +
+    (note ? '<span class="small" style="padding-left:16px;font-style:italic;overflow-wrap:anywhere">' + esc(note.length > 120 ? note.slice(0, 120) + ' …' : note) + '</span>' : '') + '</button>';
+}
+function standHtml() {
+  const tops = thKids(null).filter((id) => (D.themen[id].zustand || 'aktiv') !== 'abgeschlossen');
+  if (!tops.length) return '<section class="panel"><h2>Stand</h2><span class="small" style="font-size:14px">Noch keine Themen. Lege sie unter „Baum“ an.</span></section>';
+  return tops.map((g) => {
+    const ids = [g].concat(thDesc(g));
+    const alle = ids.length > 1 ? ids.slice(1) : ids; // Unterthemen des Gebiets (ein Gebiet ohne Unterthemen zählt selbst)
+    const durch = alle.filter((id) => isDate(D.themen[id].durchAm)).length;
+    const angef = alle.filter((id) => !isDate(D.themen[id].durchAm) && unitsOf(id).length).length;
+    const gef = ids.filter((id) => { const t = D.themen[id]; return validSr(t.sr) && hatEinheiten(id) && stufeWort(t.sr) === 'gefestigt'; }).length;
+    const sum = durch + ' von ' + alle.length + ' durchgearbeitet' + (angef ? ' · ' + angef + ' angefangen' : '') + (gef ? ' · ' + gef + ' gefestigt' : '');
+    const rows = []; const walk = (id, depth) => { rows.push(standZeile(id, depth)); thKids(id).forEach((k) => walk(k, depth + 1)); };
+    if (thKids(g).length) thKids(g).forEach((k) => walk(k, 0)); else walk(g, 0); // das Gebiet steht schon als Überschrift
+    return '<section class="panel" aria-label="Stand ' + esc(D.themen[g].name) + '" style="gap:6px"><div style="display:flex;flex-direction:column;gap:2px"><h2 class="gname"' + gStyle(g) + ' style="font-size:16px;color:var(--ink)"><span class="dot"></span>' + esc(D.themen[g].name) + '</h2><span class="small">' + esc(sum) + '</span></div><div>' + rows.join('') + '</div></section>';
+  }).join('');
+}
 function viewThemen() {
   const t = today();
   const wide = window.innerWidth >= 900;
   if (TH.sel && !thema(TH.sel)) TH.sel = null;
-  const suche = modZustand('suche') === 'aktiv';
+  const suche = true; // die Suche ist immer eingeschaltet
   let h = '<header class="head"><div class="col"><span class="date">' + esc(fmtLong(t)) + '</span><h1>Themen</h1></div><button class="iconbtn gear" aria-label="Einstellungen" data-a="nav" data-v="einstellungen">' + ico('einst') + '</button></header>';
   if (!wide && TH.sel) return h + thDetail(TH.sel);
+  h += '<div class="tabs" role="tablist" aria-label="Ansicht"><button role="tab" aria-selected="' + (TH.tab !== 'stand') + '" data-a="thTab" data-v="baum">Baum</button><button role="tab" aria-selected="' + (TH.tab === 'stand') + '" data-a="thTab" data-v="stand">Stand</button></div>';
+  if (TH.tab === 'stand') {
+    const r2 = TH.sel ? thDetail(TH.sel) : (wide ? '<div class="placeholder"><b>Wo stehe ich?</b><span>Links siehst du pro Gebiet, was durchgearbeitet, angefangen oder noch offen ist, wie oft du wiederholt hast und wie fest es sitzt. Ein Thema antippen zeigt die Einzelheiten.</span></div>' : '');
+    return h + '<div class="cols"><div class="stack l">' + standHtml() + '</div>' + (r2 ? '<div class="stack l">' + r2 + '</div>' : '') + '</div>';
+  }
   let left = '';
   if (suche) left += '<div class="search"><label class="sr-only" for="th-q">Themen und Lerneinheiten durchsuchen</label><input id="th-q" class="inp" type="search" data-in="thQ" value="' + esc(TH.q) + '" placeholder="Suchen in Themen und Lerneinheiten" autocomplete="off"></div>';
   left += suche && TH.q.trim() ? searchHtml(TH.q) : eingangHtml() + treeHtml();
@@ -3191,6 +3299,10 @@ Object.assign(EXTRA_ACT, {
   },
   thZ: (d) => thZustand(d.id, d.v),
   thW: (d) => thWdhToggle(d.id),
+  thDurch: (d) => { const x = thema(d.id); if (!x) return; const on = !isDate(x.durchAm); undoable(on ? x.name + ' durchgearbeitet' : 'Markierung entfernt', () => patch('themen', d.id, { durchAm: on ? today() : null })); },
+  thTab: (d) => { TH.tab = d.v; },
+  thStandSel: (d) => { EXTRA_ACT.thSel(d); },
+  wNote: (d) => { const key = 'wn_' + d.k; if (!String(F[key] || '').trim()) { toast('Schreib kurz, was du festhalten willst.', false); return 'keep'; } if (notizDazu(d.id, curDay(), F[key])) F[key] = ''; return 'keep'; },
   thFarbe: (d) => { undoable('Farbe geändert', () => patch('themen', d.id, { farbe: d.v })); },
   thMove: (d) => { const r = thMove(d.id, F.thMoveTo || ''); F.thMoveTo = ''; if (r) { toast(r, false); return 'keep'; } },
   thMerge: (d) => {
@@ -3257,7 +3369,9 @@ function stellschrauben() {
     '<label class="sr-only" for="es-abst">Abstände in Tagen</label><input id="es-abst" class="inp" inputmode="numeric" data-in="esAbst" value="' + esc(fv('esAbst')) + '" data-enter="esAbst" autocomplete="off">' +
     '<span class="small">Tage pro Stufe, aufsteigend und durch Komma getrennt.</span><button class="btn" style="align-self:flex-start" data-a="esAbst">Übernehmen</button>');
   h += sRow('max', 'Höchste Stufe', c.maxAbstand + ' Tage', () => selChips('Höchste Stufe', c.abstaende, c.maxAbstand, 'maxAbstand', (v) => v + ' T') + '<span class="small">Längster Abstand, den ein Thema erreicht.</span>');
-  h += sRow('bl', 'Blöcke pro Tag (Vorschlag)', 'höchstens ' + c.bloeckeProTag, () => selChips('Blöcke pro Tag', [1, 2, 3, 4], c.bloeckeProTag, 'bloeckeProTag'));
+  h += sRow('bl', 'Blöcke pro Tag (Vorschlag)', 'höchstens ' + c.bloeckeProTag, () =>
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><label class="sr-only" for="es-bl">Blöcke pro Tag</label><input id="es-bl" class="inp" style="width:90px;text-align:center" type="number" inputmode="numeric" min="1" max="10" data-in="esBl" value="' + esc(fv('esBl')) + '" data-enter="esBl"><button class="btn" data-a="esBl">Übernehmen</button></div>' +
+    '<span class="small">1 bis 10. So viele Blöcke verteilt „Automatisch verteilen“ höchstens auf einen Tag.</span>');
   h += sRow('ober', 'Obergrenze pro Tag', hNum(c.obergrenze) + ' h, Termine eingerechnet', () =>
     '<div class="stepper" style="align-self:flex-start" role="group" aria-label="Obergrenze pro Tag"><button aria-label="Eine halbe Stunde weniger" data-a="esStep" data-d="-0.5">' + ico('minus', 's') + '</button><output aria-live="polite">' + hNum(c.obergrenze) + ' h</output><button aria-label="Eine halbe Stunde mehr" data-a="esStep" data-d="0.5">' + ico('plus', 's') + '</button></div>');
   h += sRow('umf', 'Tagesumfang je Wochentag', umfangText(c.tagesumfang), () => WDL.map((w, i) =>
@@ -3299,7 +3413,7 @@ function routineForm() {
 }
 function termineHtml() {
   const ids = Object.keys(D.termine).filter((id) => !isDate(D.termine[id].datum)).sort((a, b) => ZUST.indexOf(D.termine[a].zustand || 'aktiv') - ZUST.indexOf(D.termine[b].zustand || 'aktiv') || String(D.termine[a].von || '').localeCompare(String(D.termine[b].von || '')));
-  let h = '<section class="panel" aria-label="Wiederkehrende Termine"><h2>Wiederkehrende Termine</h2><span class="small">Zählen auf die Obergrenze pro Tag. Einmalige Termine trägst du in der Woche ein.</span>';
+  let h = '<section class="panel" aria-label="Wiederkehrende Termine"><h2>Wiederkehrende Termine</h2><span class="small">Zählen auf die Obergrenze pro Tag. Einmalige Termine trägst du in der Woche oder im Kalender ein.</span>';
   if (ES.tForm && !ES.tForm.id) h += terminFormE();
   h += ids.length ? '<div style="display:flex;flex-direction:column">' + ids.map((id) => {
     const x = D.termine[id]; const z = x.zustand || 'aktiv';
@@ -3388,6 +3502,7 @@ Object.assign(EXTRA_ACT, {
   esImportYes: () => { const p = ES.importPending; ES.importPending = null; if (p) applyImport(p.daten); }
 });
 Object.assign(EXTRA_CHANGE, {
+  thNotiz: (el) => { const x = thema(el.dataset.id); const v = String(el.value || ''); if (x && v !== (x.notiz || '')) undoable('Notiz gespeichert', () => patch('themen', el.dataset.id, { notiz: v })); },
   esImport: (el) => {
     const f = el.files && el.files[0];
     if (!f) return;
@@ -3405,7 +3520,11 @@ Object.assign(EXTRA_CHANGE, {
 function viewEinstellungen() {
   const t = today();
   const h = '<header class="head"><div class="col"><span class="date">' + esc(fmtLong(t)) + '</span><h1>Einstellungen</h1><p class="line">Selten gebraucht. Im Tagesablauf tauchen diese Werte nie auf.</p></div></header>';
-  return h + '<div class="cols"><div class="stack l">' + stellschrauben() + datenHtml() + '</div><div class="stack l">' + routinenHtml() + termineHtml() + moduleHtml() + '</div></div>';
+  const dv = designGet();
+  const design = '<section class="panel" aria-label="Darstellung"><h2>Darstellung</h2><div class="seg3" role="group" aria-label="Hell oder dunkel">' +
+    [['auto', 'Automatisch'], ['hell', 'Hell'], ['dunkel', 'Dunkel']].map((x) => '<button aria-pressed="' + (dv === x[0]) + '" data-a="esDesign" data-v="' + x[0] + '">' + x[1] + '</button>').join('') + '</div>' +
+    '<span class="small">„Automatisch“ folgt der Einstellung deines Macs.</span></section>';
+  return h + '<div class="cols"><div class="stack l">' + design + stellschrauben() + datenHtml() + '</div><div class="stack l">' + routinenHtml() + termineHtml() + '</div></div>';
 }
 function nextOrder(col) { const ids = Object.keys(D[col]); return ids.length ? Math.max(...ids.map((i) => num(D[col][i].reihenfolge, 0))) + 1 : 1; }
 Object.assign(EXTRA_ACT, {
@@ -3415,7 +3534,10 @@ Object.assign(EXTRA_ACT, {
     if (ES.open === 'abst') F.esAbst = c.abstaende.join(', ');
     if (ES.open === 'zeit') { F.esZK = String(c.zeitKurz); F.esZM = String(c.zeitMittel); F.esZL = String(c.zeitLang); }
     if (ES.open === 'erin') F.esErin = c.erinnerung;
+    if (ES.open === 'bl') F.esBl = String(c.bloeckeProTag);
   },
+  esDesign: (d) => { try { localStorage.setItem(DESIGN_KEY, d.v); } catch (e) { /* egal */ } designApply(d.v); return 'keep'; },
+  esBl: () => { const v = parseInt(F.esBl, 10); if (!(v >= 1 && v <= 10)) { toast('Bitte eine Zahl von 1 bis 10 eintragen.', false); return 'keep'; } if (v !== cfg().bloeckeProTag) setCfg({ bloeckeProTag: v }); ES.open = null; },
   esSet: (d) => { const v = Number(d.n); if (isFinite(v) && cfg()[d.k] !== v) setCfg({ [d.k]: v }); return 'keep'; },
   esStep: (d) => { const v = Math.min(12, Math.max(1, cfg().obergrenze + Number(d.d))); if (v !== cfg().obergrenze) setCfg({ obergrenze: v }); return 'keep'; },
   esUmf: (d) => { const a = cfg().tagesumfang.slice(); if (a[Number(d.i)] === d.v) return 'keep'; a[Number(d.i)] = d.v; setCfg({ tagesumfang: a }); return 'keep'; },

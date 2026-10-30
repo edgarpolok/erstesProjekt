@@ -10,6 +10,7 @@ run "Grundablauf (Heute, Woche, Kalender)" run.js "$APP"   # schreibt store.json
 for t in run2 run3 run4 run5 run6 run7 run8 run9; do run "$t" $t.js "$APP"; done
 run "Automatisch verteilen" auto.js "$APP"
 run "Termine im Kalender" kterm.js "$APP"
+run "Wiederholung, Notizen, Stand, Darstellung" runde.js "$APP"
 # App-Teile (Offline, Sichern/Laden) brauchen einen Webserver
 ( cd ../app && python3 -m http.server 8765 >/dev/null 2>&1 & echo $! > ../tests/out/server.pid ); sleep 1
 run "Offline, Sichern und Laden" pwa.js

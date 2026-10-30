@@ -73,7 +73,7 @@ const store = fs.readFileSync(__dirname + '/store.json', 'utf8');
   log('termine', JSON.stringify(await q.evaluate(() => Object.values(__store.termine).filter(t => !t.datum))));
   await q.screenshot({ path: __dirname + '/out/es2.png', fullPage: true });
   await c('[data-a=esRZ][data-v=pausiert]');
-  await c('[data-a=esModZ][data-id=suche][data-v=pausiert]');
+  log('Modul-Kasten weg', await q.locator('[data-a=esModZ]').count() === 0);
   await c('.bottom [data-v=themen]'); log('suche sichtbar', await q.locator('#th-q').count());
   // Neuer Tab = neue Sitzung -> Heute
   const q2 = await ctx.newPage(); await q2.addInitScript({ path: __dirname + '/mock-app.js' }); await q2.goto('file://' + file); await q2.waitForTimeout(300);
