@@ -1,0 +1,4 @@
+# Persönliche Sicherungen nie ins Repository
+*.json
+!app/*.json
+.DS_Store
