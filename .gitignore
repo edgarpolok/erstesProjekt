@@ -4,3 +4,4 @@
 !tests/store.json
 .DS_Store
 tests/out/
+tests/rand/out/

@@ -34,3 +34,15 @@ bash tests/run-all.sh
 Playwright und Chromium sind in der Cloud-Umgebung vorinstalliert. Die Tests laden `app/index.html` mit Testdaten (`tests/mock-app.js` schreibt `window.__seed` in den Speicher, `window.__store` liest ihn) und simulieren die Uhr über `#sim-JJJJ-MM-TT-HHMM`. `window.__ls` gibt Zugriff auf interne Funktionen. Vor jedem Push alle Tests laufen lassen; neue Funktionen bekommen einen eigenen Test in `tests/`.
 
 Persönliche Daten (Sicherungen, Umzugsdateien) gehören nie ins Repository; `.gitignore` schließt `*.json` aus.
+
+Randfall-Tests (Jahreswechsel, Zeitumstellung, Timer über Mitternacht, lange Namen, Sonderzeichen, extreme Einstellungen) liegen getrennt in `tests/rand/`, weil sie langsamer sind: `bash tests/rand/run-rand.sh`. Nach größeren Umbauten laufen lassen.
+
+## Zusammenarbeit
+
+- Mit dem Nutzer auf Deutsch, verständlich und ohne Fachjargon schreiben.
+- Bei Konzept- und Gestaltungsfragen erst Vorschläge mit Empfehlung machen und nachfragen, dann bauen. Fehlerbehebungen und klar beschriebene Wünsche direkt umsetzen.
+- Nur an der App arbeiten. Das frühere Claude-Artefakt „Lernsystem“ ist Archiv und wird nicht mehr geändert.
+- Der Nutzer verwendet die App in Safari auf einem MacBook (über „Zum Dock hinzufügen“), mit Daten nur auf diesem Gerät.
+- Tokens sparen: `tests/run-all.sh` einmal pro Arbeitsrunde vor dem Push, Ausgaben gefiltert lesen, Bildschirmfotos nur ansehen, wenn sich das Aussehen geändert hat oder ein Layout-Test fehlschlägt. Neue Tests nur für neue Logik.
+- Mechanische Aufgaben (Tests umbauen, Dateien aufräumen, Massenänderungen) dürfen an Agenten mit schwächerem Modell oder weniger Denkaufwand gegeben werden; das Ergebnis selbst prüfen.
+- Nach jeder Runde kurz berichten: was geändert wurde, was getestet wurde, was nicht testbar war.
