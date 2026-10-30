@@ -18,11 +18,11 @@ Persönlicher Lernplaner eines Jurastudenten als Web-App. Antworten und Texte in
 
 ## Regeln aus dem Entwurf, die nicht kaputtgehen dürfen
 
-- Kein Druck: keine roten Markierungen außer dem gedämpften X an Liegengebliebenem, keine Serien, Statistik nur unter Kalender → „Zahlen“.
+- Kein Druck: keine roten Markierungen außer dem gedämpften X an Liegengebliebenem, keine Serien, Statistik nur unter Kalender → „Statistik“.
 - Termine verrutschen nie; ausweichen müssen nur verteilte Lernblöcke.
 - Vergangene Tage: frei bearbeitbar bis 23:59 des Folgetags; danach nur nach unten korrigieren (Haken weg, Zeit verringern, Text, Löschen). Hinzufügen nur über „Fehler korrigieren“, dann mit Schildchen „nachgetragen“.
 - Timer über Mitternacht: Zeit zählt für den Starttag; holt man einen Block danach in einen neuen Tag, bleibt die alte Zeit beim alten Tag (`zeitFrueher`).
-- Wiederholung: Abstände 1, 3, 7, 14, 30, 60, 90, 120 Tage; Zeit der Woche verteilt sich nach Fälligkeit.
+- Wiederholung: Abstände 1, 3, 7, 14, 30, 60, 90, 120 Tage, jeweils ab der letzten Wiederholung; Zeit der Woche verteilt sich nach Fälligkeit, Überfälliges über die restlichen Tage. Neues (und seine Folgewiederholungen) bekommt in geplanten Wochen Zeit dazu.
 - Jede datenändernde Aktion geht über `undoable(...)` und ist 5 Sekunden lang rückgängig zu machen. Löschen fragt vorher nach.
 
 ## Testen

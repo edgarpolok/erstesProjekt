@@ -1441,13 +1441,13 @@ function ensureThemaSr(themaId, date) {
   return false;
 }
 // In einer Woche mit fester Verteilung: Minuten für eine neu fällige Einheit am Fälligkeitstag dazulegen (Rückgabe für das Rückgängigmachen)
-function wdhZeitDazu(faellig) {
+function wdhZeitDazu(faellig, min) {
   const W = mondayOf(faellig);
   const wk = D.wochen[W] || {};
   if (!isObj(wk.wdhVerteilung) || (wk.wdhAuto && !wk.status)) return null; // ungeplante Wochen rechnen jeden Morgen neu
   const day = weekDates(W).find((d) => d >= faellig && d >= today() && !pauseAt(d).frei && !pauseAt(d).wdh);
   if (!day) return null;
-  const m = minFor(1);
+  const m = min || minFor(1);
   patch('wochen', W, { wdhVerteilung: { [day]: num(wk.wdhVerteilung[day], 0) + m }, wdhMin: num(wk.wdhMin, 0) + m });
   const st = wdhState(day);
   if (st.liste && !st.rated) patch('tage', day, { wdh: { liste: null, min: null } }); // am Tag neu füllen
@@ -1473,7 +1473,12 @@ function setBlockDone(id, done) {
       part.wiederholen = w;
       let neu = false;
       if (w) { if (b.thema) neu = ensureThemaSr(b.thema, date); else if (!validSr(b.sr)) { part.sr = srNeu(date); neu = true; } }
-      if (neu) part.wdhZeit = wdhZeitDazu(addDays(date, abstand(1)));
+      if (neu) {
+        const f1 = addDays(date, abstand(1));
+        part.wdhZeit = wdhZeitDazu(f1);
+        // merken, dass dieses Neue nicht in der Planung steckt: auch seine Folgewiederholungen in dieser Woche bekommen Zeit
+        if (part.wdhZeit) { if (b.thema) patch('themen', b.thema, { plusWoche: mondayOf(f1) }); else part.plusWoche = mondayOf(f1); }
+      }
     }
     patch('bloecke', id, part);
     pop('b' + id);
@@ -1519,12 +1524,18 @@ function rateRef(date, ref, r) {
   const vorher = e && e.r ? (e.vorher || null) : clone(it.sr || null);
   if (!r) {
     if (e && e.r) writeSr(ref, vorher);
-    patch('tage', date, { wdh: { bew: { [ref]: { r: null, vorher: null } } } });
+    if (e && e.plus) wdhZeitWeg(e.plus);
+    patch('tage', date, { wdh: { bew: { [ref]: { r: null, vorher: null, plus: null } } } });
     Object.keys(D.bloecke).forEach((id) => { const b = D.bloecke[id]; if (b.wdhVon && 't:' + b.wdhVon === ref && isObj(b.bewertung) && (b.bewertung.datum || b.erledigtAm) === date) patch('bloecke', id, { bewertung: null }); });
     return;
   }
-  writeSr(ref, srRate(vorher, r, date));
-  patch('tage', date, { wdh: { bew: { [ref]: { r: r, vorher: vorher } } } });
+  if (e && e.plus) wdhZeitWeg(e.plus);
+  const neu = srRate(vorher, r, date);
+  writeSr(ref, neu);
+  const [k, id] = String(ref).split(':');
+  const src = k === 't' ? D.themen[id] : D.bloecke[id];
+  const plus = src && src.plusWoche && src.plusWoche === mondayOf(neu.faellig) && neu.faellig > date ? wdhZeitDazu(neu.faellig, minFor(neu.stufe)) : null;
+  patch('tage', date, { wdh: { bew: { [ref]: { r: r, vorher: vorher, plus: plus } } } });
 }
 function unrateBlock(b) {
   if (!b || !b.wdhVon || !isObj(b.bewertung)) return;
@@ -2679,8 +2690,9 @@ function kalForm() {
 function viewKalender() {
   const t = today();
   let h = '<header class="head"><div class="col"><span class="date">' + esc(fmtLong(t)) + '</span><h1>Kalender</h1></div><button class="iconbtn gear" aria-label="Einstellungen" data-a="nav" data-v="einstellungen">' + ico('einst') + '</button></header>' +
-    '<div class="tabs" role="tablist" aria-label="Seiten"><button role="tab" aria-selected="' + (K.tab === 'kalender') + '" data-a="kTab" data-v="kalender">Kalender</button><button role="tab" aria-selected="' + (K.tab === 'zahlen') + '" data-a="kTab" data-v="zahlen">Zahlen</button></div>';
+    '<div class="tabs" style="grid-template-columns:repeat(3,minmax(0,1fr));max-width:480px" role="tablist" aria-label="Seiten">' + [['kalender', 'Kalender'], ['zeit', 'Zeitstrahl'], ['zahlen', 'Statistik']].map((x) => '<button role="tab" aria-selected="' + (K.tab === x[0]) + '" data-a="kTab" data-v="' + x[0] + '">' + x[1] + '</button>').join('') + '</div>';
   if (K.tab === 'zahlen') return h + viewZahlen();
+  if (K.tab === 'zeit') return h + viewZeitstrahl();
   if (K.listOpen === null) K.listOpen = window.innerWidth >= 900;
   const r = kalRange();
   const cur0 = mondayOf(t);
@@ -2746,7 +2758,76 @@ function viewKalender() {
   return h + '<div class="kalwrap"><section class="kal" aria-label="Kalender nach Wochen"><div class="scroll" id="kal-scroll">' + head + rows + '</div></section><aside class="kalaside">' + aside + '</aside></div>';
 }
 
-/* ---------- Zahlen ---------- */
+/* ---------- Zeitstrahl: wann an welchem Gebiet gearbeitet wurde (gefüllt: neu gelernt, Ring: nur wiederholt) ---------- */
+const ZS_N = 12; // Wochen pro Ansicht
+function zsDaten(von, bis) {
+  const out = {}; // gebiet -> W -> { neu: [], wdh: [] }
+  const add = (g, W, art, txt) => { g = g || ''; out[g] = out[g] || {}; out[g][W] = out[g][W] || { neu: [], wdh: [] }; if (out[g][W][art].indexOf(txt) < 0) out[g][W][art].push(txt); };
+  Object.keys(D.bloecke).forEach((id) => {
+    const b = D.bloecke[id];
+    if (b.status !== 'erledigt' || b.wdhVon || !isDate(b.erledigtAm) || b.erledigtAm < von || b.erledigtAm > bis || b.titel === 'Freie Lernzeit') return;
+    add(b.gebiet || (b.thema ? topOf(b.thema) : null), mondayOf(b.erledigtAm), 'neu', b.titel);
+  });
+  Object.keys(D.tage).forEach((d) => {
+    if (d < von || d > bis) return;
+    const bew = ((D.tage[d].wdh || {}).bew) || {};
+    Object.keys(bew).forEach((ref) => {
+      if (!bew[ref] || !bew[ref].r) return;
+      const it = srByRef(ref);
+      if (it) add(it.gebiet, mondayOf(d), 'wdh', it.titel);
+    });
+  });
+  return out;
+}
+function viewZeitstrahl() {
+  const cur = mondayOf(today());
+  const last = addDays(cur, -7 * num(K.zsOff, 0));
+  const weeks = []; for (let i = ZS_N - 1; i >= 0; i--) weeks.push(addDays(last, -7 * i));
+  const data = zsDaten(weeks[0], addDays(last, 6));
+  const rows = gebiete().slice();
+  Object.keys(data).forEach((g) => { if (g && rows.indexOf(g) < 0 && thema(g)) rows.push(g); });
+  if (data['']) rows.push('');
+  const cols = 'grid-template-columns:minmax(84px,150px) repeat(' + ZS_N + ',minmax(0,1fr))';
+  let h = '<div class="stack l"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap"><span class="small" style="font-size:14px">KW ' + kwOf(weeks[0]) + ' bis KW ' + kwOf(last) + '</span><div style="display:flex;gap:2px">' +
+    '<button class="iconbtn" aria-label="Frühere Wochen" data-a="zsPrev">' + ico('left', 's') + '</button>' + (K.zsOff ? '<button class="iconbtn" style="width:auto;padding:0 10px;font-size:14px;font-weight:600;color:var(--ink)" data-a="zsNow">Heute</button>' : '') +
+    '<button class="iconbtn" aria-label="Spätere Wochen" aria-disabled="' + !K.zsOff + '" data-a="zsNext">' + ico('right', 's') + '</button></div></div>';
+  if (!rows.length) return h + '<p class="empty">Noch keine Gebiete. Sobald du Lerneinheiten erledigst oder wiederholst, siehst du hier, wann du woran gearbeitet hast.</p></div>';
+  h += '<section class="panel" aria-label="Zeitstrahl" style="gap:0;padding:12px 10px"><div style="display:grid;' + cols + ';align-items:end;padding-bottom:6px;border-bottom:1px solid var(--line)"><span></span>' +
+    weeks.map((W) => '<span style="font-size:11px;font-weight:700;color:' + (W === cur ? 'var(--ink)' : 'var(--quiet)') + ';text-align:center">' + kwOf(W) + '</span>').join('') + '</div>';
+  rows.forEach((g) => {
+    const name = g ? gName(g) : 'ohne Gebiet';
+    h += '<div style="display:grid;' + cols + ';align-items:center;min-height:40px;border-bottom:1px solid var(--line)" data-k="zs-' + esc(g || 'ohne') + '"><span class="gname" style="font-size:13px;min-width:0;overflow-wrap:anywhere"' + (g ? gStyle(g) : '') + '><span class="dot' + (g ? '' : ' open') + '"></span>' + esc(name) + '</span>';
+    weeks.forEach((W) => {
+      const x = (data[g || ''] || {})[W];
+      const pz = weekDates(W).filter((d) => pauseAt(d).frei).length >= 4;
+      const sel = K.zsSel && K.zsSel.g === (g || '') && K.zsSel.w === W;
+      const f = g ? gFarbe(g) : null; const col = f ? 'var(--g-' + f + ')' : 'var(--ring)';
+      const mark = !x ? '' : (x.neu.length ? '<span style="width:14px;height:14px;border-radius:7px;background:' + col + '"></span>' : '<span style="width:14px;height:14px;box-sizing:border-box;border-radius:7px;border:2px solid ' + col + '"></span>');
+      const lab = 'KW ' + kwOf(W) + ', ' + name + ': ' + (x ? (x.neu.length ? x.neu.length + ' neu' : '') + (x.neu.length && x.wdh.length ? ', ' : '') + (x.wdh.length ? x.wdh.length + ' wiederholt' : '') : (pz ? 'Pause' : 'nichts'));
+      h += '<button style="height:40px;min-width:0;padding:0;border:0;border-left:1px solid var(--line);background:' + (sel ? 'var(--soft)' : (pz ? 'var(--ok-soft)' : 'transparent')) + ';display:flex;align-items:center;justify-content:center;cursor:' + (x ? 'pointer' : 'default') + '" title="' + esc(lab) + '" aria-label="' + esc(lab) + '"' + (x ? ' data-a="zsSel" data-g="' + esc(g || '') + '" data-w="' + W + '"' : '') + '>' + mark + '</button>';
+    });
+    h += '</div>';
+  });
+  h += '<div class="legend2" style="padding-top:10px"><span><i style="width:12px;height:12px;border-radius:6px;background:var(--ring)"></i>neu gelernt</span><span><i style="width:12px;height:12px;border-radius:6px;border:2px solid var(--ring)"></i>nur wiederholt</span><span><i style="width:16px;height:12px;background:var(--ok-soft)"></i>Pause</span></div></section>';
+  if (K.zsSel) {
+    const x = (data[K.zsSel.g] || {})[K.zsSel.w];
+    if (x) {
+      h += '<section class="panel" aria-label="Woche im Detail"><h2>' + esc((K.zsSel.g ? gName(K.zsSel.g) : 'ohne Gebiet') + ' · KW ' + kwOf(K.zsSel.w)) + '</h2><span class="small">' + esc(fmtRange(K.zsSel.w, addDays(K.zsSel.w, 6))) + '</span>' +
+        (x.neu.length ? '<span style="font-size:14px;font-weight:700">Neu gelernt</span>' + x.neu.map((t) => '<span style="font-size:14px;line-height:1.4">' + esc(t) + '</span>').join('') : '') +
+        (x.wdh.length ? '<span style="font-size:14px;font-weight:700">Wiederholt</span>' + x.wdh.map((t) => '<span style="font-size:14px;line-height:1.4">' + esc(t) + '</span>').join('') : '') +
+        '<button class="linkbtn" data-a="kalOpenWeek" data-w="' + K.zsSel.w + '">Woche öffnen</button></section>';
+    }
+  } else h += '<span class="small" style="margin:0 4px">Tippe auf einen Punkt, um zu sehen, was es war.</span>';
+  return h + '</div>';
+}
+Object.assign(EXTRA_ACT, {
+  zsPrev: () => { K.zsOff = num(K.zsOff, 0) + ZS_N; K.zsSel = null; },
+  zsNext: () => { K.zsOff = Math.max(0, num(K.zsOff, 0) - ZS_N); K.zsSel = null; },
+  zsNow: () => { K.zsOff = 0; K.zsSel = null; },
+  zsSel: (d) => { K.zsSel = K.zsSel && K.zsSel.g === d.g && K.zsSel.w === d.w ? null : { g: d.g, w: d.w }; }
+});
+
+/* ---------- Statistik ---------- */
 function viewZahlen() {
   const t = today();
   const cur = mondayOf(t);
@@ -3088,7 +3169,7 @@ function thRowHtml(id, depth) {
   const sub = paused ? 'pausiert' : (thNext(id) || (n ? n + (n === 1 ? ' Einheit' : ' Einheiten') : ''));
   let h = '<div class="trow' + (TH.sel === id ? ' cur' : '') + '" data-k="tr-' + esc(id) + '" style="padding-left:' + depth * 18 + 'px">' +
     (kids.length ? '<button class="tog" aria-expanded="' + open + '" aria-label="Unterthemen von ' + esc(t.name) + (open ? ' zuklappen' : ' aufklappen') + '" data-a="thTog" data-id="' + esc(id) + '"><svg class="ico xs" viewBox="0 0 24 24" aria-hidden="true" style="transform:' + (open ? 'rotate(90deg)' : 'none') + '">' + ICON.right + '</svg></button>' : '<span style="flex:0 0 44px"></span>') +
-    '<button class="tname"' + (TH.sel === id ? ' aria-current="true"' : '') + ' data-a="thSel" data-id="' + esc(id) + '"' + (paused ? ' style="color:var(--quiet)"' : '') + '><span class="dot"' + gStyle(topOf(id)) + '></span><span class="nm">' + esc(t.name) + bsp(t) + '</span>' + (sub ? '<span class="small">' + esc(sub) + '</span>' : '') + '</button></div>';
+    '<button class="tname"' + (TH.sel === id ? ' aria-current="true"' : '') + ' data-a="thSel" data-id="' + esc(id) + '"' + (paused ? ' style="color:var(--quiet)"' : '') + '><span class="dot"' + gStyle(topOf(id)) + '></span><span class="nm">' + esc(t.name) + bsp(t) + (t.notiz && String(t.notiz).trim() ? ' <svg class="ico xs" viewBox="0 0 24 24" role="img" aria-label="hat eine Notiz" style="vertical-align:-2px;color:var(--quiet)">' + ICON.bubble + '</svg>' : '') + '</span>' + (sub ? '<span class="small">' + esc(sub) + '</span>' : '') + '</button></div>';
   if (open) h += kids.map((k) => thRowHtml(k, depth + 1)).join('');
   return h;
 }
