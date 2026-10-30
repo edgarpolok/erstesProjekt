@@ -862,6 +862,7 @@ const DEF_CFG = {
   pufferTag: 5, // 0 = Montag … 6 = Sonntag
   planungstag: 5,
   erinnerung: '20:00',
+  sicherungTage: 14, // Erinnerung ans Sichern in der Woche (ab Planungstag), 0 = aus
   wdhStandard: true
 };
 const FACTOR = { voll: 1, halb: 0.5, frei: 0 };
@@ -875,7 +876,7 @@ function cfg() {
   if (!Array.isArray(c.tagesumfang) || c.tagesumfang.length !== 7) c.tagesumfang = DEF_CFG.tagesumfang.slice();
   c.tagesumfang = c.tagesumfang.map((x) => (FACTOR[x] != null ? x : 'voll'));
   c.bloeckeProTag = Math.min(10, Math.max(1, Math.round(num(c.bloeckeProTag, DEF_CFG.bloeckeProTag))));
-  ['zeitKurz', 'zeitMittel', 'zeitLang', 'bloeckeProTag', 'obergrenze', 'maxAbstand', 'pufferTag', 'planungstag'].forEach((k) => { c[k] = num(c[k], DEF_CFG[k]); });
+  ['zeitKurz', 'zeitMittel', 'zeitLang', 'bloeckeProTag', 'obergrenze', 'maxAbstand', 'pufferTag', 'planungstag', 'sicherungTage'].forEach((k) => { c[k] = num(c[k], DEF_CFG[k]); });
   c.pufferTag = Math.min(6, Math.max(0, Math.round(c.pufferTag)));
   c.planungstag = Math.min(6, Math.max(0, Math.round(c.planungstag)));
   c.obergrenze = Math.min(24, Math.max(0, c.obergrenze));
@@ -1018,6 +1019,18 @@ function pauseAt(date) {
   });
   return { frei: frei, wdh: wdh };
 }
+// Ausfälle wöchentlicher Termine im Voraus: ausfall = [{ von, bis }] (ein Tag: von = bis)
+const ausfallAm = (t, d) => Array.isArray(t.ausfall) && t.ausfall.some((a) => a && isDate(a.von) && a.von <= d && d <= (isDate(a.bis) ? a.bis : a.von));
+// Wöchentliche Termine, die an diesem Tag regulär stattfänden (ohne Blick auf Ausfälle und Pausen)
+function wochenTermineAm(date) {
+  const wd = wdOf(date);
+  return Object.keys(D.termine).filter((id) => {
+    const t = D.termine[id];
+    if (!t || isDate(t.datum) || t.zustand === 'abgeschlossen' || t.zustand === 'pausiert') return false;
+    const days = Array.isArray(t.wochentage) ? t.wochentage : (typeof t.wochentag === 'number' ? [t.wochentag] : []);
+    return days.indexOf(wd) >= 0 && (!isDate(t.ab) || t.ab <= date) && (!isDate(t.endet) || date <= t.endet);
+  }).map((id) => Object.assign({ id: id }, D.termine[id]));
+}
 function termineAt(date) {
   const wd = wdOf(date);
   const pz = pauseAt(date);
@@ -1031,10 +1044,11 @@ function termineAt(date) {
       const days = Array.isArray(t.wochentage) ? t.wochentage : (typeof t.wochentag === 'number' ? [t.wochentag] : []);
       hit = days.indexOf(wd) >= 0 && (!isDate(t.ab) || t.ab <= date) && (!isDate(t.endet) || date <= t.endet) && !pz.frei;
       if (hit && Array.isArray(t.ausser) && t.ausser.indexOf(date) >= 0) hit = false;
+      if (hit && ausfallAm(t, date)) hit = false;
     }
     if (hit) {
       const a = timeToMin(t.von); const b = timeToMin(t.bis);
-      out.push({ id: id, titel: t.titel || 'Termin', von: t.ganztags ? '' : t.von || '', bis: t.ganztags ? '' : t.bis || '', ganztags: !!t.ganztags, einmalig: isDate(t.datum), min: t.ganztags ? 0 : (a != null && b != null && b > a ? b - a : 60), beispiel: !!t.beispiel });
+      out.push({ id: id, art: t.art || null, titel: t.titel || 'Termin', von: t.ganztags ? '' : t.von || '', bis: t.ganztags ? '' : t.bis || '', ganztags: !!t.ganztags, einmalig: isDate(t.datum), min: t.ganztags ? 0 : (a != null && b != null && b > a ? b - a : 60), beispiel: !!t.beispiel });
     }
   });
   return out.sort((x, y) => String(x.von).localeCompare(String(y.von)));
@@ -1597,6 +1611,31 @@ function rateWdh(date, ref, r) {
 
 /* ---------- Nur für heute (mit Rückgängig) ---------- */
 function cancelTermin(date, tid, titel) { undoable(titel + ' fällt heute aus', () => patch('tage', date, { termine: { [tid]: { faelltAus: true } } })); }
+function ausfallListe(t) { return Array.isArray(t.ausfall) ? t.ausfall.filter((a) => a && isDate(a.von)).map((a) => ({ von: a.von, bis: isDate(a.bis) ? a.bis : a.von })) : []; }
+// Einen Tag aus den Ausfällen nehmen; ein Zeitraum wird dabei geteilt
+function ohneTag(liste, d) {
+  const out = [];
+  liste.forEach((a) => {
+    if (d < a.von || d > a.bis) { out.push(a); return; }
+    if (a.von < d) out.push({ von: a.von, bis: addDays(d, -1) });
+    if (d < a.bis) out.push({ von: addDays(d, 1), bis: a.bis });
+  });
+  return out;
+}
+function setAusfall(tid, liste, text, frei) {
+  undoable(text, () => {
+    patch('termine', tid, { ausfall: liste.sort((a, b) => (a.von < b.von ? -1 : 1)) });
+    // Findet der Termin wieder statt, weichen verteilte Blöcke in übergebenen Wochen aus
+    (frei || []).forEach((d) => reflowDay(d));
+  });
+}
+function toggleAusfall(tid, date) {
+  const t = D.termine[tid];
+  if (!t) return;
+  const l = ausfallListe(t);
+  if (ausfallAm(t, date)) setAusfall(tid, ohneTag(l, date), t.titel + ' findet am ' + fmtDM(date) + ' statt', [date]);
+  else setAusfall(tid, l.concat([{ von: date, bis: date }]), t.titel + ' fällt am ' + fmtDM(date) + ' aus');
+}
 function restoreTermin(date, tid) { patch('tage', date, { termine: { [tid]: { faelltAus: false } } }); }
 function skipRoutine(date, rid, titel) { undoable(titel + ' heute ausgelassen', () => patch('tage', date, { routinen: { [rid]: { heuteNicht: true, erledigt: false } } })); }
 function dropWdh(date) {
@@ -1884,10 +1923,10 @@ async function submitClaude(T) {
 function reopenPlan(T) { patch('wochen', T, { status: null }); }
 
 /* ---------- Einmalige Termine aus der Woche ---------- */
-function addTerminOnce(date, titel, von, bis, ganztags) {
+function addTerminOnce(date, titel, von, bis, ganztags, extra) {
   titel = String(titel || '').trim();
   if (!titel || !isDate(date)) return false;
-  put('termine', uid('t'), { titel: titel, datum: date, von: ganztags ? '' : von || '', bis: ganztags ? '' : bis || '', ganztags: !!ganztags, erstellt: nowMs() });
+  put('termine', uid('t'), Object.assign({ titel: titel, datum: date, von: ganztags ? '' : von || '', bis: ganztags ? '' : bis || '', ganztags: !!ganztags, erstellt: nowMs() }, extra || {}));
   reflowDay(date);
   return true;
 }
@@ -1921,7 +1960,7 @@ function weekFacts(W) {
   const done = []; const open = []; let zeit = 0;
   Object.keys(D.bloecke).forEach((id) => {
     const b = D.bloecke[id];
-    if (b.woche !== W) return;
+    if (b.woche !== W || b.quelle === 'klausur') return;
     if (b.status === 'erledigt') { done.push(b.titel); zeit += num(b.zeit, 0); }
     else if (b.status === 'offen') open.push(b.titel);
   });
@@ -2053,7 +2092,7 @@ function rowTermin(t, x) {
   const k = 't' + x.id;
   return '<div class="row' + (on ? ' done' : '') + '" data-k="r-' + esc(k) + '"><div class="top">' +
     checkBtn(on, x.titel, 'tTermin', ' data-id="' + esc(x.id) + '"', k) +
-    '<div class="body"><span class="clock"' + (x.ganztags ? ' style="align-self:flex-start;padding:1px 6px;border-radius:4px;background:var(--hl);color:var(--hl-text)"' : '') + '>' + esc(terminText(x)) + '</span><span class="title">' + esc(x.titel) + bsp(x) + nachTag(on && st) + '</span></div>' +
+    '<div class="body"><span class="clock"' + (x.ganztags ? ' style="align-self:flex-start;padding:1px 6px;border-radius:4px;background:var(--hl);color:var(--hl-text)"' : '') + '>' + esc(terminText(x)) + '</span><span class="title">' + esc(x.titel) + bsp(x) + (x.art === 'klausur' ? '<span class="tag-bsp">Klausur</span>' : '') + nachTag(on && st) + '</span></div>' +
     '<button class="dots" aria-label="Optionen: ' + esc(x.titel) + '" aria-expanded="' + (S.menu === k) + '" data-a="menu" data-m="' + k + '">' + DOTS_SVG + '</button></div>' +
     (S.menu === k ? '<div class="actions"><button class="chipbtn" data-a="cancelTermin" data-id="' + esc(x.id) + '" data-t="' + esc(x.titel) + '">' + (t < today() ? 'Fiel aus' : 'Fällt heute aus') + '</button></div>' : '') +
     '</div>';
@@ -2259,6 +2298,25 @@ function viewHeute() {
 }
 
 /* ================= Ansicht: Woche ================= */
+// Stoff einer Etappe: alle Themen unter den gewählten Ästen (ein Ast ohne Unterthemen zählt selbst), im laufenden Durchgang
+function etappeStoff(e) {
+  const aeste = (Array.isArray(e.stoff) ? e.stoff : []).filter((id) => thema(id));
+  if (!aeste.length) return null;
+  const ids = [];
+  aeste.forEach((a) => { const d = thDesc(a); (d.length ? d : [a]).forEach((id) => { if (ids.indexOf(id) < 0 && effZustand(id) !== 'abgeschlossen') ids.push(id); }); });
+  const leer = aeste.every((a) => !thDesc(a).length);
+  const durch = ids.filter((id) => isDate(D.themen[id].durchAm)).length;
+  return { aeste: aeste, n: leer && !e.stoffKomplett ? 0 : ids.length, durch: leer && !e.stoffKomplett ? 0 : durch, komplett: !!e.stoffKomplett, dg: durchgangText(ids) };
+}
+function etappeStoffHtml(e) {
+  const st = etappeStoff(e);
+  if (!st) return '';
+  const namen = st.aeste.map((a) => D.themen[a].name).join(', ');
+  const txt = !st.n ? namen + ' · noch keine Themen angelegt'
+    : namen + ' · ' + st.dg + st.durch + ' von ' + st.n + (st.komplett ? ' Themen' : ' bisher angelegten Themen') + ' durchgearbeitet';
+  return '<span class="small" style="font-size:13px" data-k="est-' + esc(e.id || '') + '">' + esc(txt) + '</span>' +
+    (st.komplett && st.n ? '<span style="display:block;height:6px;border-radius:3px;background:var(--band);overflow:hidden" role="img" aria-label="' + esc(st.durch + ' von ' + st.n + ' durchgearbeitet') + '"><span style="display:block;height:100%;width:' + Math.round(100 * st.durch / st.n) + '%;background:var(--ok)"></span></span>' : '');
+}
 function etappenIn(a, b) {
   return Object.keys(D.etappen).map((id) => Object.assign({ id: id }, D.etappen[id]))
     .filter((e) => isDate(e.von) && isDate(e.bis) && e.von <= b && e.bis >= a)
@@ -2399,6 +2457,7 @@ function terminForm(W) {
     days.map((d) => '<button class="sel" aria-pressed="' + (d === sel) + '" data-a="tfDay" data-d="' + d + '">' + WD[wdOf(d)] + ' ' + fmtDM(d) + '</button>').join('') + '</div>' +
     '<label for="tf-titel">Titel</label><input id="tf-titel" class="inp" data-in="tfTitel" value="' + esc(fv('tfTitel')) + '" placeholder="z. B. Sprechstunde" autocomplete="off">' +
     zeitFelder('tf', 'tfVon', 'tfBis', 'tfGanz', false) +
+    '<button class="switch ink" role="switch" aria-checked="' + !!F.tfKlausur + '" data-a="tGanz" data-k="tfKlausur"><span class="tr"></span>Klausur (Punkte trägst du später unter Kalender → Statistik ein)</button>' +
     '<span class="small">Zählt auf die Obergrenze. Passt ein verteilter Block dann nicht mehr, wandert er auf einen Tag mit Platz oder in „Noch offen“.</span>' +
     (F.tfErr ? '<span class="err">' + esc(F.tfErr) + '</span>' : '') +
     '<div class="formbtns"><button class="btn ghost" data-a="tfClose">Abbrechen</button><button class="btn" data-a="tfSave" data-d="' + (sel || '') + '">Eintragen</button></div></div>';
@@ -2531,6 +2590,7 @@ function viewWoche() {
   if (isCur && wdOf(t) >= cfg().planungstag && !nextPlanned && !weekDates(next).every((d) => pauseAt(d).frei)) {
     h += '<button class="planlink" data-a="goPlanNext">' + (wdOf(t) === cfg().planungstag ? 'Heute ist Planungstag: nächste Woche planen' : 'Nächste Woche planen') + ico('right', 's') + '</button>';
   }
+  if (isCur && wdOf(t) >= cfg().planungstag) h += sicherungHinweis(t);
   const left = []; const right = [];
   if (isCur) left.push(carryHtml(W));
   if (isCur && !allPause) left.push(progressHtml(W));
@@ -2568,7 +2628,7 @@ function viewWoche() {
 }
 
 /* ================= Ansicht: Kalender und Zahlen ================= */
-const K = { tab: 'kalender', form: null, listOpen: null, groups: {}, period: 'monat', etappe: null, showAll: {} };
+const K = { kl: null, tab: 'kalender', form: null, listOpen: null, groups: {}, period: 'monat', etappe: null, showAll: {} };
 
 function spansAll() {
   const out = [];
@@ -2669,16 +2729,30 @@ function kalForm() {
         '<button class="radio" role="radio" aria-checked="' + ((F.kArt || 'frei') === a[0]) + '" data-a="kArt" data-v="' + a[0] + '"><span class="o"></span><span style="display:flex;flex-direction:column;gap:2px"><span style="font-size:15px;font-weight:700">' + a[1] + '</span><span class="small">' + a[2] + '</span></span></button>').join('') + '</div>';
   }
   h += '<label for="k-name">' + (isE ? 'Name' : isP ? 'Bezeichnung (optional)' : 'Titel') + '</label><input id="k-name" class="inp" style="background:var(--card)" data-in="kName" value="' + esc(fv('kName')) + '" placeholder="' + (isE ? 'z. B. Schwerpunkt' : isP ? 'z. B. Urlaub' : 'z. B. Sprechstunde') + '" autocomplete="off">';
+  if (isT && !f.id && isDate(F.kVon)) {
+    const wt = wochenTermineAm(F.kVon);
+    if (wt.length) h += '<div style="display:flex;flex-direction:column;gap:6px" data-k="k-ausfall"><span class="flabel">Wöchentliche Termine am ' + esc(fmtDM(F.kVon)) + '</span>' + wt.map((x) =>
+      '<button class="switch ink" role="switch" aria-checked="' + ausfallAm(x, F.kVon) + '" data-a="kAusfall" data-id="' + esc(x.id) + '" data-d="' + F.kVon + '"><span class="tr"></span>' + esc(x.titel) + (x.von ? ' ' + esc(x.von + (x.bis ? '–' + x.bis : '')) : '') + ' fällt aus</button>').join('') + '</div>';
+  }
   if (isT) {
     h += '<label for="k-datum">Tag</label><input id="k-datum" type="date" class="inp" style="background:var(--card)" data-in="kVon" value="' + esc(fv('kVon')) + '"' + (f.id ? '' : ' min="' + today() + '"') + '>' +
-      zeitFelder('k-t', 'kTVon', 'kTBis', 'kGanz', true);
-    if (!f.id) {
+      zeitFelder('k-t', 'kTVon', 'kTBis', 'kGanz', true) +
+      '<button class="switch ink" role="switch" aria-checked="' + !!F.kKlausur + '" data-a="kKlausur"><span class="tr"></span>Klausur</button>';
+    if (F.kKlausur) h += '<span class="flabel">Rechtsgebiet</span>' + (gebiete().length ? gebietChips(F.kGeb || null, 'kGeb') : '<span class="small">Lege unter Themen ein Gebiet an, dann kannst du es hier wählen.</span>');
+    if (!f.id && !F.kKlausur) {
       h += '<button class="switch ink" role="switch" aria-checked="' + !!F.kWdh + '" data-a="tGanz" data-k="kWdh"><span class="tr"></span>jede Woche wiederholen' + (isDate(F.kVon) ? ' (' + WDL[wdOf(F.kVon)] + ')' : '') + '</button>';
       if (F.kWdh) h += '<label for="k-tend">bis (optional)</label><input id="k-tend" type="date" class="inp" style="background:var(--card)" data-in="kTEnd" value="' + esc(fv('kTEnd')) + '"><span class="small">Ändern, pausieren oder beenden kannst du wiederkehrende Termine in den Einstellungen.</span>';
     }
   } else {
     h += '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px"><div style="display:flex;flex-direction:column;gap:6px;min-width:0"><label class="flabel" for="k-von">von</label><input id="k-von" type="date" class="inp" style="background:var(--card)" data-in="kVon" value="' + esc(fv('kVon')) + '"></div>' +
       '<div style="display:flex;flex-direction:column;gap:6px;min-width:0"><label class="flabel" for="k-bis">bis</label><input id="k-bis" type="date" class="inp" style="background:var(--card)" data-in="kBis" value="' + esc(fv('kBis')) + '"></div></div>';
+  }
+  if (isE) {
+    const st = F.kStoff || [];
+    h += '<span class="flabel">Stoff (optional)</span><span class="small">Wähle ganze Äste aus deinem Themenbaum. Es zählt immer, was gerade darunter hängt, auch Themen, die du später anlegst.</span>' +
+      (st.length ? '<div style="display:flex;flex-direction:column;gap:4px">' + st.filter((id) => thema(id)).map((id) => '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px" data-k="kst-' + esc(id) + '"><span style="font-size:14px;overflow-wrap:anywhere">' + esc(thPath(id).concat([D.themen[id].name]).join(' › ')) + '</span><button class="linkbtn" data-a="kStoffDel" data-id="' + esc(id) + '">entfernen</button></div>').join('') + '</div>' : '') +
+      '<div style="display:flex;gap:8px"><label class="sr-only" for="k-stoff">Ast hinzufügen</label><select id="k-stoff" class="inp grow" style="background:var(--card)" data-in="kStoffSel"><option value="">Ast wählen …</option>' + themaOptions().filter((o) => st.indexOf(o.id) < 0).map((o) => '<option value="' + esc(o.id) + '">' + esc(o.label) + '</option>').join('') + '</select><button class="btn line" data-a="kStoffAdd">hinzufügen</button></div>' +
+      (st.length ? '<button class="switch ink" role="switch" aria-checked="' + !!F.kKomplett + '" data-a="tGanz" data-k="kKomplett"><span class="tr"></span>Stoff vollständig angelegt</button>' : '');
   }
   if (isE) h += '<label for="k-ziel">Ziel in einem Satz (optional)</label><input id="k-ziel" class="inp" style="background:var(--card)" data-in="kZiel" value="' + esc(fv('kZiel')) + '" placeholder="z. B. Klausur im Juli" autocomplete="off">';
   if (isP) h += '<span class="small">Geht auch nachträglich, etwa bei Krankheit. Diese Tage zählen dann nirgends als verpasst.</span>';
@@ -2746,13 +2820,13 @@ function viewKalender() {
       const isP = x.kind === 'pause';
       const state = x.bis < t ? (isP ? 'vorbei' : 'geschafft') : (x.von <= t ? 'läuft' : 'kommt');
       return '<div class="spanrow" data-k="sp-' + esc(x.id) + '"><span class="sw' + (isP ? (x.art === 'wdh' ? ' wdh' : ' frei') : '') + '"></span><span class="tx"><b>' + esc(isP ? (x.name || 'Pause') : x.name) + bsp(x) + '</b><span class="small">' + esc((isP ? (x.art === 'wdh' ? 'Wiederholungspause' : 'Pause frei') : 'Etappe') + ' · ' + fmtDMonY(x.von) + ' – ' + fmtDMonY(x.bis) + ' · ' + state) + '</span>' +
-        (x.ziel ? '<span style="font-size:13px;line-height:1.35">' + esc(x.ziel) + '</span>' : '') + '</span><button class="linkbtn" style="align-self:center" aria-label="' + esc((isP ? 'Pause ' : 'Etappe ') + (x.name || '') + ' ändern') + '" data-a="kEdit" data-v="' + x.kind + '" data-id="' + esc(x.id) + '">ändern</button></div>';
+        (x.ziel ? '<span style="font-size:13px;line-height:1.35">' + esc(x.ziel) + '</span>' : '') + (!isP ? etappeStoffHtml(x) : '') + '</span><button class="linkbtn" style="align-self:center" aria-label="' + esc((isP ? 'Pause ' : 'Etappe ') + (x.name || '') + ' ändern') + '" data-a="kEdit" data-v="' + x.kind + '" data-id="' + esc(x.id) + '">ändern</button></div>';
     }).join('') : '<span class="small">Noch keine Etappen oder Pausen.</span>') + '</div>';
   }
   aside += '</section>';
   const once = Object.keys(D.termine).map((id) => Object.assign({ id: id }, D.termine[id])).filter((x) => isDate(x.datum) && x.datum >= addDays(t, -14)).sort((a, b) => (a.datum + (a.von || '') < b.datum + (b.von || '') ? -1 : 1));
-  aside += '<section class="panel" aria-label="Termine" id="k-termine"><h2>Einmalige Termine</h2>' + (K.form && K.form.kind === 'termin' ? kalForm() : '<button class="addbtn" style="min-height:44px;border-radius:12px" data-a="kNew" data-v="termin">' + ico('plus', 'xs') + 'Termin</button>') +
-    (once.length ? '<div style="display:flex;flex-direction:column">' + once.map((x) => '<div class="spanrow" data-k="ot-' + esc(x.id) + '"><span class="sw term"></span><span class="tx"><b>' + esc(x.titel) + bsp(x) + '</b><span class="small">' + esc(fmtShort(x.datum) + (x.von || x.ganztags ? ' · ' + terminText(x) : '')) + '</span></span><button class="linkbtn" style="align-self:center" aria-label="Termin ' + esc(x.titel) + ' ändern" data-a="kEdit" data-v="termin" data-id="' + esc(x.id) + '">ändern</button></div>').join('') + '</div>' : '<span class="small">Keine einmaligen Termine. Tipp im Kalender auf einen Tag, um dort einen einzutragen.</span>') +
+  aside += '<section class="panel" aria-label="Termine" id="k-termine"><h2>Einmalige Termine</h2>' + (K.form && K.form.kind === 'termin' ? kalForm() : '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px"><button class="addbtn" style="min-height:44px;border-radius:12px" data-a="kNew" data-v="termin">' + ico('plus', 'xs') + 'Termin</button><button class="addbtn" style="min-height:44px;border-radius:12px" data-a="kNew" data-v="termin" data-kl="1">' + ico('plus', 'xs') + 'Klausur</button></div>') +
+    (once.length ? '<div style="display:flex;flex-direction:column">' + once.map((x) => '<div class="spanrow" data-k="ot-' + esc(x.id) + '"><span class="sw term"></span><span class="tx"><b>' + esc(x.titel) + bsp(x) + (x.art === 'klausur' ? '<span class="tag-bsp">Klausur</span>' : '') + '</b><span class="small">' + esc(fmtShort(x.datum) + (x.von || x.ganztags ? ' · ' + terminText(x) : '')) + '</span></span><button class="linkbtn" style="align-self:center" aria-label="Termin ' + esc(x.titel) + ' ändern" data-a="kEdit" data-v="termin" data-id="' + esc(x.id) + '">ändern</button></div>').join('') + '</div>' : '<span class="small">Keine einmaligen Termine. Tipp im Kalender auf einen Tag, um dort einen einzutragen.</span>') +
     '</section>';
   aside += '<section class="legend2" aria-label="Legende"><span><i style="background:var(--hl);width:auto;height:auto;padding:1px 5px;color:var(--hl-text);font-style:normal;font-size:12px;font-weight:700">einmalig</i>oder ganztägiger Termin</span><span><i style="background:var(--band)"></i>Etappe</span><span><i style="background:var(--ok-band)"></i>Pause frei</span><span><i style="border:1.5px dashed var(--ring)"></i>Wiederholungspause</span><span><i style="width:16px;height:14px;border:1.5px dashed var(--ring)"></i>Puffer</span><span><i style="width:16px;height:14px;background:var(--ok-soft)"></i>freier Tag</span><span><i style="width:16px;height:14px;border:2px solid var(--ink)"></i>heute</span></section>';
   return h + '<div class="kalwrap"><section class="kal" aria-label="Kalender nach Wochen"><div class="scroll" id="kal-scroll">' + head + rows + '</div></section><aside class="kalaside">' + aside + '</aside></div>';
@@ -2762,7 +2836,7 @@ function viewKalender() {
 const ZS_N = 12; // Wochen pro Ansicht
 function zsDaten(von, bis) {
   const out = {}; // gebiet -> W -> { neu: [], wdh: [] }
-  const add = (g, W, art, txt) => { g = g || ''; out[g] = out[g] || {}; out[g][W] = out[g][W] || { neu: [], wdh: [] }; if (out[g][W][art].indexOf(txt) < 0) out[g][W][art].push(txt); };
+  const add = (g, W, art, txt) => { g = g || ''; out[g] = out[g] || {}; out[g][W] = out[g][W] || { neu: [], wdh: [], durch: [] }; if (out[g][W][art].indexOf(txt) < 0) out[g][W][art].push(txt); };
   Object.keys(D.bloecke).forEach((id) => {
     const b = D.bloecke[id];
     if (b.status !== 'erledigt' || b.wdhVon || !isDate(b.erledigtAm) || b.erledigtAm < von || b.erledigtAm > bis || b.titel === 'Freie Lernzeit') return;
@@ -2776,6 +2850,12 @@ function zsDaten(von, bis) {
       const it = srByRef(ref);
       if (it) add(it.gebiet, mondayOf(d), 'wdh', it.titel);
     });
+  });
+  // Durchgearbeitet, mit Durchgang, sobald es mehr als einen gibt
+  Object.keys(D.themen).forEach((id) => {
+    const t = D.themen[id];
+    const ds = (Array.isArray(t.frueher) ? t.frueher : []).concat([t.durchAm]);
+    ds.forEach((d, i) => { if (isDate(d) && d >= von && d <= bis) add(topOf(id), mondayOf(d), 'durch', t.name + (ds.length > 1 ? ' (' + (i + 1) + '. Durchgang)' : '')); });
   });
   return out;
 }
@@ -2815,6 +2895,7 @@ function viewZeitstrahl() {
       h += '<section class="panel" aria-label="Woche im Detail"><h2>' + esc((K.zsSel.g ? gName(K.zsSel.g) : 'ohne Gebiet') + ' · KW ' + kwOf(K.zsSel.w)) + '</h2><span class="small">' + esc(fmtRange(K.zsSel.w, addDays(K.zsSel.w, 6))) + '</span>' +
         (x.neu.length ? '<span style="font-size:14px;font-weight:700">Neu gelernt</span>' + x.neu.map((t) => '<span style="font-size:14px;line-height:1.4">' + esc(t) + '</span>').join('') : '') +
         (x.wdh.length ? '<span style="font-size:14px;font-weight:700">Wiederholt</span>' + x.wdh.map((t) => '<span style="font-size:14px;line-height:1.4">' + esc(t) + '</span>').join('') : '') +
+        (x.durch.length ? '<span style="font-size:14px;font-weight:700">Durchgearbeitet</span>' + x.durch.map((t) => '<span style="font-size:14px;line-height:1.4">' + esc(t) + '</span>').join('') : '') +
         '<button class="linkbtn" data-a="kalOpenWeek" data-w="' + K.zsSel.w + '">Woche öffnen</button></section>';
     }
   } else h += '<span class="small" style="margin:0 4px">Tippe auf einen Punkt, um zu sehen, was es war.</span>';
@@ -2828,6 +2909,68 @@ Object.assign(EXTRA_ACT, {
 });
 
 /* ---------- Statistik ---------- */
+/* ---------- Klausuren: Punkte, Fehler, Verlauf (nur hier, nicht auf Heute) ---------- */
+const klausurPunkte = (x) => (x.ergebnis && typeof x.ergebnis.punkte === 'number' ? x.ergebnis.punkte : null);
+const hNum1 = (v) => String(Math.round(v * 10) / 10).replace('.', ',');
+function klausurenListe() {
+  return Object.keys(D.termine).map((id) => Object.assign({ id: id }, D.termine[id])).filter((x) => x.art === 'klausur' && isDate(x.datum));
+}
+function klausurForm(x) {
+  const fehler = Array.isArray(x.fehler) ? x.fehler : [];
+  let h = '<div class="form" style="background:var(--bg)" data-k="klform-' + esc(x.id) + '">' +
+    '<label for="kl-punkte">Punkte (0–18)</label><input id="kl-punkte" class="inp" style="background:var(--card);width:110px" type="number" min="0" max="18" step="1" inputmode="numeric" data-in="klPunkte" value="' + esc(fv('klPunkte')) + '"' + (F.klOhne ? ' disabled' : '') + '>' +
+    '<button class="switch ink" role="switch" aria-checked="' + !!F.klOhne + '" data-a="tGanz" data-k="klOhne"><span class="tr"></span>ohne Korrektur (nur geschrieben)</button>';
+  if (F.klErr) h += '<span class="err" role="status">' + esc(F.klErr) + '</span>';
+  h += '<div class="formbtns"><button class="btn ghost" data-a="klClose">Schließen</button><button class="btn" data-a="klSave" data-id="' + esc(x.id) + '">Speichern</button></div>';
+  h += '<span class="flabel">Was lief schief?</span>' + (fehler.length ? '<div style="display:flex;flex-direction:column;gap:6px">' + fehler.map((f, i) =>
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap" data-k="klf-' + i + '"><span style="flex:1 1 160px;min-width:0;font-size:14px;overflow-wrap:anywhere">' + esc(f.text) + '</span>' +
+    (f.block && D.bloecke[f.block] ? '<span class="small">in der Wiederholung</span>' : '<button class="linkbtn" data-a="klWdh" data-id="' + esc(x.id) + '" data-i="' + i + '">wiederholen</button>') +
+    '<button class="linkbtn" data-a="klFDel" data-id="' + esc(x.id) + '" data-i="' + i + '">entfernen</button></div>').join('') + '</div>' : '') +
+    '<div style="display:flex;gap:8px"><label class="sr-only" for="kl-fehler">Fehler notieren</label><input id="kl-fehler" class="inp grow" style="background:var(--card)" data-in="klFehler" data-enter="klFAdd" data-id="' + esc(x.id) + '" value="' + esc(fv('klFehler')) + '" placeholder="z. B. Anspruchsgrundlage übersehen" autocomplete="off">' +
+    '<button class="btn line" data-a="klFAdd" data-id="' + esc(x.id) + '">hinzufügen</button></div>' +
+    '<span class="small">„wiederholen“ legt die Zeile als Lerneinheit in den Eingang (Themen), dort ordnest du sie einem Thema zu.</span></div>';
+  return h;
+}
+function klausurenHtml() {
+  const t = today();
+  const alle = klausurenListe();
+  let h = '<section class="panel" aria-label="Klausuren"><div class="h2row" style="margin:0"><h2>Klausuren</h2><span class="small">alle geschriebenen</span></div>';
+  const past = alle.filter((x) => x.datum <= t).sort((a, b) => (a.datum < b.datum ? 1 : -1));
+  if (!past.length) return h + '<span class="small" style="font-size:14px">Trag Klausuren im Kalender über „+ Klausur“ ein. Nach der Rückgabe stehen hier Punkte, Schnitt und Verlauf.</span></section>';
+  const mit = past.filter((x) => klausurPunkte(x) != null).sort((a, b) => (a.datum < b.datum ? -1 : 1));
+  if (mit.length) {
+    const g = {};
+    mit.forEach((x) => { const k = x.gebiet && thema(x.gebiet) ? topOf(x.gebiet) : ''; (g[k] = g[k] || []).push(klausurPunkte(x)); });
+    h += '<div style="display:flex;flex-direction:column;gap:4px" data-k="kl-schnitt">' + Object.keys(g).sort((a, b) => (a ? gName(a) : '~').localeCompare(b ? gName(b) : '~')).map((k) =>
+      '<div style="display:flex;justify-content:space-between;gap:8px;font-size:14px"><span>' + esc(k ? gName(k) : 'ohne Rechtsgebiet') + ' · ' + anz(g[k].length, 'Klausur', 'Klausuren') + '</span><b>Schnitt ' + hNum1(g[k].reduce((a, v) => a + v, 0) / g[k].length) + ' P.</b></div>').join('') + '</div>';
+    if (mit.length >= 2) {
+      const n = mit.length; const X = (i) => 10 + i * (280 / (n - 1)); const Y = (v) => 70 - (v / 18) * 60;
+      h += '<svg viewBox="0 0 300 80" role="img" aria-label="' + esc('Verlauf: ' + mit.map((x) => klausurPunkte(x)).join(', ') + ' Punkte') + '" style="width:100%;height:auto;max-height:120px" data-k="kl-verlauf">' +
+        '<polyline fill="none" stroke="var(--soll)" stroke-width="1.5" points="' + mit.map((x, i) => X(i).toFixed(1) + ',' + Y(klausurPunkte(x)).toFixed(1)).join(' ') + '"/>' +
+        mit.map((x, i) => '<circle cx="' + X(i).toFixed(1) + '" cy="' + Y(klausurPunkte(x)).toFixed(1) + '" r="3.5" fill="var(--ink)"/>').join('') + '</svg>';
+    }
+  }
+  h += '<div style="display:flex;flex-direction:column">' + past.map((x) => {
+    const p = klausurPunkte(x);
+    const st = p != null ? p + ' P.' : (x.ergebnis && x.ergebnis.ohne ? 'ohne Korrektur' : 'Korrektur steht aus');
+    return '<div class="spanrow" style="flex-wrap:wrap" data-k="kl-' + esc(x.id) + '"><span class="sw term"></span><span class="tx"><b>' + esc(x.titel) + '</b><span class="small">' + esc(fmtShort(x.datum) + (x.gebiet && thema(x.gebiet) ? ' · ' + gName(topOf(x.gebiet)) : '') + ' · ' + st) + '</span></span>' +
+      '<button class="linkbtn" style="align-self:center" data-a="klOpen" data-id="' + esc(x.id) + '">' + (p == null && !(x.ergebnis && x.ergebnis.ohne) ? 'Punkte eintragen' : 'ändern') + '</button>' +
+      (K.kl === x.id ? '<div style="flex:1 1 100%">' + klausurForm(x) + '</div>' : '') + '</div>';
+  }).join('') + '</div>';
+  return h + '</section>';
+}
+function klausurFehlerWdh(id, i) {
+  const x = D.termine[id]; const fehler = x && Array.isArray(x.fehler) ? x.fehler : [];
+  const f = fehler[i]; if (!f || (f.block && D.bloecke[f.block])) return;
+  const t = today(); const bid = uid('b'); const f1 = addDays(t, abstand(1));
+  undoable('In die Wiederholung gelegt', () => {
+    const part = { titel: x.titel + ': ' + f.text, woche: mondayOf(t), tag: null, gebiet: x.gebiet && thema(x.gebiet) ? topOf(x.gebiet) : null, status: 'erledigt', erledigtAm: t, wiederholen: true, sr: srNeu(t), quelle: 'klausur', klausur: id, erstellt: nowMs() };
+    part.wdhZeit = wdhZeitDazu(f1);
+    if (part.wdhZeit) part.plusWoche = mondayOf(f1);
+    put('bloecke', bid, part);
+    patch('termine', id, { fehler: fehler.map((y, j) => (j === i ? Object.assign({}, y, { block: bid }) : y)) });
+  });
+}
 function viewZahlen() {
   const t = today();
   const cur = mondayOf(t);
@@ -2910,6 +3053,7 @@ function viewZahlen() {
   if (etB.length) groups.push({ id: 'e', title: 'Etappen · ' + etB.length, items: etB });
   if (abB.length) groups.push({ id: 'a', title: 'Abgeschlossen · ' + abB.length, items: abB });
   if (gefB.length) groups.push({ id: 'g', title: 'Gefestigt · ' + gefB.length, items: gefB });
+  h += klausurenHtml();
   const BI = { flag: ICON.flag, check: ICON.check, stack: '<path d="M5 18h14M7 13.5h10M9 9h6M11 4.5h2"/>' };
   h += '<section class="panel" aria-label="Abzeichen"><div class="h2row" style="margin:0"><h2>Abzeichen</h2><span class="small">alles, was abgeschlossen oder gefestigt ist</span></div>';
   if (groups.length) {
@@ -2935,14 +3079,43 @@ Object.assign(EXTRA_ACT, {
   kGroup: (d) => { K.groups[d.id] = !K.groups[d.id]; },
   kOpenWeek: () => {},
   kalOpenWeek: (d) => { S.view = 'woche'; S.wk = d.w === mondayOf(today()) ? null : d.w; window.scrollTo(0, 0); },
-  kNew: (d) => { K.form = { kind: d.v, id: null }; F.kName = ''; F.kVon = d.d || (d.v === 'termin' ? today() : ''); F.kBis = ''; F.kZiel = ''; F.kArt = 'frei'; F.kTVon = ''; F.kTBis = ''; F.kGanz = false; F.kWdh = false; F.kTEnd = ''; F.kErr = ''; if (d.v !== 'termin') K.listOpen = true; focusSoon('k-name'); },
+  kAusfall: (d) => { toggleAusfall(d.id, d.d); return 'keep'; },
+  kKlausur: () => { F.kKlausur = !F.kKlausur; if (F.kKlausur) { F.kWdh = false; if (!F.kTVon && !F.kGanz) { F.kTVon = '09:00'; F.kTBis = '14:00'; } } return 'keep'; },
+  klOpen: (d) => {
+    if (K.kl === d.id) { K.kl = null; return; }
+    const x = D.termine[d.id]; if (!x) return;
+    K.kl = d.id; const p = klausurPunkte(x); F.klPunkte = p == null ? '' : String(p); F.klOhne = !!(x.ergebnis && x.ergebnis.ohne); F.klFehler = ''; F.klErr = ''; focusSoon('kl-punkte');
+  },
+  klClose: () => { K.kl = null; },
+  klSave: (d) => {
+    const x = D.termine[d.id]; if (!x) return;
+    const v = String(F.klPunkte == null ? '' : F.klPunkte).trim();
+    const n = Number(v);
+    if (!F.klOhne && v !== '' && !(Number.isInteger(n) && n >= 0 && n <= 18)) { F.klErr = 'Punkte bitte als ganze Zahl von 0 bis 18.'; return 'keep'; }
+    F.klErr = '';
+    const erg = F.klOhne ? { punkte: null, ohne: true, am: today() } : (v === '' ? null : { punkte: n, ohne: false, am: today() });
+    undoable(erg ? 'Ergebnis gespeichert' : 'Ergebnis entfernt', () => patch('termine', d.id, { ergebnis: erg }));
+    K.kl = null;
+  },
+  klFAdd: (d) => {
+    const x = D.termine[d.id]; const txt = String(F.klFehler || '').trim(); if (!x || !txt) return 'keep';
+    F.klFehler = '';
+    undoable('Notiert', () => patch('termine', d.id, { fehler: (Array.isArray(x.fehler) ? x.fehler : []).concat([{ text: txt, block: null }]) }));
+    focusSoon('kl-fehler'); return 'keep';
+  },
+  klFDel: (d) => { const x = D.termine[d.id]; if (!x || !Array.isArray(x.fehler)) return 'keep'; undoable('Entfernt', () => patch('termine', d.id, { fehler: x.fehler.filter((_, i) => i !== Number(d.i)) })); return 'keep'; },
+  klWdh: (d) => { klausurFehlerWdh(d.id, Number(d.i)); return 'keep'; },
+  kGeb: (d) => { F.kGeb = F.kGeb === d.g ? null : d.g; return 'keep'; },
+  kStoffAdd: () => { const id = F.kStoffSel; if (id && thema(id) && (F.kStoff || []).indexOf(id) < 0) F.kStoff = (F.kStoff || []).concat([id]); F.kStoffSel = ''; return 'keep'; },
+  kStoffDel: (d) => { F.kStoff = (F.kStoff || []).filter((x) => x !== d.id); return 'keep'; },
+  kNew: (d) => { K.form = { kind: d.v, id: null }; F.kStoff = []; F.kKomplett = false; F.kStoffSel = ''; F.kKlausur = d.kl === '1'; F.kGeb = null; F.kName = ''; F.kVon = d.d || (d.v === 'termin' ? today() : ''); F.kBis = ''; F.kZiel = ''; F.kArt = 'frei'; F.kTVon = ''; F.kTBis = ''; F.kGanz = false; F.kWdh = false; F.kTEnd = ''; F.kErr = ''; if (F.kKlausur) { F.kTVon = '09:00'; F.kTBis = '14:00'; } if (d.v !== 'termin') K.listOpen = true; focusSoon('k-name'); },
   kEdit: (d) => {
     const col = d.v === 'etappe' ? 'etappen' : (d.v === 'pause' ? 'pausen' : 'termine');
     const x = D[col][d.id]; if (!x) return;
     K.form = { kind: d.v, id: d.id };
     F.kErr = '';
-    if (d.v === 'termin') { F.kName = x.titel || ''; F.kVon = x.datum || ''; F.kTVon = x.von || ''; F.kTBis = x.bis || ''; F.kGanz = !!x.ganztags; F.kWdh = false; }
-    else { F.kName = x.name || ''; F.kVon = x.von || ''; F.kBis = x.bis || ''; F.kZiel = x.ziel || ''; F.kArt = x.art === 'wdh' ? 'wdh' : 'frei'; }
+    if (d.v === 'termin') { F.kName = x.titel || ''; F.kVon = x.datum || ''; F.kTVon = x.von || ''; F.kTBis = x.bis || ''; F.kGanz = !!x.ganztags; F.kWdh = false; F.kKlausur = x.art === 'klausur'; F.kGeb = x.gebiet || null; }
+    else { F.kName = x.name || ''; F.kVon = x.von || ''; F.kBis = x.bis || ''; F.kZiel = x.ziel || ''; F.kStoff = Array.isArray(x.stoff) ? x.stoff.slice() : []; F.kKomplett = !!x.stoffKomplett; F.kStoffSel = ''; F.kArt = x.art === 'wdh' ? 'wdh' : 'frei'; }
     focusSoon('k-name');
   },
   kArt: (d) => { F.kArt = d.v; return 'keep'; },
@@ -2958,7 +3131,9 @@ Object.assign(EXTRA_ACT, {
       if (!F.kErr && !f.id && F.kWdh && isDate(F.kTEnd) && F.kTEnd < F.kVon) F.kErr = '„bis“ darf nicht vor dem Tag liegen.';
       if (F.kErr) return 'keep';
       const ganz = !!F.kGanz; const von = ganz ? '' : F.kTVon; const bis = ganz ? '' : (F.kTBis || '');
-      if (f.id) undoable('Termin gespeichert', () => patch('termine', f.id, { titel: name, datum: F.kVon, von: von, bis: bis, ganztags: ganz, beispiel: false }));
+      const kl = F.kKlausur ? { art: 'klausur', gebiet: F.kGeb || null } : { art: null, gebiet: null };
+      if (f.id) undoable(F.kKlausur ? 'Klausur gespeichert' : 'Termin gespeichert', () => patch('termine', f.id, Object.assign({ titel: name, datum: F.kVon, von: von, bis: bis, ganztags: ganz, beispiel: false }, kl)));
+      else if (F.kKlausur) undoable('Klausur eingetragen', () => addTerminOnce(F.kVon, name, von, bis, ganz, kl));
       else if (F.kWdh) undoable('Termin eingetragen, jede Woche am ' + WDL[wdOf(F.kVon)], () => addTerminWeekly(F.kVon, name, von, bis, ganz, F.kTEnd));
       else undoable('Termin eingetragen', () => addTerminOnce(F.kVon, name, von, bis, ganz));
       if (f.id) reflowDay(F.kVon);
@@ -2968,7 +3143,7 @@ Object.assign(EXTRA_ACT, {
     if (!isDate(F.kVon) || !isDate(F.kBis)) { F.kErr = 'Bitte „von“ und „bis“ eintragen.'; return 'keep'; }
     if (F.kBis < F.kVon) { F.kErr = '„bis“ darf nicht vor „von“ liegen.'; return 'keep'; }
     const col = f.kind === 'etappe' ? 'etappen' : 'pausen';
-    const data = f.kind === 'etappe' ? { name: name, von: F.kVon, bis: F.kBis, ziel: String(F.kZiel || '').trim(), beispiel: false } : { name: name, art: F.kArt === 'wdh' ? 'wdh' : 'frei', von: F.kVon, bis: F.kBis, beispiel: false };
+    const data = f.kind === 'etappe' ? { name: name, von: F.kVon, bis: F.kBis, ziel: String(F.kZiel || '').trim(), stoff: (F.kStoff || []).filter((id) => thema(id)), stoffKomplett: !!F.kKomplett && !!(F.kStoff || []).length, beispiel: false } : { name: name, art: F.kArt === 'wdh' ? 'wdh' : 'frei', von: F.kVon, bis: F.kBis, beispiel: false };
     const id = f.id || uid(f.kind === 'etappe' ? 'e' : 'p');
     undoable(f.id ? 'Gespeichert' : (f.kind === 'etappe' ? 'Etappe eingetragen' : 'Pause eingetragen'), () => { if (f.id) patch(col, id, data); else put(col, id, Object.assign({ erstellt: nowMs() }, data)); });
     K.form = null;
@@ -3032,6 +3207,83 @@ function thNext(id) {
 }
 
 /* ---------- Aktionen ---------- */
+/* ---------- Gliederung einfügen: eingerückte oder nummerierte Zeilen werden zu Themen ---------- */
+const GL_MARKER = [/^[A-Z]\.\s+/, /^[IVXLC]+\.\s+/, /^\d+\.\s+/, /^[a-z]\)\s+/, /^[a-z]{2}\)\s+/, /^\([a-z]+\)\s+/, /^\([a-z]{2}\)\s+/];
+function gliederungParse(text) {
+  const raw = String(text || '').replace(/\r/g, '').split('\n').map((l) => l.replace(/\t/g, '    ')).filter((l) => l.trim());
+  const einrueck = raw.some((l) => /^\s+/.test(l));
+  const breiten = Array.from(new Set(raw.map((l) => l.match(/^\s*/)[0].length))).sort((a, b) => a - b);
+  const klassen = [];
+  const out = [];
+  raw.forEach((l) => {
+    let name = l.trim().replace(/^[-–•*·]\s+/, '');
+    let level = 0;
+    // I. (römisch) vor A. prüfen, damit „I.“ nicht als Großbuchstabe gilt; „V.“ und „C.“ bleiben mehrdeutig, römisch gewinnt
+    const k = [1, 0, 2, 3, 4, 5, 6].find((i) => GL_MARKER[i].test(name));
+    if (k != null) name = name.replace(GL_MARKER[k], '');
+    if (einrueck) level = breiten.indexOf(l.match(/^\s*/)[0].length);
+    else if (k != null) { if (klassen.indexOf(k) < 0) klassen.push(k); level = klassen.indexOf(k); }
+    name = name.trim();
+    if (name) out.push({ name: name.slice(0, 200), level: level });
+  });
+  // Sprünge glätten: höchstens eine Ebene tiefer als die Zeile davor
+  let prev = -1;
+  out.forEach((x) => { if (x.level > prev + 1) x.level = prev + 1; prev = x.level; });
+  return out;
+}
+// Plan für das Anlegen: vorhandene gleichnamige Themen unter demselben Eltern-Thema werden weiterverwendet
+function gliederungPlan(text, parent) {
+  const zeilen = gliederungParse(text);
+  const basis = parent ? thDepth(parent) + 1 : 0;
+  const stack = []; const plan = []; let gekappt = 0;
+  zeilen.forEach((z) => {
+    let lv = z.level;
+    if (basis + lv > MAX_TIEFE - 1) { lv = MAX_TIEFE - 1 - basis; gekappt++; }
+    stack.length = lv;
+    const el = lv ? stack[lv - 1] : { id: parent || null, neu: false };
+    const gleich = (n) => n.toLowerCase() === z.name.toLowerCase();
+    let knoten = null;
+    const vorhanden = !el.neu ? thKids(el.id).find((k) => gleich(D.themen[k].name)) : null;
+    if (vorhanden) { knoten = { id: vorhanden, neu: false }; plan.push({ id: vorhanden, name: z.name, level: lv, vorhanden: true }); }
+    else {
+      const dup = plan.find((x) => !x.vorhanden && x.eltern === el.id && gleich(x.name));
+      if (dup) knoten = { id: dup.id, neu: true };
+      else { knoten = { id: uid('th'), neu: true }; plan.push({ id: knoten.id, name: z.name, eltern: el.id, level: lv, vorhanden: false }); }
+    }
+    stack[lv] = knoten;
+  });
+  return { plan: plan, gekappt: gekappt, basis: basis };
+}
+function gliederungForm() {
+  const opts = [{ id: '', label: 'Oberste Ebene (neue Gebiete)' }].concat(themaOptions().filter((o) => thDepth(o.id) < MAX_TIEFE - 1));
+  let h = '<div class="form" style="background:var(--bg)" data-k="thglied"><h3 style="font-size:15px;font-weight:700">Gliederung einfügen</h3>' +
+    '<span class="small">Füge zum Beispiel ein Inhaltsverzeichnis, den Stoffkatalog oder deine Vorlesungsgliederung ein. Eingerückte Zeilen (Leerzeichen oder Tab) oder Nummern wie A. / I. / 1. / a) / aa) werden zu Unterthemen, bis vier Ebenen.</span>' +
+    '<label for="th-glied-unter">einfügen unter</label><select id="th-glied-unter" class="inp" style="background:var(--card)" data-in="thGliedUnter">' + opts.map((o) => '<option value="' + esc(o.id) + '"' + (o.id === fv('thGliedUnter') ? ' selected' : '') + '>' + esc(o.label) + '</option>').join('') + '</select>' +
+    '<label for="th-glied">Gliederung</label><textarea id="th-glied" class="inp" style="background:var(--card);min-height:160px;font-family:inherit" data-in="thGlied" placeholder="Schuldrecht AT&#10;  Unmöglichkeit&#10;  Verzug&#10;Schuldrecht BT&#10;  Kaufrecht">' + esc(fv('thGlied')) + '</textarea>';
+  const pv = TH.gPlan;
+  if (pv) {
+    const neu = pv.plan.filter((x) => !x.vorhanden).length;
+    h += '<div class="infobox" data-k="thglied-vorschau" style="gap:2px"><span style="font-size:14px;font-weight:700">Vorschau: ' + anz(neu, 'neues Thema', 'neue Themen') + (pv.plan.length > neu ? ', ' + (pv.plan.length - neu) + ' schon vorhanden' : '') + '</span>' +
+      pv.plan.slice(0, 60).map((x) => '<span style="font-size:14px;padding-left:' + (x.level * 16) + 'px;' + (x.vorhanden ? 'color:var(--quiet)' : '') + '">' + esc(x.name) + (x.vorhanden ? ' (vorhanden)' : '') + '</span>').join('') +
+      (pv.plan.length > 60 ? '<span class="small">… und ' + (pv.plan.length - 60) + ' weitere</span>' : '') +
+      (pv.gekappt ? '<span class="small">' + anz(pv.gekappt, 'Zeile wäre', 'Zeilen wären') + ' tiefer als vier Ebenen und ' + (pv.gekappt === 1 ? 'steht' : 'stehen') + ' deshalb eine Ebene höher.</span>' : '') + '</div>';
+  }
+  return h + '<div class="formbtns"><button class="btn ghost" data-a="thGliedCancel">Abbrechen</button><button class="btn line" data-a="thGliedVorschau">Vorschau</button>' +
+    (pv && pv.plan.some((x) => !x.vorhanden) ? '<button class="btn" data-a="thGliedSave">Anlegen</button>' : '') + '</div></div>';
+}
+function gliederungAnlegen(text, parent) {
+  const pv = gliederungPlan(text, parent);
+  const neu = pv.plan.filter((x) => !x.vorhanden);
+  if (!neu.length) return 0;
+  const rf = {}; // Reihenfolge je Eltern-Thema fortsetzen
+  undoable(anz(neu.length, 'Thema', 'Themen') + ' angelegt', () => neu.forEach((x) => {
+    const k = x.eltern || '';
+    if (rf[k] == null) { const sib = thKids(x.eltern || null); rf[k] = sib.length ? Math.max(...sib.map((s) => num(D.themen[s].reihenfolge, 0))) : 0; }
+    rf[k] += 1;
+    put('themen', x.id, { name: x.name, eltern: x.eltern || null, zustand: 'aktiv', reihenfolge: rf[k], erstellt: nowMs() });
+  }));
+  return neu.length;
+}
 function thCreate(name, parent) {
   name = String(name || '').trim();
   if (!name) return null;
@@ -3198,7 +3450,8 @@ function treeHtml() {
   if (TH.form === 'top') {
     h += '<div class="form" style="background:var(--bg)" data-k="thnew"><label for="th-new">Neues Gebiet (oberste Ebene)</label><input id="th-new" class="inp" style="background:var(--card)" data-in="thNew" value="' + esc(fv('thNew')) + '" placeholder="z. B. Zivilrecht" data-enter="thNewSave" autocomplete="off">' +
       '<div class="formbtns"><button class="btn ghost" data-a="thNewCancel">Abbrechen</button><button class="btn" data-a="thNewSave">Anlegen</button></div></div>';
-  } else h += '<button class="addbtn" style="min-height:44px" data-a="thNew">' + ico('plus', 'xs') + 'Gebiet</button>';
+  } else if (TH.form === 'glied') h += gliederungForm();
+  else h += '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px"><button class="addbtn" style="min-height:44px" data-a="thNew">' + ico('plus', 'xs') + 'Gebiet</button><button class="addbtn" style="min-height:44px" data-a="thGlied">' + ico('plus', 'xs') + 'Gliederung einfügen</button></div>';
   const nb = Object.keys(D.themen).filter((id) => D.themen[id].beispiel).length;
   if (nb && TH.confirm === 'bsp') h += confirmBox('Alle ' + nb + ' Beispiel-Themen werden entfernt. Deine eigenen und umbenannten Themen bleiben, Unterthemen von dir rücken nach oben.', 'thDelBsp', null, 'Entfernen');
   else if (nb) h += '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding-top:6px;border-top:1px solid var(--line)"><span class="small">' + nb + ' Themen sind Platzhalter <span class="tag-bsp" style="margin-left:2px">Beispiel</span></span><button class="linkbtn" style="color:var(--quiet)" data-a="thBspAsk">entfernen</button></div>';
@@ -3277,7 +3530,10 @@ function thDetail(id) {
   h += '<div class="infobox">' + info.map((x) => '<span style="font-size:14px;line-height:1.45">' + esc(x) + '</span>').join('') + '</div>';
   // Durchgearbeitet und Wiederholungen
   const nW = wdhCount(id);
-  h += '<button class="switch ink" role="switch" aria-checked="' + isDate(t.durchAm) + '" data-a="thDurch" data-id="' + esc(id) + '"><span class="tr"></span>durchgearbeitet' + (isDate(t.durchAm) ? ' am ' + esc(fmtDMonY(t.durchAm)) : '') + '</button>' +
+  const dnr = durchNr(id); const ft = frueherText(t);
+  h += '<button class="switch ink" role="switch" aria-checked="' + isDate(t.durchAm) + '" data-a="thDurch" data-id="' + esc(id) + '"><span class="tr"></span>durchgearbeitet' + (dnr > 1 ? ' im ' + dnr + '. Durchgang' : '') + (isDate(t.durchAm) ? ' am ' + esc(fmtDMonY(t.durchAm)) : '') + '</button>' +
+    (ft ? '<span class="small" data-k="th-frueher">' + esc(ft) + '</span>' : '') +
+    '<button class="linkbtn" style="align-self:flex-start" data-a="thNeuDurch" data-id="' + esc(id) + '">neuen Durchgang beginnen' + (thDesc(id).length ? ' (mit allen Unterthemen)' : '') + '</button>' +
     '<span class="small">' + (nW ? nW + '× wiederholt' : 'Noch nicht wiederholt') + '</span>';
   // Notiz
   h += '<label for="th-notiz" style="font-size:14px;font-weight:700;margin-top:4px">Notiz</label><textarea id="th-notiz" class="inp" style="min-height:96px;padding:10px 12px;line-height:1.45;resize:vertical" data-ch="thNotiz" data-id="' + esc(id) + '" placeholder="Was gut klappt, wo es hakt, worauf du beim nächsten Mal achten willst">' + esc(t.notiz || '') + '</textarea>' +
@@ -3315,7 +3571,9 @@ function standZeile(id, depth) {
   const t = D.themen[id];
   const n = unitsOf(id).length; const nW = wdhCount(id);
   const zu = t.zustand === 'abgeschlossen';
-  const abd = isDate(t.durchAm) ? '<span style="display:inline-flex;align-items:center;gap:4px;color:var(--ok-text);font-weight:700">' + ico('check', 'xs') + 'durchgearbeitet ' + esc(fmtDM(t.durchAm)) + '</span>'
+  const nr = durchNr(id);
+  const abd = isDate(t.durchAm) ? '<span style="display:inline-flex;align-items:center;gap:4px;color:var(--ok-text);font-weight:700">' + ico('check', 'xs') + 'durchgearbeitet ' + esc(fmtDM(t.durchAm)) + (nr > 1 ? ' (' + nr + '. Durchgang)' : '') + '</span>'
+    : nr > 1 ? '<span>' + nr + '. Durchgang offen</span>'
     : (n ? '<span>angefangen · ' + n + (n === 1 ? ' Einheit' : ' Einheiten') + '</span>' : '<span style="color:var(--quiet)">noch nicht begonnen</span>');
   const sr = validSr(t.sr) && t.wiederholen !== false && hatEinheiten(id) ? t.sr : null;
   const fest = (nW ? nW + '× wiederholt' : '') + (sr ? (nW ? ' · ' : '') + stufeWort(sr) + (effZustand(id) === 'aktiv' ? ' · ' + thNext(id) : ' · ruht') : '');
@@ -3325,6 +3583,13 @@ function standZeile(id, depth) {
     '<span class="small" style="display:flex;flex-wrap:wrap;gap:2px 12px;padding-left:16px">' + abd + (fest ? '<span>' + esc(fest) + '</span>' : '') + '</span>' +
     (note ? '<span class="small" style="padding-left:16px;font-style:italic;overflow-wrap:anywhere">' + esc(note.length > 120 ? note.slice(0, 120) + ' …' : note) + '</span>' : '') + '</button>';
 }
+// Durchgänge: durchAm gilt für den laufenden Durchgang, frueher hält die Daten der vorigen (null = damals nicht durchgearbeitet)
+const durchNr = (id) => (Array.isArray(D.themen[id].frueher) ? D.themen[id].frueher.length : 0) + 1;
+function durchgangText(ids) {
+  const n = ids.map(durchNr); const a = Math.min.apply(null, n); const b = Math.max.apply(null, n);
+  return b > 1 ? 'Durchgang ' + (a === b ? a : a + '–' + b) + ' · ' : '';
+}
+const frueherText = (t) => (Array.isArray(t.frueher) && t.frueher.length ? t.frueher.map((d, i) => (i + 1) + '. Durchgang ' + (isDate(d) ? fmtDMonY(d) : 'nicht abgeschlossen')).join(' · ') : '');
 function standHtml() {
   const tops = thKids(null).filter((id) => (D.themen[id].zustand || 'aktiv') !== 'abgeschlossen');
   if (!tops.length) return '<section class="panel"><h2>Stand</h2><span class="small" style="font-size:14px">Noch keine Themen. Lege sie unter „Baum“ an.</span></section>';
@@ -3334,7 +3599,7 @@ function standHtml() {
     const durch = alle.filter((id) => isDate(D.themen[id].durchAm)).length;
     const angef = alle.filter((id) => !isDate(D.themen[id].durchAm) && unitsOf(id).length).length;
     const gef = ids.filter((id) => { const t = D.themen[id]; return validSr(t.sr) && hatEinheiten(id) && stufeWort(t.sr) === 'gefestigt'; }).length;
-    const sum = durch + ' von ' + alle.length + ' durchgearbeitet' + (angef ? ' · ' + angef + ' angefangen' : '') + (gef ? ' · ' + gef + ' gefestigt' : '');
+    const sum = durchgangText(alle) + durch + ' von ' + alle.length + ' durchgearbeitet' + (angef ? ' · ' + angef + ' angefangen' : '') + (gef ? ' · ' + gef + ' gefestigt' : '');
     const rows = []; const walk = (id, depth) => { rows.push(standZeile(id, depth)); thKids(id).forEach((k) => walk(k, depth + 1)); };
     if (thKids(g).length) thKids(g).forEach((k) => walk(k, 0)); else walk(g, 0); // das Gebiet steht schon als Überschrift
     return '<section class="panel" aria-label="Stand ' + esc(D.themen[g].name) + '" style="gap:6px"><div style="display:flex;flex-direction:column;gap:2px"><h2 class="gname"' + gStyle(g) + ' style="font-size:16px;color:var(--ink)"><span class="dot"></span>' + esc(D.themen[g].name) + '</h2><span class="small">' + esc(sum) + '</span></div><div>' + rows.join('') + '</div></section>';
@@ -3370,6 +3635,10 @@ Object.assign(EXTRA_ACT, {
   thTog: (d) => { const cur = TH.open[d.id] != null ? TH.open[d.id] : thDepth(d.id) < 1; TH.open[d.id] = !cur; },
   thNew: () => { TH.form = 'top'; F.thNew = ''; focusSoon('th-new'); },
   thNewCancel: () => { TH.form = null; },
+  thGlied: () => { TH.form = 'glied'; TH.gPlan = null; F.thGlied = ''; F.thGliedUnter = TH.sel && thema(TH.sel) && thDepth(TH.sel) < MAX_TIEFE - 1 ? TH.sel : ''; focusSoon('th-glied'); },
+  thGliedCancel: () => { TH.form = null; TH.gPlan = null; },
+  thGliedVorschau: () => { TH.gPlan = gliederungPlan(F.thGlied, F.thGliedUnter || null); if (!TH.gPlan.plan.length) { TH.gPlan = null; toast('Füge zuerst eine Gliederung ein.', false); } return 'keep'; },
+  thGliedSave: () => { const n = gliederungAnlegen(F.thGlied, F.thGliedUnter || null); if (n) { TH.form = null; TH.gPlan = null; F.thGlied = ''; } },
   thNewSave: () => { if (!thCreate(F.thNew, null)) { toast('Bitte einen Namen eintragen.', false); return 'keep'; } TH.form = null; F.thNew = ''; },
   thSubAdd: (d) => { if (!thCreate(F.thSub, d.id)) { toast('Bitte einen Namen eintragen.', false); return 'keep'; } F.thSub = ''; TH.open[d.id] = true; },
   thRen: (d) => {
@@ -3380,6 +3649,11 @@ Object.assign(EXTRA_ACT, {
   },
   thZ: (d) => thZustand(d.id, d.v),
   thW: (d) => thWdhToggle(d.id),
+  thNeuDurch: (d) => {
+    const x = thema(d.id); if (!x) return;
+    const ids = [d.id].concat(thDesc(d.id));
+    undoable(x.name + ': neuer Durchgang', () => ids.forEach((k) => { const t = D.themen[k]; patch('themen', k, { frueher: (Array.isArray(t.frueher) ? t.frueher : []).concat([isDate(t.durchAm) ? t.durchAm : null]), durchAm: null }); }));
+  },
   thDurch: (d) => { const x = thema(d.id); if (!x) return; const on = !isDate(x.durchAm); undoable(on ? x.name + ' durchgearbeitet' : 'Markierung entfernt', () => patch('themen', d.id, { durchAm: on ? today() : null })); },
   thTab: (d) => { TH.tab = d.v; },
   thStandSel: (d) => { EXTRA_ACT.thSel(d); },
@@ -3516,6 +3790,14 @@ function terminFormE() {
     '<span class="flabel">Wochentage</span>' + tageChips(ES.tTage, 'esTTag', 'Wochentage') +
     two(fld('t-von', 'tVon', 'von', 'time'), fld('t-bis', 'tBis', 'bis', 'time')) +
     two(fld('t-ab', 'tAb', 'ab (optional)', 'date'), fld('t-end', 'tEnd', 'endet (optional)', 'date'));
+  if (f.id && D.termine[f.id]) {
+    const l = ausfallListe(D.termine[f.id]);
+    h += '<span class="flabel">Fällt aus (z. B. Semesterferien)</span>' + (l.length ? '<div style="display:flex;flex-direction:column;gap:4px">' + l.map((a, i) =>
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px" data-k="aus-' + a.von + '"><span style="font-size:14px">' + esc(a.von === a.bis ? fmtDM(a.von) : fmtDM(a.von) + ' – ' + fmtDM(a.bis)) + '</span><button class="linkbtn" data-a="esTAusDel" data-i="' + i + '">entfernen</button></div>').join('') + '</div>' : '') +
+      two(fld('t-aus-von', 'tAusVon', 'von', 'date'), fld('t-aus-bis', 'tAusBis', 'bis (optional)', 'date')) +
+      '<button class="btn line" style="align-self:flex-start" data-a="esTAusAdd">Ausfall eintragen</button>';
+    if (F.tAusErr) h += '<span class="err" role="status">' + esc(F.tAusErr) + '</span>';
+  }
   if (F.tErr) h += '<span class="err" role="status">' + esc(F.tErr) + '</span>';
   return h + '<div class="formbtns">' + (f.id ? '<button class="btn ghost" style="margin-right:auto;text-decoration:underline" data-a="esTDel">Entfernen</button>' : '') + '<button class="btn ghost" data-a="esTCancel">Abbrechen</button><button class="btn" data-a="esTSave">' + (f.id ? 'Speichern' : 'Eintragen') + '</button></div></div>';
 }
@@ -3525,6 +3807,16 @@ function moduleHtml() {
     (m.gebaut ? '<div style="flex:1 1 100%">' + zChips(modZustand(m.k), 'esModZ', m.k, 'Zustand ' + m.name) + '</div>' : '') + '</div>').join('') + '</div></section>';
 }
 // Daten liegen nur auf diesem Gerät: Sicherung als Datei, Laden ersetzt alles (mit Rückgängig)
+// Ruhige Erinnerung in der Woche (ab Planungstag), wenn die letzte Sicherung länger her ist als eingestellt
+function sicherungHinweis(t) {
+  const n = cfg().sicherungTage;
+  if (!(n > 0)) return '';
+  const s = D.meta.sicherung;
+  const her = s && isDate(s.am) ? dayDiff(t, s.am) : null;
+  if (her != null && her < n) return '';
+  const txt = her == null ? 'Noch nie gesichert' : 'Letzte Sicherung vor ' + (her >= 14 ? Math.floor(her / 7) + ' Wochen' : anz(her, 'Tag', 'Tagen'));
+  return '<div class="infobox" data-k="sicherung" style="flex-direction:row;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap"><span class="small" style="font-size:14px">' + esc(txt) + '</span><button class="linkbtn" data-a="esExport">Jetzt sichern</button></div>';
+}
 const anz = (n, eins, viele) => n + ' ' + (n === 1 ? eins : viele);
 function datenHtml() {
   const s = D.meta.sicherung;
@@ -3540,6 +3832,7 @@ function datenHtml() {
   }
   h += '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-a="esExport">Daten sichern</button>' +
     '<label class="btn line" style="display:inline-flex;align-items:center;cursor:pointer">Daten laden<input type="file" accept="application/json,.json" data-ch="esImport" class="sr-only"></label></div>';
+  h += '<span class="flabel">Erinnerung ans Sichern (in der Woche, ab dem Planungstag)</span>' + selChips('Erinnerung ans Sichern', [7, 14, 30, 0], cfg().sicherungTage, 'sicherungTage', (v) => (v === 7 ? 'nach 1 Woche' : v === 14 ? 'nach 2 Wochen' : v === 30 ? 'nach 1 Monat' : 'aus'));
   return h + '</section>';
 }
 function exportData() {
@@ -3605,7 +3898,8 @@ function viewEinstellungen() {
   const design = '<section class="panel" aria-label="Darstellung"><h2>Darstellung</h2><div class="seg3" role="group" aria-label="Hell oder dunkel">' +
     [['auto', 'Automatisch'], ['hell', 'Hell'], ['dunkel', 'Dunkel']].map((x) => '<button aria-pressed="' + (dv === x[0]) + '" data-a="esDesign" data-v="' + x[0] + '">' + x[1] + '</button>').join('') + '</div>' +
     '<span class="small">„Automatisch“ folgt der Einstellung deines Macs.</span></section>';
-  return h + '<div class="cols"><div class="stack l">' + design + stellschrauben() + datenHtml() + '</div><div class="stack l">' + routinenHtml() + termineHtml() + '</div></div>';
+  const kuerzel = '<section class="panel" aria-label="Tastenkürzel"><h2>Tastenkürzel</h2>' + keysHtml() + '</section>';
+  return h + '<div class="cols"><div class="stack l">' + design + stellschrauben() + datenHtml() + kuerzel + '</div><div class="stack l">' + routinenHtml() + termineHtml() + '</div></div>';
 }
 function nextOrder(col) { const ids = Object.keys(D[col]); return ids.length ? Math.max(...ids.map((i) => num(D[col][i].reihenfolge, 0))) + 1 : 1; }
 Object.assign(EXTRA_ACT, {
@@ -3677,7 +3971,23 @@ Object.assign(EXTRA_ACT, {
   esTEdit: (d) => {
     const x = D.termine[d.id]; if (!x) return;
     ES.tForm = { id: d.id }; ES.tTage = Array.isArray(x.wochentage) ? x.wochentage.slice() : (typeof x.wochentag === 'number' ? [x.wochentag] : []);
-    F.tTitel = x.titel || ''; F.tVon = x.von || ''; F.tBis = x.bis || ''; F.tAb = x.ab || ''; F.tEnd = x.endet || ''; F.tErr = ''; ES.rForm = null; focusSoon('t-titel');
+    F.tTitel = x.titel || ''; F.tVon = x.von || ''; F.tBis = x.bis || ''; F.tAb = x.ab || ''; F.tEnd = x.endet || ''; F.tErr = ''; F.tAusVon = ''; F.tAusBis = ''; F.tAusErr = ''; ES.rForm = null; focusSoon('t-titel');
+  },
+  esTAusAdd: () => {
+    const f = ES.tForm; const t = f && D.termine[f.id]; if (!t) return;
+    const von = F.tAusVon; const bis = isDate(F.tAusBis) ? F.tAusBis : von;
+    if (!isDate(von)) { F.tAusErr = 'Bitte einen Tag (von) wählen.'; return 'keep'; }
+    if (bis < von) { F.tAusErr = '„bis“ darf nicht vor „von“ liegen.'; return 'keep'; }
+    F.tAusErr = ''; F.tAusVon = ''; F.tAusBis = '';
+    setAusfall(f.id, ausfallListe(t).concat([{ von: von, bis: bis }]), t.titel + ' fällt aus: ' + (von === bis ? fmtDM(von) : fmtDM(von) + ' – ' + fmtDM(bis)));
+    return 'keep';
+  },
+  esTAusDel: (d) => {
+    const f = ES.tForm; const t = f && D.termine[f.id]; if (!t) return;
+    const l = ausfallListe(t); const a = l[Number(d.i)]; if (!a) return;
+    const frei = []; for (let x = a.von; x <= a.bis && frei.length < 120; x = addDays(x, 1)) frei.push(x);
+    setAusfall(f.id, l.filter((_, i) => i !== Number(d.i)), 'Ausfall entfernt', frei);
+    return 'keep';
   },
   esTTag: (d) => { const i = Number(d.i); const k = ES.tTage.indexOf(i); if (k >= 0) ES.tTage.splice(k, 1); else ES.tTage.push(i); return 'keep'; },
   esTCancel: () => { ES.tForm = null; },
@@ -3723,10 +4033,20 @@ function placeholder(title, text) {
   return '<header class="head"><div class="col"><h1>' + esc(title) + '</h1></div><button class="iconbtn gear" aria-label="Einstellungen" data-a="nav" data-v="einstellungen">' + ico('einst') + '</button></header>' +
     '<div class="placeholder"><b>Noch im Bau</b><span>' + esc(text) + '</span></div>';
 }
+/* ---------- Tastenkürzel (Mac) ---------- */
+const KEYS = [['N', 'Neuer Eintrag in Heute'], ['1', 'Heute'], ['2', 'Woche'], ['3', 'Kalender'], ['4', 'Themen'], ['T', 'Timer starten (freie Lernzeit) oder stoppen'], ['/', 'Themen durchsuchen'], ['⌘ Z', 'Rückgängig, solange die Meldung zu sehen ist'], ['?', 'Diese Übersicht öffnen'], ['Esc', 'Menü oder Übersicht schließen']];
+const keysHtml = () => '<div style="display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 12px;align-items:center" data-k="keys">' + KEYS.map((k) =>
+  '<kbd style="font:600 13px/1 inherit;min-width:28px;text-align:center;padding:5px 7px;border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;background:var(--card);color:var(--ink)">' + esc(k[0]) + '</kbd><span style="font-size:14px">' + esc(k[1]) + '</span>').join('') + '</div>' +
+  '<span class="small">Die Kürzel gelten, solange du nicht in ein Eingabefeld tippst.</span>';
+function keysOverlay() {
+  if (!S.keysOpen) return '';
+  return '<div style="position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;padding:16px">' +
+    '<section class="panel" role="dialog" aria-modal="true" aria-label="Tastenkürzel" style="max-width:420px;width:100%;max-height:90vh;overflow:auto"><div class="h2row" style="margin:0"><h2>Tastenkürzel</h2><button class="linkbtn" data-a="keysClose">Schließen</button></div>' + keysHtml() + '</section></div>';
+}
 function navSide() {
   return '<nav class="side" aria-label="Ansichten"><span class="brand">Lernsystem</span>' +
     VIEWS.map((v) => '<button data-a="nav" data-v="' + v.k + '"' + (S.view === v.k ? ' aria-current="page"' : '') + '>' + ico(v.icon, 's') + v.label + '</button>').join('') +
-    '<button class="bottomlink" data-a="nav" data-v="einstellungen"' + (S.view === 'einstellungen' ? ' aria-current="page"' : '') + '>' + ico('einst', 's') + 'Einstellungen</button></nav>';
+    '<button class="bottomlink" data-a="nav" data-v="einstellungen"' + (S.view === 'einstellungen' ? ' aria-current="page"' : '') + '>' + ico('einst', 's') + 'Einstellungen</button><button class="bottomlink" style="margin-top:0;font-size:13px;color:var(--quiet)" data-a="keysOpen">? Tastenkürzel</button></nav>';
 }
 function navBottom() {
   return '<nav class="bottom" aria-label="Ansichten">' + VIEWS.map((v) => '<button data-a="nav" data-v="' + v.k + '"' + (S.view === v.k ? ' aria-current="page"' : '') + '>' + ico(v.icon) + v.label + '</button>').join('') + '</nav>';
@@ -3754,7 +4074,7 @@ function doRender() {
     try { body = VIEW_FN[S.view](); } catch (e) { console.error(e); body = '<div class="err" role="alert">Diese Ansicht konnte nicht angezeigt werden. Lade die Seite neu. (' + esc(e && e.message) + ')</div>'; }
   }
   const html = '<div class="app">' + navSide() + '<div class="main">' + timerBar() + '<main class="wrap' + (S.view === 'heute' ? '' : '') + '" id="main">' + body + '</main></div></div>' + navBottom() +
-    (toastState ? '<div class="toast" role="status"><span>' + esc(toastState.text) + '</span>' + (toastState.snap ? '<button data-a="undo">Rückgängig</button>' : '') + '</div>' : '');
+    (toastState ? '<div class="toast" role="status"><span>' + esc(toastState.text) + '</span>' + (toastState.snap ? '<button data-a="undo">Rückgängig</button>' : '') + '</div>' : '') + keysOverlay();
   const tpl = document.createElement('template');
   tpl.innerHTML = html;
   morphChildren(root, tpl.content);
@@ -3850,6 +4170,8 @@ const ACT = {
     S.adding = false; F.addText = '';
   },
   undo: () => undoToast(),
+  keysOpen: () => { S.keysOpen = true; },
+  keysClose: () => { S.keysOpen = false; },
   /* Woche */
   wkPrev: () => { S.wk = addDays(S.wk || mondayOf(today()), -7); S.tfOpen = false; },
   wkNext: () => { S.wk = addDays(S.wk || mondayOf(today()), 7); S.tfOpen = false; },
@@ -3860,7 +4182,7 @@ const ACT = {
   carryKeep: (d) => carryKeep(d.id),
   carryDrop: (d) => carryDrop(d.id),
   tGanz: (d) => { F[d.k] = !F[d.k]; return 'keep'; },
-  tfOpen: () => { S.tfOpen = !S.tfOpen; F.tfTitel = ''; F.tfVon = ''; F.tfBis = ''; F.tfGanz = false; F.tfErr = ''; S.tfDay = null; if (S.tfOpen) focusSoon('tf-titel'); },
+  tfOpen: () => { S.tfOpen = !S.tfOpen; F.tfTitel = ''; F.tfVon = ''; F.tfBis = ''; F.tfGanz = false; F.tfKlausur = false; F.tfErr = ''; S.tfDay = null; if (S.tfOpen) focusSoon('tf-titel'); },
   tfClose: () => { S.tfOpen = false; },
   tfDay: (d) => { S.tfDay = d.d; return 'keep'; },
   tfSave: (d) => {
@@ -3868,7 +4190,7 @@ const ACT = {
     F.tfErr = terminCheck(F.tfTitel, von, bis, F.tfGanz);
     if (F.tfErr) return 'keep';
     let ok = false;
-    undoable('Termin eingetragen', () => { ok = addTerminOnce(d.d, F.tfTitel, von, bis, F.tfGanz); });
+    undoable(F.tfKlausur ? 'Klausur eingetragen' : 'Termin eingetragen', () => { ok = addTerminOnce(d.d, F.tfTitel, von, bis, F.tfGanz, F.tfKlausur ? { art: 'klausur', gebiet: null } : null); });
     if (ok) S.tfOpen = false;
   },
   goPlanNext: () => { S.wk = addDays(mondayOf(today()), 7); window.scrollTo(0, 0); },
@@ -3921,6 +4243,24 @@ document.addEventListener('change', (e) => {
 });
 document.addEventListener('keydown', (e) => {
   const el = e.target;
+  const tippt = el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
+  if (e.key === 'Escape' && S.keysOpen) { S.keysOpen = false; scheduleRender(); return; }
+  if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && String(e.key).toLowerCase() === 'z' && !tippt) {
+    if (toastState && toastState.snap) { e.preventDefault(); undoToast(); scheduleRender(); }
+    return;
+  }
+  if (!tippt && !e.metaKey && !e.ctrlKey && !e.altKey && dbState === 'ok') {
+    const k = String(e.key);
+    const go = (v) => { ACT.nav({ v: v }); };
+    let done = true;
+    if (k === '?') S.keysOpen = !S.keysOpen;
+    else if (k >= '1' && k <= '4') { S.keysOpen = false; go(VIEWS[Number(k) - 1].k); }
+    else if (k === 'n' || k === 'N') { S.keysOpen = false; go('heute'); ACT.startAdd(); }
+    else if (k === 't' || k === 'T') { if (timerDoc()) ACT.stopT(); else ACT.startT({ art: 'f' }); }
+    else if (k === '/') { S.keysOpen = false; go('themen'); focusSoon('th-q'); }
+    else done = false;
+    if (done) { e.preventDefault(); closeMenus(); scheduleRender(); return; }
+  }
   if (e.key === 'Enter' && el.dataset && el.dataset.enter) {
     e.preventDefault();
     if (el.dataset.in) F[el.dataset.in] = el.value;
