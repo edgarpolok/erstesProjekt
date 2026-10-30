@@ -497,6 +497,9 @@ select.inp { padding: 0 8px; }
 
 .spanrow .linkbtn { flex: 0 0 auto; white-space: nowrap; }
 .pitem .body { flex: 1 1 180px; }
+.kal button.cell { border: 0; border-left: 1px solid var(--line); background: transparent; font: inherit; color: inherit; text-align: inherit; cursor: pointer; justify-content: flex-start; }
+.kal button.cell:first-child { border-left: 0; }
+.kal button.cell:hover { background: var(--soft); }
 .locked .check:not(.on) .c, .locked .rtile:not(.done) .ck { opacity: 0.4; }
 
 </style>
@@ -1022,12 +1025,13 @@ function termineAt(date) {
     }
     if (hit) {
       const a = timeToMin(t.von); const b = timeToMin(t.bis);
-      out.push({ id: id, titel: t.titel || 'Termin', von: t.von || '', bis: t.bis || '', einmalig: isDate(t.datum), min: a != null && b != null && b > a ? b - a : 60, beispiel: !!t.beispiel });
+      out.push({ id: id, titel: t.titel || 'Termin', von: t.ganztags ? '' : t.von || '', bis: t.ganztags ? '' : t.bis || '', ganztags: !!t.ganztags, einmalig: isDate(t.datum), min: t.ganztags ? 0 : (a != null && b != null && b > a ? b - a : 60), beispiel: !!t.beispiel });
     }
   });
   return out.sort((x, y) => String(x.von).localeCompare(String(y.von)));
 }
 function terminText(t) {
+  if (t.ganztags) return 'ganztägig';
   const a = fmtTime(t.von); const b = fmtTime(t.bis);
   return a && b ? a + '–' + b : (a || '');
 }
@@ -1827,12 +1831,17 @@ async function submitClaude(T) {
 function reopenPlan(T) { patch('wochen', T, { status: null }); }
 
 /* ---------- Einmalige Termine aus der Woche ---------- */
-function addTerminOnce(date, titel, von, bis) {
+function addTerminOnce(date, titel, von, bis, ganztags) {
   titel = String(titel || '').trim();
   if (!titel || !isDate(date)) return false;
-  put('termine', uid('t'), { titel: titel, datum: date, von: von || '', bis: bis || '', erstellt: nowMs() });
+  put('termine', uid('t'), { titel: titel, datum: date, von: ganztags ? '' : von || '', bis: ganztags ? '' : bis || '', ganztags: !!ganztags, erstellt: nowMs() });
   reflowDay(date);
   return true;
+}
+// Jede Woche am Wochentag des gewählten Tags, ab diesem Tag, optional bis zu einem Enddatum
+function addTerminWeekly(date, titel, von, bis, ganztags, endet) {
+  put('termine', uid('t'), { titel: titel, wochentage: [wdOf(date)], von: ganztags ? '' : von || '', bis: ganztags ? '' : bis || '', ganztags: !!ganztags, ab: date, endet: isDate(endet) ? endet : null, zustand: 'aktiv', erstellt: nowMs() });
+  [date, addDays(date, 7)].forEach((d) => reflowDay(d));
 }
 // In einer übergebenen Woche: passt ein Block nach einem neuen Termin nicht mehr, wandert er auf einen Tag mit Platz, sonst nach „noch offen“
 function reflowDay(date) {
@@ -1991,7 +2000,7 @@ function rowTermin(t, x) {
   const k = 't' + x.id;
   return '<div class="row' + (on ? ' done' : '') + '" data-k="r-' + esc(k) + '"><div class="top">' +
     checkBtn(on, x.titel, 'tTermin', ' data-id="' + esc(x.id) + '"', k) +
-    '<div class="body"><span class="clock">' + esc(terminText(x)) + '</span><span class="title">' + esc(x.titel) + bsp(x) + nachTag(on && st) + '</span></div>' +
+    '<div class="body"><span class="clock"' + (x.ganztags ? ' style="align-self:flex-start;padding:1px 6px;border-radius:4px;background:var(--hl);color:var(--hl-text)"' : '') + '>' + esc(terminText(x)) + '</span><span class="title">' + esc(x.titel) + bsp(x) + nachTag(on && st) + '</span></div>' +
     '<button class="dots" aria-label="Optionen: ' + esc(x.titel) + '" aria-expanded="' + (S.menu === k) + '" data-a="menu" data-m="' + k + '">' + DOTS_SVG + '</button></div>' +
     (S.menu === k ? '<div class="actions"><button class="chipbtn" data-a="cancelTermin" data-id="' + esc(x.id) + '" data-t="' + esc(x.titel) + '">' + (t < today() ? 'Fiel aus' : 'Fällt heute aus') + '</button></div>' : '') +
     '</div>';
@@ -2313,6 +2322,19 @@ function carryHtml(W) {
       '<span style="display:flex;flex-direction:column;gap:2px;min-width:0">' + gLine(b.gebiet) + '<span style="font-size:15px;font-weight:600;overflow-wrap:anywhere">' + esc(b.titel) + bsp(b) + '</span><span class="small">aus KW ' + kwOf(b.woche) + (b.std ? ' · ' + fmtH(b.std * 60) : '') + (b.tag ? ', offen seit ' + WDL[wdOf(b.tag)] : '') + '</span></span></div>' +
       '<div class="two"><button class="btn" data-a="carryKeep" data-id="' + esc(b.id) + '">mitnehmen</button><button class="btn line" data-a="carryDrop" data-id="' + esc(b.id) + '">streichen</button></div></div>').join('') + '</section>';
 }
+function zeitFelder(pre, kVon, kBis, kGanz, bg) {
+  const st = bg ? ' style="background:var(--card)"' : '';
+  return '<button class="switch ink" role="switch" aria-checked="' + !!F[kGanz] + '" data-a="tGanz" data-k="' + kGanz + '"><span class="tr"></span>ganztägig (z. B. Klausur, Abgabe, Frist)</button>' +
+    (F[kGanz] ? '<span class="small">Ohne Uhrzeit. Kostet keine Lernzeit und steht hervorgehoben im Kalender und in „Heute“.</span>'
+      : '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px"><div style="display:flex;flex-direction:column;gap:6px;min-width:0"><label class="flabel" for="' + pre + '-von">von</label><input id="' + pre + '-von" type="time" class="inp"' + st + ' data-in="' + kVon + '" value="' + esc(fv(kVon)) + '"></div>' +
+        '<div style="display:flex;flex-direction:column;gap:6px;min-width:0"><label class="flabel" for="' + pre + '-bis">bis</label><input id="' + pre + '-bis" type="time" class="inp"' + st + ' data-in="' + kBis + '" value="' + esc(fv(kBis)) + '"></div></div>');
+}
+function terminCheck(titel, von, bis, ganz) {
+  if (!String(titel || '').trim()) return 'Bitte einen Titel eintragen.';
+  if (!ganz && !von) return 'Ein Termin braucht eine Uhrzeit (von) oder „ganztägig“.';
+  if (!ganz && bis && timeToMin(bis) <= timeToMin(von)) return '„bis“ muss nach „von“ liegen.';
+  return '';
+}
 function terminForm(W) {
   if (!S.tfOpen) return '';
   const t = today();
@@ -2321,8 +2343,7 @@ function terminForm(W) {
   return '<div class="form" data-k="tform"><h3 style="font-size:15px;font-weight:700">Einmaliger Termin</h3><div class="chips" role="group" aria-label="Tag">' +
     days.map((d) => '<button class="sel" aria-pressed="' + (d === sel) + '" data-a="tfDay" data-d="' + d + '">' + WD[wdOf(d)] + ' ' + fmtDM(d) + '</button>').join('') + '</div>' +
     '<label for="tf-titel">Titel</label><input id="tf-titel" class="inp" data-in="tfTitel" value="' + esc(fv('tfTitel')) + '" placeholder="z. B. Sprechstunde" autocomplete="off">' +
-    '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px"><div style="display:flex;flex-direction:column;gap:6px;min-width:0"><label class="flabel" for="tf-von">von</label><input id="tf-von" type="time" class="inp" data-in="tfVon" value="' + esc(fv('tfVon')) + '"></div>' +
-    '<div style="display:flex;flex-direction:column;gap:6px;min-width:0"><label class="flabel" for="tf-bis">bis</label><input id="tf-bis" type="time" class="inp" data-in="tfBis" value="' + esc(fv('tfBis')) + '"></div></div>' +
+    zeitFelder('tf', 'tfVon', 'tfBis', 'tfGanz', false) +
     '<span class="small">Zählt auf die Obergrenze. Passt ein verteilter Block dann nicht mehr, wandert er auf einen Tag mit Platz oder in „Noch offen“.</span>' +
     (F.tfErr ? '<span class="err">' + esc(F.tfErr) + '</span>' : '') +
     '<div class="formbtns"><button class="btn ghost" data-a="tfClose">Abbrechen</button><button class="btn" data-a="tfSave" data-d="' + (sel || '') + '">Eintragen</button></div></div>';
@@ -2565,10 +2586,11 @@ function kalWeek(W, lanes, spans, runStart) {
     const first = dmy(d).d === 1 || (W === K.firstW && k === 0);
     const terms = termineAt(d);
     const cls = 'cell' + (d < t ? ' before' : '') + (frei ? ' frei' : '') + (puf && d !== t ? ' puffer' : '') + (d === t ? ' today' : '');
-    h += '<div class="' + cls + '"><span class="n">' + dmy(d).d + (first && window.innerWidth >= 900 ? '. ' + MONS[dmy(d).m - 1] + (dmy(d).m === 1 ? ' ' + dmy(d).y : '') : '') + '</span>' + (first && window.innerWidth < 900 ? '<span class="m">' + MONS[dmy(d).m - 1] + (dmy(d).m === 1 ? ' ’' + String(dmy(d).y).slice(2) : '') + '</span>' : '') +
-      terms.slice(0, 2).map((x) => '<span class="tm' + (x.einmalig ? ' once' : '') + '">' + esc((fmtTime(x.von) ? fmtTime(x.von) + (fmtTime(x.bis) && window.innerWidth >= 900 ? '–' + fmtTime(x.bis) : '') + ' ' : '') + x.titel) + '</span>').join('') +
+    const tap = d >= t;
+    h += (tap ? '<button class="' + cls + '" data-a="kNew" data-v="termin" data-d="' + d + '" aria-label="' + esc('Termin eintragen am ' + fmtLong(d) + (terms.length ? ', schon ' + terms.length + (terms.length === 1 ? ' Termin' : ' Termine') : '')) + '">' : '<div class="' + cls + '">') + '<span class="n">' + dmy(d).d + (first && window.innerWidth >= 900 ? '. ' + MONS[dmy(d).m - 1] + (dmy(d).m === 1 ? ' ' + dmy(d).y : '') : '') + '</span>' + (first && window.innerWidth < 900 ? '<span class="m">' + MONS[dmy(d).m - 1] + (dmy(d).m === 1 ? ' ’' + String(dmy(d).y).slice(2) : '') + '</span>' : '') +
+      terms.slice(0, 2).map((x) => '<span class="tm' + (x.einmalig || x.ganztags ? ' once' : '') + '">' + esc((fmtTime(x.von) ? fmtTime(x.von) + (fmtTime(x.bis) && window.innerWidth >= 900 ? '–' + fmtTime(x.bis) : '') + ' ' : '') + x.titel) + '</span>').join('') +
       (terms.length > 2 ? '<span class="tm" style="color:var(--quiet)">+' + (terms.length - 2) + ' weitere</span>' : '') +
-      (terms.length ? '<span class="tdots">' + terms.map((x) => '<i' + (x.einmalig ? ' class="once"' : '') + '></i>').join('') + '</span>' : '') + '</div>';
+      (terms.length ? '<span class="tdots">' + terms.map((x) => '<i' + (x.einmalig || x.ganztags ? ' class="once"' : '') + '></i>').join('') + '</span>' : '') + (tap ? '</button>' : '</div>');
   });
   h += '</div>';
   if (past) {
@@ -2585,7 +2607,7 @@ function kalForm() {
   const f = K.form;
   if (!f) return '';
   const isE = f.kind === 'etappe'; const isP = f.kind === 'pause'; const isT = f.kind === 'termin';
-  let h = '<div class="form" style="background:var(--bg)" data-k="kform"><h3 style="font-size:15px;font-weight:700">' + (f.id ? (isE ? 'Etappe ändern' : isP ? 'Pause ändern' : 'Termin ändern') : (isE ? 'Neue Etappe' : 'Neue Pause')) + '</h3>';
+  let h = '<div class="form" style="background:var(--bg)" data-k="kform"><h3 style="font-size:15px;font-weight:700">' + (f.id ? (isE ? 'Etappe ändern' : isP ? 'Pause ändern' : 'Termin ändern') : (isE ? 'Neue Etappe' : isP ? 'Neue Pause' : 'Neuer Termin')) + '</h3>';
   if (isP) {
     h += '<div role="radiogroup" aria-label="Art der Pause" style="display:flex;flex-direction:column;gap:6px">' +
       [['frei', 'frei', 'Alles ruht: Tagesvorschlag, Wiederholung, Erinnerung, Wochenplanung.'], ['wdh', 'Wiederholungspause', 'Nur die Wiederholung ruht, Tag und Woche laufen normal.']].map((a) =>
@@ -2593,9 +2615,12 @@ function kalForm() {
   }
   h += '<label for="k-name">' + (isE ? 'Name' : isP ? 'Bezeichnung (optional)' : 'Titel') + '</label><input id="k-name" class="inp" style="background:var(--card)" data-in="kName" value="' + esc(fv('kName')) + '" placeholder="' + (isE ? 'z. B. Schwerpunkt' : isP ? 'z. B. Urlaub' : 'z. B. Sprechstunde') + '" autocomplete="off">';
   if (isT) {
-    h += '<label for="k-datum">Tag</label><input id="k-datum" type="date" class="inp" style="background:var(--card)" data-in="kVon" value="' + esc(fv('kVon')) + '">' +
-      '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px"><div style="display:flex;flex-direction:column;gap:6px;min-width:0"><label class="flabel" for="k-tvon">von</label><input id="k-tvon" type="time" class="inp" style="background:var(--card)" data-in="kTVon" value="' + esc(fv('kTVon')) + '"></div>' +
-      '<div style="display:flex;flex-direction:column;gap:6px;min-width:0"><label class="flabel" for="k-tbis">bis</label><input id="k-tbis" type="time" class="inp" style="background:var(--card)" data-in="kTBis" value="' + esc(fv('kTBis')) + '"></div></div>';
+    h += '<label for="k-datum">Tag</label><input id="k-datum" type="date" class="inp" style="background:var(--card)" data-in="kVon" value="' + esc(fv('kVon')) + '"' + (f.id ? '' : ' min="' + today() + '"') + '>' +
+      zeitFelder('k-t', 'kTVon', 'kTBis', 'kGanz', true);
+    if (!f.id) {
+      h += '<button class="switch ink" role="switch" aria-checked="' + !!F.kWdh + '" data-a="tGanz" data-k="kWdh"><span class="tr"></span>jede Woche wiederholen' + (isDate(F.kVon) ? ' (' + WDL[wdOf(F.kVon)] + ')' : '') + '</button>';
+      if (F.kWdh) h += '<label for="k-tend">bis (optional)</label><input id="k-tend" type="date" class="inp" style="background:var(--card)" data-in="kTEnd" value="' + esc(fv('kTEnd')) + '"><span class="small">Ändern, pausieren oder beenden kannst du wiederkehrende Termine in den Einstellungen.</span>';
+    }
   } else {
     h += '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px"><div style="display:flex;flex-direction:column;gap:6px;min-width:0"><label class="flabel" for="k-von">von</label><input id="k-von" type="date" class="inp" style="background:var(--card)" data-in="kVon" value="' + esc(fv('kVon')) + '"></div>' +
       '<div style="display:flex;flex-direction:column;gap:6px;min-width:0"><label class="flabel" for="k-bis">bis</label><input id="k-bis" type="date" class="inp" style="background:var(--card)" data-in="kBis" value="' + esc(fv('kBis')) + '"></div></div>';
@@ -2670,10 +2695,10 @@ function viewKalender() {
   }
   aside += '</section>';
   const once = Object.keys(D.termine).map((id) => Object.assign({ id: id }, D.termine[id])).filter((x) => isDate(x.datum) && x.datum >= addDays(t, -14)).sort((a, b) => (a.datum + (a.von || '') < b.datum + (b.von || '') ? -1 : 1));
-  aside += '<section class="panel" aria-label="Einmalige Termine"><h2>Einmalige Termine</h2>' + (K.form && K.form.kind === 'termin' ? kalForm() : '') +
-    (once.length ? '<div style="display:flex;flex-direction:column">' + once.map((x) => '<div class="spanrow" data-k="ot-' + esc(x.id) + '"><span class="sw term"></span><span class="tx"><b>' + esc(x.titel) + bsp(x) + '</b><span class="small">' + esc(fmtShort(x.datum) + (x.von ? ' · ' + terminText(x) : '')) + '</span></span><button class="linkbtn" style="align-self:center" aria-label="Termin ' + esc(x.titel) + ' ändern" data-a="kEdit" data-v="termin" data-id="' + esc(x.id) + '">ändern</button></div>').join('') + '</div>' : '<span class="small">Keine einmaligen Termine. Neue trägst du in der Woche ein.</span>') +
+  aside += '<section class="panel" aria-label="Termine" id="k-termine"><h2>Einmalige Termine</h2>' + (K.form && K.form.kind === 'termin' ? kalForm() : '<button class="addbtn" style="min-height:44px;border-radius:12px" data-a="kNew" data-v="termin">' + ico('plus', 'xs') + 'Termin</button>') +
+    (once.length ? '<div style="display:flex;flex-direction:column">' + once.map((x) => '<div class="spanrow" data-k="ot-' + esc(x.id) + '"><span class="sw term"></span><span class="tx"><b>' + esc(x.titel) + bsp(x) + '</b><span class="small">' + esc(fmtShort(x.datum) + (x.von || x.ganztags ? ' · ' + terminText(x) : '')) + '</span></span><button class="linkbtn" style="align-self:center" aria-label="Termin ' + esc(x.titel) + ' ändern" data-a="kEdit" data-v="termin" data-id="' + esc(x.id) + '">ändern</button></div>').join('') + '</div>' : '<span class="small">Keine einmaligen Termine. Tipp im Kalender auf einen Tag, um dort einen einzutragen.</span>') +
     '</section>';
-  aside += '<section class="legend2" aria-label="Legende"><span><i style="background:var(--hl);width:auto;height:auto;padding:1px 5px;color:var(--hl-text);font-style:normal;font-size:12px;font-weight:700">einmalig</i>Termin</span><span><i style="background:var(--band)"></i>Etappe</span><span><i style="background:var(--ok-band)"></i>Pause frei</span><span><i style="border:1.5px dashed var(--ring)"></i>Wiederholungspause</span><span><i style="width:16px;height:14px;border:1.5px dashed var(--ring)"></i>Puffer</span><span><i style="width:16px;height:14px;background:var(--ok-soft)"></i>freier Tag</span><span><i style="width:16px;height:14px;border:2px solid var(--ink)"></i>heute</span></section>';
+  aside += '<section class="legend2" aria-label="Legende"><span><i style="background:var(--hl);width:auto;height:auto;padding:1px 5px;color:var(--hl-text);font-style:normal;font-size:12px;font-weight:700">einmalig</i>oder ganztägiger Termin</span><span><i style="background:var(--band)"></i>Etappe</span><span><i style="background:var(--ok-band)"></i>Pause frei</span><span><i style="border:1.5px dashed var(--ring)"></i>Wiederholungspause</span><span><i style="width:16px;height:14px;border:1.5px dashed var(--ring)"></i>Puffer</span><span><i style="width:16px;height:14px;background:var(--ok-soft)"></i>freier Tag</span><span><i style="width:16px;height:14px;border:2px solid var(--ink)"></i>heute</span></section>';
   return h + '<div class="kalwrap"><section class="kal" aria-label="Kalender nach Wochen"><div class="scroll" id="kal-scroll">' + head + rows + '</div></section><aside class="kalaside">' + aside + '</aside></div>';
 }
 
@@ -2785,13 +2810,13 @@ Object.assign(EXTRA_ACT, {
   kGroup: (d) => { K.groups[d.id] = !K.groups[d.id]; },
   kOpenWeek: () => {},
   kalOpenWeek: (d) => { S.view = 'woche'; S.wk = d.w === mondayOf(today()) ? null : d.w; window.scrollTo(0, 0); },
-  kNew: (d) => { K.form = { kind: d.v, id: null }; F.kName = ''; F.kVon = ''; F.kBis = ''; F.kZiel = ''; F.kArt = 'frei'; F.kErr = ''; K.listOpen = true; focusSoon('k-name'); },
+  kNew: (d) => { K.form = { kind: d.v, id: null }; F.kName = ''; F.kVon = d.d || (d.v === 'termin' ? today() : ''); F.kBis = ''; F.kZiel = ''; F.kArt = 'frei'; F.kTVon = ''; F.kTBis = ''; F.kGanz = false; F.kWdh = false; F.kTEnd = ''; F.kErr = ''; if (d.v !== 'termin') K.listOpen = true; focusSoon('k-name'); },
   kEdit: (d) => {
     const col = d.v === 'etappe' ? 'etappen' : (d.v === 'pause' ? 'pausen' : 'termine');
     const x = D[col][d.id]; if (!x) return;
     K.form = { kind: d.v, id: d.id };
     F.kErr = '';
-    if (d.v === 'termin') { F.kName = x.titel || ''; F.kVon = x.datum || ''; F.kTVon = x.von || ''; F.kTBis = x.bis || ''; }
+    if (d.v === 'termin') { F.kName = x.titel || ''; F.kVon = x.datum || ''; F.kTVon = x.von || ''; F.kTBis = x.bis || ''; F.kGanz = !!x.ganztags; F.kWdh = false; }
     else { F.kName = x.name || ''; F.kVon = x.von || ''; F.kBis = x.bis || ''; F.kZiel = x.ziel || ''; F.kArt = x.art === 'wdh' ? 'wdh' : 'frei'; }
     focusSoon('k-name');
   },
@@ -2801,12 +2826,17 @@ Object.assign(EXTRA_ACT, {
     const f = K.form; if (!f) return;
     const name = String(F.kName || '').trim();
     if (f.kind === 'termin') {
-      if (!name) { F.kErr = 'Bitte einen Titel eintragen.'; return 'keep'; }
-      if (!isDate(F.kVon)) { F.kErr = 'Bitte einen Tag wählen.'; return 'keep'; }
-      if (!F.kTVon) { F.kErr = 'Ein Termin braucht eine Uhrzeit (von).'; return 'keep'; }
-      if (F.kTBis && timeToMin(F.kTBis) <= timeToMin(F.kTVon)) { F.kErr = '„bis“ muss nach „von“ liegen.'; return 'keep'; }
-      undoable('Termin gespeichert', () => patch('termine', f.id, { titel: name, datum: F.kVon, von: F.kTVon, bis: F.kTBis || '', beispiel: false }));
-      reflowDay(F.kVon);
+      const old = f.id ? D.termine[f.id] : null;
+      F.kErr = terminCheck(name, F.kTVon, F.kTBis, F.kGanz);
+      if (!F.kErr && !isDate(F.kVon)) F.kErr = 'Bitte einen Tag wählen.';
+      if (!F.kErr && F.kVon < today() && !(old && old.datum === F.kVon)) F.kErr = 'Neue Termine gehen ab heute.';
+      if (!F.kErr && !f.id && F.kWdh && isDate(F.kTEnd) && F.kTEnd < F.kVon) F.kErr = '„bis“ darf nicht vor dem Tag liegen.';
+      if (F.kErr) return 'keep';
+      const ganz = !!F.kGanz; const von = ganz ? '' : F.kTVon; const bis = ganz ? '' : (F.kTBis || '');
+      if (f.id) undoable('Termin gespeichert', () => patch('termine', f.id, { titel: name, datum: F.kVon, von: von, bis: bis, ganztags: ganz, beispiel: false }));
+      else if (F.kWdh) undoable('Termin eingetragen, jede Woche am ' + WDL[wdOf(F.kVon)], () => addTerminWeekly(F.kVon, name, von, bis, ganz, F.kTEnd));
+      else undoable('Termin eingetragen', () => addTerminOnce(F.kVon, name, von, bis, ganz));
+      if (f.id) reflowDay(F.kVon);
       K.form = null; return;
     }
     if (f.kind === 'etappe' && !name) { F.kErr = 'Eine Etappe braucht einen Namen.'; return 'keep'; }
@@ -3626,16 +3656,15 @@ const ACT = {
   pushW: (d) => pushWdh(d.d),
   carryKeep: (d) => carryKeep(d.id),
   carryDrop: (d) => carryDrop(d.id),
-  tfOpen: () => { S.tfOpen = !S.tfOpen; F.tfTitel = ''; F.tfVon = ''; F.tfBis = ''; F.tfErr = ''; S.tfDay = null; if (S.tfOpen) focusSoon('tf-titel'); },
+  tGanz: (d) => { F[d.k] = !F[d.k]; return 'keep'; },
+  tfOpen: () => { S.tfOpen = !S.tfOpen; F.tfTitel = ''; F.tfVon = ''; F.tfBis = ''; F.tfGanz = false; F.tfErr = ''; S.tfDay = null; if (S.tfOpen) focusSoon('tf-titel'); },
   tfClose: () => { S.tfOpen = false; },
   tfDay: (d) => { S.tfDay = d.d; return 'keep'; },
   tfSave: (d) => {
     const von = F.tfVon || ''; const bis = F.tfBis || '';
-    if (!String(F.tfTitel || '').trim()) { F.tfErr = 'Bitte einen Titel eintragen.'; return 'keep'; }
-    if (!von) { F.tfErr = 'Ein Termin braucht eine Uhrzeit (von).'; return 'keep'; }
-    if (bis && timeToMin(bis) <= timeToMin(von)) { F.tfErr = '„bis“ muss nach „von“ liegen.'; return 'keep'; }
-    F.tfErr = '';
-    if (addTerminOnce(d.d, F.tfTitel, von, bis)) { S.tfOpen = false; toast('Termin eingetragen', false); }
+    F.tfErr = terminCheck(F.tfTitel, von, bis, F.tfGanz);
+    if (F.tfErr) return 'keep';
+    if (addTerminOnce(d.d, F.tfTitel, von, bis, F.tfGanz)) { S.tfOpen = false; toast('Termin eingetragen', false); }
   },
   goPlanNext: () => { S.wk = addDays(mondayOf(today()), 7); window.scrollTo(0, 0); },
   planShow: (d) => { S.planShow[d.w] = true; },
