@@ -1274,9 +1274,17 @@ function capacity(T, split, from, withBlocks) {
 }
 function planFrom(T) { const t = today(); return T > t ? T : t; }
 // Verteilung nach den Neigungen (Variante C), wenn Claude nicht erreichbar ist
+// Ohne gewählten Modus: ab ½ Tag am Stück (Tiefe beim Einarbeiten), kleinere Vorhaben als kurze Stücke nebenher
+const modusOf = (r) => r.modus || (r.hours >= 3 ? 'stueck' : 'verteilt');
 function allocRegel(rows, cap) {
   const maxB = Math.max(1, cfg().bloeckeProTag);
   const dates = Object.keys(cap).sort();
+  // Große Vorhaben zuerst (Tage am Stück), wenn alles in die Woche passt oder nächste Woche eine Pause liegt; sonst gilt die Reihenfolge, damit das Unterste übrig bleibt
+  const passt = rows.reduce((a, r) => a + r.hours, 0) <= dates.reduce((a, d) => a + cap[d], 0) - 0.5;
+  const pauseNext = dates.length && weekDates(addDays(mondayOf(dates[0]), 7)).filter((d) => pauseAt(d).frei).length >= 3;
+  if (passt || pauseNext) {
+    rows = rows.map((r, i) => ({ r: r, i: i })).sort((a, b) => (modusOf(a.r) === 'stueck' ? 0 : 1) - (modusOf(b.r) === 'stueck' ? 0 : 1) || a.i - b.i).map((x) => x.r);
+  }
   const left = {}; dates.forEach((d) => { left[d] = cap[d]; });
   const days = {}; dates.forEach((d) => { days[d] = []; });
   const over = [];
@@ -1284,18 +1292,18 @@ function allocRegel(rows, cap) {
   const full = (d, id) => days[d].length + base[d] >= maxB && !days[d].some((x) => x.id === id);
   // Platz für das kurze Aufgreifen eines großen Vorhabens am Ende der Woche freihalten
   const lastDay = dates[dates.length - 1];
-  const hasBig = rows.some((r) => r.modus !== 'verteilt' && r.hours >= 6);
+  const hasBig = rows.some((r) => modusOf(r) === 'stueck' && r.hours >= 6);
   const reserve = hasBig && lastDay && dates.length > 1 && left[lastDay] >= 1.5 && base[lastDay] + 1 < maxB;
   if (reserve) { left[lastDay] -= 0.5; base[lastDay] += 1; }
   const placed = [];
   rows.forEach((r) => {
     let h = r.hours;
     let last = null;
-    if (r.modus === 'verteilt') {
+    if (modusOf(r) === 'verteilt') {
       let guard = 0;
       while (h > 0.01 && guard++ < 40) {
         let moved = false;
-        dates.forEach((d) => {
+        dates.slice().sort((a, b) => left[b] - left[a] || (a < b ? -1 : 1)).forEach((d) => {
           if (h <= 0.01 || left[d] < 1 || full(d, r.id)) return;
           const take = Math.min(1.5, left[d], h);
           left[d] -= take; h -= take; moved = true;
@@ -1321,7 +1329,7 @@ function allocRegel(rows, cap) {
   });
   // Große Vorhaben gegen Ende der Woche kurz aufgreifen (erster verteilter Abruf)
   if (reserve) { left[lastDay] += 0.5; base[lastDay] -= 1; }
-  const big = placed.filter((p) => p.r.modus !== 'verteilt' && p.r.hours >= 6 && p.last && p.last < lastDay).sort((a, b) => b.r.hours - a.r.hours)[0];
+  const big = placed.filter((p) => modusOf(p.r) === 'stueck' && p.r.hours >= 6 && p.last && p.last < lastDay).sort((a, b) => b.r.hours - a.r.hours)[0];
   if (big && lastDay && left[lastDay] >= 0.5 && days[lastDay].length + base[lastDay] < maxB) {
     days[lastDay].push({ id: big.r.id, titel: shortName(big.r.titel) + ' kurz aufgreifen', std: 0.5, aufgreifen: true });
     left[lastDay] -= 0.5;
@@ -2392,7 +2400,7 @@ function planCard(T) {
       '<button class="more" aria-expanded="' + more + '" data-a="vMore" data-id="' + esc(v.id) + '">' + (more ? 'Weniger' : ['Mehr'].concat(n > 1 ? [n + ' Wochen'] : [], v.modus ? [v.modus === 'stueck' ? 'am Stück' : 'verteilt'] : [], v.wdhVon && thema(v.wdhVon) ? ['Wiederholung von ' + shortName(themaLabel(v.wdhVon))] : []).join(' · ')) +
       '<svg class="ico xs" viewBox="0 0 24 24" aria-hidden="true" style="transform:' + (more ? 'rotate(180deg)' : 'none') + '">' + ICON.down + '</svg></button>';
     if (more) {
-      h += '<div style="display:flex;flex-direction:column;gap:6px;padding-bottom:6px"><span class="small">Verteilung beim automatischen Verteilen</span><div class="chips" role="group" aria-label="Verteilung">' +
+      h += '<div style="display:flex;flex-direction:column;gap:6px;padding-bottom:6px"><span class="small">Verteilung beim automatischen Verteilen · „automatisch“: ab ½ Tag am Stück, kleiner verteilt</span><div class="chips" role="group" aria-label="Verteilung">' +
         [[null, 'automatisch'], ['stueck', 'am Stück'], ['verteilt', 'verteilt']].map((m) => '<button class="sel" aria-pressed="' + ((v.modus || null) === m[0]) + '" data-a="vModus" data-id="' + esc(v.id) + '" data-m="' + (m[0] || '') + '">' + m[1] + '</button>').join('') + '</div>' +
         '<span class="small">Gebiet</span>' + gebietChips(v.gebiet || null, 'vGeb" data-id="' + esc(v.id)) +
         '<label class="small" for="wk-' + esc(v.id) + '">Gilt für mehrere Wochen</label><div style="display:flex;align-items:center;gap:10px"><span style="font-size:15px">gilt für</span>' +
