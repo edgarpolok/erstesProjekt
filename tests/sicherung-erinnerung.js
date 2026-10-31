@@ -51,24 +51,28 @@ L.run(async () => {
   L.expect('sicherungTage 0: kein Kasten trotz „nie gesichert“', await kasten(p), null);
   await p.context().close();
 
-  // 5) Einstellungen: Chips setzen die Schwelle
+  // 5) Einstellungen: freie Zahl setzt die Schwelle
   p = await L.open(seed({ sicherung: { am: '2026-10-22' } }), SA, 1280); // 9 Tage her
   L.expect('9 Tage her, Standard 14: kein Kasten', await kasten(p), null);
   await L.go(p, 'einstellungen');
-  const chip = (n) => '[data-a=esSet][data-k=sicherungTage][data-n="' + n + '"]';
-  await L.click(p, chip(7));
-  L.expect('Chip 7 setzt sicherungTage', (await L.store(p)).meta.config.sicherungTage, 7);
+  const setze = async (n) => { await L.fill(p, '#es-sich', String(n)); await p.press('#es-sich', 'Enter'); await p.waitForTimeout(100); };
+  await setze(7);
+  L.expect('7 setzt sicherungTage', (await L.store(p)).meta.config.sicherungTage, 7);
   L.has('mit 7: Kasten ab 7 Tagen', (await kasten(p)) || '', 'Letzte Sicherung vor 9 Tagen');
   await L.go(p, 'einstellungen');
-  await L.click(p, chip(0));
-  L.expect('Chip 0 setzt sicherungTage', (await L.store(p)).meta.config.sicherungTage, 0);
+  await setze(0);
+  L.expect('0 setzt sicherungTage', (await L.store(p)).meta.config.sicherungTage, 0);
   L.expect('mit 0: kein Kasten', await kasten(p), null);
   await L.go(p, 'einstellungen');
-  await L.click(p, chip(30));
-  L.expect('Chip 30 setzt sicherungTage', (await L.store(p)).meta.config.sicherungTage, 30);
+  await setze(30);
+  L.expect('30 setzt sicherungTage', (await L.store(p)).meta.config.sicherungTage, 30);
   await L.go(p, 'einstellungen');
-  await L.click(p, chip(14));
-  L.expect('Chip 14 setzt sicherungTage', (await L.store(p)).meta.config.sicherungTage, 14);
+  await setze(14);
+  L.expect('14 setzt sicherungTage', (await L.store(p)).meta.config.sicherungTage, 14);
+  await setze(45);
+  L.expect('freie Zahl 45 Tage', (await L.store(p)).meta.config.sicherungTage, 45);
+  await setze(400);
+  L.expect('400 abgelehnt, bleibt 45', (await L.store(p)).meta.config.sicherungTage, 45);
   await p.context().close();
 
   // 6) „Jetzt sichern“ trägt das heutige Datum ein, der Kasten verschwindet
