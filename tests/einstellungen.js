@@ -39,15 +39,15 @@ L.run(async () => {
 
   // Darstellung (dass sie nach dem Neuladen bleibt, prüft app-offline.js über http; unter file:// hält Chromium den Speicher nicht zuverlässig)
   await L.click(p, '[data-a=esDesign][data-v=dunkel]');
-  L.expect('dunkel: Attribut und Hintergrund', await p.evaluate(() => [document.documentElement.getAttribute('data-theme'), getComputedStyle(document.body).backgroundColor]), ['dark', 'rgb(18, 18, 20)']);
+  L.expect('dunkel: Attribut und Hintergrund', await p.evaluate(() => [document.documentElement.getAttribute('data-theme'), getComputedStyle(document.body).backgroundColor]), ['dark', 'rgb(22, 20, 18)']);
   await L.click(p, '[data-a=esDesign][data-v=hell]');
-  L.expect('hell', await p.evaluate(() => [document.documentElement.getAttribute('data-theme'), getComputedStyle(document.body).backgroundColor]), ['light', 'rgb(245, 245, 247)']);
+  L.expect('hell', await p.evaluate(() => [document.documentElement.getAttribute('data-theme'), getComputedStyle(document.body).backgroundColor]), ['light', 'rgb(246, 244, 240)']);
   await L.click(p, '[data-a=esDesign][data-v=auto]');
   L.expect('automatisch: kein festes Attribut', await p.evaluate(() => document.documentElement.getAttribute('data-theme')), null);
   await p.context().close();
 
   // System dunkel + automatisch: alle Ansichten heil, dunkler Hintergrund
   p = await L.open({}, 'sim-2026-11-03-1000', { w: 1280, dark: true });
-  L.expect('System dunkel: dunkler Hintergrund', await p.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgb(18, 18, 20)');
+  L.expect('System dunkel: dunkler Hintergrund', await p.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgb(22, 20, 18)');
   for (const v of ['woche', 'kalender', 'themen', 'einstellungen', 'heute']) await L.go(p, v);
 });

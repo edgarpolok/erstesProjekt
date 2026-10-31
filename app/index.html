@@ -12,39 +12,39 @@
 <style>
 /* Lernsystem · Stil D „Klar + Heft": ruhige Karten, Serife für Überschriften, Farbe nur für Gebiete, Grün für erledigt */
 :root {
-  --bg: #F5F5F7; --card: #FFFFFF; --line: #E5E5EA; --ink: #1D1D1F; --quiet: #6E6E73; --soft: #F2F2F5;
-  --nav: rgba(255, 255, 255, 0.72); --ring: #A1A1A6; --pick: #FFFFFF; --ok: #2E9B57; --ok-text: #237A45; --ok-soft: #E5F4EA;
-  --ok-mark: #FFFFFF; --knob-off: #FFFFFF; --x: #B4574F; --seg: #EDEDF0; --band: #E5E5EA; --soll: #C7C7CC;
+  --bg: #F6F4F0; --card: #FFFEFC; --line: #E8E4DD; --ink: #2A2622; --quiet: #706A62; --soft: #F1EEE9;
+  --nav: rgba(255, 254, 252, 0.72); --ring: #A8A198; --pick: #FFFFFF; --ok: #2E9B57; --ok-text: #237A45; --ok-soft: #E5F4EA;
+  --ok-mark: #FFFFFF; --knob-off: #FFFFFF; --x: #B4574F; --seg: #EEEAE4; --band: #E6E1D9; --soll: #C9C2B7;
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
   --g-blau: #4A76C9; --g-blau-t: #2F5AA8; --g-violett: #8063C9; --g-violett-t: #5E44A6;
   --g-orange: #C07A3A; --g-orange-t: #8C5420; --g-petrol: #2E8585; --g-petrol-t: #1E6464;
   --g-rosa: #B45A8C; --g-rosa-t: #8E3F6C; --g-oliv: #868436; --g-oliv-t: #63621F;
-  --ok-band: #CDE9D6; --hl: #F7E8A6; --hl-text: #3B3416; --hl-dot: #C9A227; --past: #FAFAFC; --st1: #D1D1D6; --st2: #8E8E93; --st3: #3A3A3C;
-  --f-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
+  --ok-band: #CDE9D6; --hl: #F7E8A6; --hl-text: #3B3416; --hl-dot: #C9A227; --past: #FAF8F5; --st1: #D9D3CA; --st2: #968E83; --st3: #3D3832;
+  --f-display: ui-serif, 'New York', Georgia, serif;
   --f-body: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, 'Segoe UI', sans-serif;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #121214; --card: #1C1C1E; --line: #2C2C2E; --ink: #F5F5F7; --quiet: #A1A1A6; --soft: #2C2C2E;
-    --nav: rgba(28, 28, 30, 0.72); --ring: #636366; --pick: #3A3A3C; --ok: #7CC596; --ok-text: #9AD4AE; --ok-soft: #24362A;
-    --ok-mark: #121214; --knob-off: #A1A1A6; --x: #E0918A; --seg: #242426; --band: #3A3A3C; --soll: #545458;
+    --bg: #161412; --card: #201E1B; --line: #312E2A; --ink: #F4F0EA; --quiet: #A8A096; --soft: #2C2925;
+    --nav: rgba(32, 30, 27, 0.72); --ring: #6B655D; --pick: #3A3631; --ok: #7CC596; --ok-text: #9AD4AE; --ok-soft: #24362A;
+    --ok-mark: #161412; --knob-off: #A8A096; --x: #E0918A; --seg: #262320; --band: #3A3631; --soll: #57524B;
     --shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
     --g-blau: #8FB0EA; --g-blau-t: #B3C9F2; --g-violett: #B29DE6; --g-violett-t: #CFC0F2;
     --g-orange: #E0A673; --g-orange-t: #EFC9A4; --g-petrol: #6CC2C2; --g-petrol-t: #9CD9D9;
     --g-rosa: #E39CC3; --g-rosa-t: #F0BFD9; --g-oliv: #C6C47A; --g-oliv-t: #DCDAA6;
-    --ok-band: #2F4A38; --hl: #4A4122; --hl-text: #F3E6B3; --hl-dot: #C9A227; --past: #161618; --st1: #48484A; --st2: #8E8E93; --st3: #E5E5EA;
+    --ok-band: #2F4A38; --hl: #4A4122; --hl-text: #F3E6B3; --hl-dot: #C9A227; --past: #1A1815; --st1: #4A4540; --st2: #918A80; --st3: #E8E2D9;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #121214; --card: #1C1C1E; --line: #2C2C2E; --ink: #F5F5F7; --quiet: #A1A1A6; --soft: #2C2C2E;
-  --nav: rgba(28, 28, 30, 0.72); --ring: #636366; --pick: #3A3A3C; --ok: #7CC596; --ok-text: #9AD4AE; --ok-soft: #24362A;
-  --ok-mark: #121214; --knob-off: #A1A1A6; --x: #E0918A; --seg: #242426; --band: #3A3A3C; --soll: #545458;
+  --bg: #161412; --card: #201E1B; --line: #312E2A; --ink: #F4F0EA; --quiet: #A8A096; --soft: #2C2925;
+  --nav: rgba(32, 30, 27, 0.72); --ring: #6B655D; --pick: #3A3631; --ok: #7CC596; --ok-text: #9AD4AE; --ok-soft: #24362A;
+  --ok-mark: #161412; --knob-off: #A8A096; --x: #E0918A; --seg: #262320; --band: #3A3631; --soll: #57524B;
   --shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
   --g-blau: #8FB0EA; --g-blau-t: #B3C9F2; --g-violett: #B29DE6; --g-violett-t: #CFC0F2;
   --g-orange: #E0A673; --g-orange-t: #EFC9A4; --g-petrol: #6CC2C2; --g-petrol-t: #9CD9D9;
   --g-rosa: #E39CC3; --g-rosa-t: #F0BFD9; --g-oliv: #C6C47A; --g-oliv-t: #DCDAA6;
-  --ok-band: #2F4A38; --hl: #4A4122; --hl-text: #F3E6B3; --hl-dot: #C9A227; --past: #161618; --st1: #48484A; --st2: #8E8E93; --st3: #E5E5EA;
+  --ok-band: #2F4A38; --hl: #4A4122; --hl-text: #F3E6B3; --hl-dot: #C9A227; --past: #1A1815; --st1: #4A4540; --st2: #918A80; --st3: #E8E2D9;
   color-scheme: dark;
 }
 
@@ -540,10 +540,10 @@ select.inp { padding: 0 8px; }
 .locked .check:not(.on) .c, .locked .rtile:not(.done) .ck { opacity: 0.4; }
 
 
-/* ================= Stil „Clean“: Graphit, weiche Formen, dezentes Glas ================= */
-body { background: radial-gradient(900px 520px at 0% -8%, rgba(120, 124, 140, 0.10), transparent 65%), radial-gradient(800px 480px at 105% 4%, rgba(150, 140, 128, 0.08), transparent 65%), var(--bg); background-attachment: fixed; }
-h1, .serif { font-weight: 700; letter-spacing: -0.02em; }
-.card, .panel, .row, .form, .rtile, .prog, .day, .subcard { border-color: transparent; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 6px 20px rgba(0, 0, 0, 0.05); }
+/* ================= Stil „Clean, warm“: Sand und warmes Graphit, weiche Formen, dezentes Glas, Überschriften in New York ================= */
+body { background: radial-gradient(900px 520px at 0% -8%, rgba(240, 196, 160, 0.20), transparent 65%), radial-gradient(800px 480px at 105% 4%, rgba(214, 196, 164, 0.18), transparent 65%), var(--bg); background-attachment: fixed; }
+h1, .serif { font-weight: 600; letter-spacing: -0.01em; }
+.card, .panel, .row, .form, .rtile, .prog, .day, .subcard { border-color: transparent; box-shadow: 0 1px 2px rgba(60, 40, 20, 0.05), 0 6px 20px rgba(60, 40, 20, 0.06); }
 .card, .panel, .form, .rtile, .prog, .softbox, .pool, .dashed, .note { border-radius: 20px; }
 .row, .day, .subcard, .pitem { border-radius: 16px; }
 .btn, .btn.big, .quietbtn, .planlink, .addbtn { border-radius: 999px; }
