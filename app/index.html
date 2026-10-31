@@ -9,43 +9,42 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Lernsystem">
 <style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Source+Sans+3:wght@400;500;600;700&display=swap">
 <style>
 /* Lernsystem · Stil D „Klar + Heft": ruhige Karten, Serife für Überschriften, Farbe nur für Gebiete, Grün für erledigt */
 :root {
-  --bg: #F7F6F2; --card: #FFFFFF; --line: #E6E2DA; --ink: #23211D; --quiet: #67625A; --soft: #F0EEE9;
-  --nav: #FCFBF9; --ring: #948F86; --pick: #FFFFFF; --ok: #3E8E5E; --ok-text: #2F7049; --ok-soft: #E4F1E8;
-  --ok-mark: #FFFFFF; --knob-off: #FFFFFF; --x: #B4574F; --seg: #F0EDE7; --band: #E4DFD6; --soll: #BFB7A9;
-  --shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+  --bg: #F5F5F7; --card: #FFFFFF; --line: #E5E5EA; --ink: #1D1D1F; --quiet: #6E6E73; --soft: #F2F2F5;
+  --nav: rgba(255, 255, 255, 0.72); --ring: #A1A1A6; --pick: #FFFFFF; --ok: #2E9B57; --ok-text: #237A45; --ok-soft: #E5F4EA;
+  --ok-mark: #FFFFFF; --knob-off: #FFFFFF; --x: #B4574F; --seg: #EDEDF0; --band: #E5E5EA; --soll: #C7C7CC;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
   --g-blau: #4A76C9; --g-blau-t: #2F5AA8; --g-violett: #8063C9; --g-violett-t: #5E44A6;
   --g-orange: #C07A3A; --g-orange-t: #8C5420; --g-petrol: #2E8585; --g-petrol-t: #1E6464;
   --g-rosa: #B45A8C; --g-rosa-t: #8E3F6C; --g-oliv: #868436; --g-oliv-t: #63621F;
-  --ok-band: #CFE6D6; --hl: #F7E8A6; --hl-text: #3B3416; --hl-dot: #C9A227; --past: #FAF9F6; --st1: #D8D1C4; --st2: #A0978A; --st3: #4A453D;
-  --f-display: 'Fraunces', Georgia, serif;
-  --f-body: 'Source Sans 3', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --ok-band: #CDE9D6; --hl: #F7E8A6; --hl-text: #3B3416; --hl-dot: #C9A227; --past: #FAFAFC; --st1: #D1D1D6; --st2: #8E8E93; --st3: #3A3A3C;
+  --f-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
+  --f-body: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, 'Segoe UI', sans-serif;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #1B1915; --card: #25221D; --line: #3B362E; --ink: #F2ECE0; --quiet: #ADA495; --soft: #332E27;
-    --nav: #201E1A; --ring: #7D7466; --pick: #433D34; --ok: #7CC596; --ok-text: #9AD4AE; --ok-soft: #24362A;
-    --ok-mark: #1B1915; --knob-off: #ADA495; --x: #E0918A; --seg: #2F2B25; --band: #3D3830; --soll: #6A6154;
+    --bg: #121214; --card: #1C1C1E; --line: #2C2C2E; --ink: #F5F5F7; --quiet: #A1A1A6; --soft: #2C2C2E;
+    --nav: rgba(28, 28, 30, 0.72); --ring: #636366; --pick: #3A3A3C; --ok: #7CC596; --ok-text: #9AD4AE; --ok-soft: #24362A;
+    --ok-mark: #121214; --knob-off: #A1A1A6; --x: #E0918A; --seg: #242426; --band: #3A3A3C; --soll: #545458;
     --shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
     --g-blau: #8FB0EA; --g-blau-t: #B3C9F2; --g-violett: #B29DE6; --g-violett-t: #CFC0F2;
     --g-orange: #E0A673; --g-orange-t: #EFC9A4; --g-petrol: #6CC2C2; --g-petrol-t: #9CD9D9;
     --g-rosa: #E39CC3; --g-rosa-t: #F0BFD9; --g-oliv: #C6C47A; --g-oliv-t: #DCDAA6;
-    --ok-band: #2F4A38; --hl: #4A4122; --hl-text: #F3E6B3; --hl-dot: #C9A227; --past: #211F1B; --st1: #6A6154; --st2: #A39886; --st3: #E6DED0;
+    --ok-band: #2F4A38; --hl: #4A4122; --hl-text: #F3E6B3; --hl-dot: #C9A227; --past: #161618; --st1: #48484A; --st2: #8E8E93; --st3: #E5E5EA;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #1B1915; --card: #25221D; --line: #3B362E; --ink: #F2ECE0; --quiet: #ADA495; --soft: #332E27;
-  --nav: #201E1A; --ring: #7D7466; --pick: #433D34; --ok: #7CC596; --ok-text: #9AD4AE; --ok-soft: #24362A;
-  --ok-mark: #1B1915; --knob-off: #ADA495; --x: #E0918A; --seg: #2F2B25; --band: #3D3830; --soll: #6A6154;
+  --bg: #121214; --card: #1C1C1E; --line: #2C2C2E; --ink: #F5F5F7; --quiet: #A1A1A6; --soft: #2C2C2E;
+  --nav: rgba(28, 28, 30, 0.72); --ring: #636366; --pick: #3A3A3C; --ok: #7CC596; --ok-text: #9AD4AE; --ok-soft: #24362A;
+  --ok-mark: #121214; --knob-off: #A1A1A6; --x: #E0918A; --seg: #242426; --band: #3A3A3C; --soll: #545458;
   --shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
   --g-blau: #8FB0EA; --g-blau-t: #B3C9F2; --g-violett: #B29DE6; --g-violett-t: #CFC0F2;
   --g-orange: #E0A673; --g-orange-t: #EFC9A4; --g-petrol: #6CC2C2; --g-petrol-t: #9CD9D9;
   --g-rosa: #E39CC3; --g-rosa-t: #F0BFD9; --g-oliv: #C6C47A; --g-oliv-t: #DCDAA6;
-  --ok-band: #2F4A38; --hl: #4A4122; --hl-text: #F3E6B3; --hl-dot: #C9A227; --past: #211F1B; --st1: #6A6154; --st2: #A39886; --st3: #E6DED0;
+  --ok-band: #2F4A38; --hl: #4A4122; --hl-text: #F3E6B3; --hl-dot: #C9A227; --past: #161618; --st1: #48484A; --st2: #8E8E93; --st3: #E5E5EA;
   color-scheme: dark;
 }
 
@@ -540,6 +539,18 @@ select.inp { padding: 0 8px; }
 .kal button.cell:hover { background: var(--soft); }
 .locked .check:not(.on) .c, .locked .rtile:not(.done) .ck { opacity: 0.4; }
 
+
+/* ================= Stil „Clean“: Graphit, weiche Formen, dezentes Glas ================= */
+body { background: radial-gradient(900px 520px at 0% -8%, rgba(120, 124, 140, 0.10), transparent 65%), radial-gradient(800px 480px at 105% 4%, rgba(150, 140, 128, 0.08), transparent 65%), var(--bg); background-attachment: fixed; }
+h1, .serif { font-weight: 700; letter-spacing: -0.02em; }
+.card, .panel, .row, .form, .rtile, .prog, .day, .subcard { border-color: transparent; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 6px 20px rgba(0, 0, 0, 0.05); }
+.card, .panel, .form, .rtile, .prog, .softbox, .pool, .dashed, .note { border-radius: 20px; }
+.row, .day, .subcard, .pitem { border-radius: 16px; }
+.btn, .btn.big, .quietbtn, .planlink, .addbtn { border-radius: 999px; }
+.toast { border-radius: 18px; }
+.bottom, .timerbar { background: var(--nav); -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%); border-color: rgba(128, 128, 136, 0.18); }
+.side { background: transparent; border-right-color: transparent; }
+.side button[aria-current="page"] { background: var(--card); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.05); }
 </style>
 <div id="app"></div>
 <script>
