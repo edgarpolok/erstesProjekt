@@ -3873,13 +3873,13 @@ function exportData() {
   return { format: 'lernsystem', version: 1, exportiert: today(), daten: daten };
 }
 function downloadExport() {
+  patch('meta', 'sicherung', { am: today() }); // vor dem Sichern, damit die Datei das eigene Datum kennt (nach dem Laden stimmt „zuletzt gesichert“)
   const blob = new Blob([JSON.stringify(exportData(), null, 1)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = 'lernsystem-sicherung-' + today() + '.json';
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
-  patch('meta', 'sicherung', { am: today() });
   toast('Sicherung gespeichert (im Download-Ordner)', false);
 }
 function parseImport(text) {
