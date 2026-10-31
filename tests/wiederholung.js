@@ -111,7 +111,8 @@ L.run(async () => {
   L.expect('Do: die vier von heute, Stufe 2', vor[2], ['Einheit A/2', 'Einheit B/2', 'Einheit C/2', 'Einheit D/2']);
   await L.go(p, 'woche');
   L.has('Woche heute: Themen, Minuten, Überhang', await L.text(p, '[data-k="d-2026-11-02"]'), '4 Themen · 60 min · 1 weitere in „Noch offen“');
-  L.has('Woche Donnerstag: voraussichtlich', await L.text(p, '[data-k="d-2026-11-05"]'), '4 Themen · 60 min · voraussichtlich');
+  L.has('Woche Donnerstag zugeklappt: Wiederholung auf einen Blick', await L.text(p, '[data-k="d-2026-11-05"]'), 'Wiederholung: 4 Themen · 60 min · voraussichtlich');
+  await L.click(p, '[data-k="d-2026-11-05"] .lbl');
   await L.click(p, '[data-a=wdhTag][data-d="2026-11-05"]');
   L.has('aufgeklappt: Namen', await L.text(p, '[data-k="wl-2026-11-05"]'), 'Einheit A');
   L.expect('aufgeklappt: Ring mit Abstand', await p.$$eval('[data-k="wl-2026-11-05"] .wring b', (els) => els.map((e) => e.textContent)), ['3', '3', '3', '3']);

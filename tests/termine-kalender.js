@@ -35,7 +35,7 @@ L.run(async () => {
     // Heute am 20.11. zeigt den ganztägigen Termin; Termin aus der Woche eintragen
     await L.sim(p, '2026-11-20', 9 * 60); await L.go(p, 'heute');
     L.has(tg + 'Heute 20.11. zeigt „ganztägig“', await L.text(p), 'ganztägig');
-    await L.go(p, 'woche'); await L.click(p, '[data-a=tfOpen]'); await L.fill(p, '#tf-titel', 'Sprechstunde'); await L.click(p, '[data-a=tGanz][data-k=tfGanz]'); await L.click(p, '[data-a=tfSave]');
+    await L.go(p, 'woche'); await L.click(p, '[data-a=wAdd]'); await L.click(p, '[data-a=tfOpen]'); await L.fill(p, '#tf-titel', 'Sprechstunde'); await L.click(p, '[data-a=tGanz][data-k=tfGanz]'); await L.click(p, '[data-a=tfSave]');
     L.expect(tg + 'Termin aus der Woche: heute, ganztägig', Object.values((await L.store(p)).termine).filter((t) => t.titel === 'Sprechstunde').map((t) => [t.datum, !!t.ganztags]), [['2026-11-20', true]]);
     await L.noHScroll(p, 'Woche');
     await p.context().close();

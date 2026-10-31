@@ -42,7 +42,7 @@ L.run(async () => {
 
   // 4) Aus der Woche eintragen, Rückgängig
   p = await L.open({}, 'sim-2026-11-10-1000', 1280);
-  await L.go(p, 'woche'); await L.click(p, '[data-a=tfOpen]');
+  await L.go(p, 'woche'); await L.click(p, '[data-a=wAdd]'); await L.click(p, '[data-a=tfOpen]');
   await L.fill(p, '#tf-titel', 'Öffentliches Recht'); await L.fill(p, '#tf-von', '10:00');
   await L.click(p, '[data-a=tGanz][data-k=tfKlausur]'); await L.click(p, '[data-a=tfSave]');
   kl = await klausuren(p);

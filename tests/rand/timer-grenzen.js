@@ -54,7 +54,7 @@ L.run(async () => {
   // Zurücklegen aus der Woche während der Timer läuft
   p = await L.open(blockAm('2026-12-30'), 'sim-2026-12-30-1000', 1280);
   await L.click(p, '[data-a=startT][data-art=b][data-id=b1]');
-  await L.go(p, 'woche'); await L.click(p, '[data-a=pushB][data-id=b1]');
+  await L.go(p, 'woche'); await L.click(p, '[data-a=wMenu][data-id=b1]'); await L.click(p, '[data-a=wPool][data-id=b1]');
   s = await L.store(p);
   L.expect('zurückgelegt: Timer aus, Block ohne Tag', [s.meta.timer.laeuft, s.bloecke.b1.tag], [false, null]);
   await p.context().close();

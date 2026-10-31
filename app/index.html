@@ -120,6 +120,9 @@ h1, .serif { font-family: var(--f-display); font-weight: 600; letter-spacing: -0
 
 /* ---------- Abschnitte, Karten ---------- */
 .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); gap: 24px; align-items: start; }
+/* Heute und Woche: Hauptspalte zwei Drittel, Nebenspalte ein Drittel */
+@media (min-width: 900px) { .cols.zweidrittel { grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); } }
+.zweidrittel .rgrid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 .stack { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .stack.l { gap: 20px; }
 .h2 { margin: 0 4px 2px; font-size: 13px; font-weight: 600; color: var(--quiet); }
@@ -345,11 +348,21 @@ select.inp { padding: 0 8px; }
 .it .plus { margin-left: 6px; font-size: 12px; font-weight: 600; color: var(--ok-text); }
 .it .idot { flex: 0 0 auto; width: 7px; height: 7px; margin: 7px -2px 0; border-radius: 4px; background: var(--gm); }
 .push { flex: 0 0 auto; width: 44px; height: 44px; margin: -12px -12px -12px 0; padding: 0; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: var(--quiet); }
-.collapsed { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; min-height: 20px; padding: 0; border: 0; background: transparent; text-align: left; }
+.collapsed { display: flex; flex-direction: column; align-items: stretch; gap: 4px; min-height: 20px; padding: 0; border: 0; background: transparent; text-align: left; color: var(--ink); }
+.collapsed .ag { display: flex; gap: 10px; min-width: 0; font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
+.collapsed .ag .tm { flex: 0 0 76px; font-size: 13px; line-height: 1.5; font-variant-numeric: tabular-nums; color: var(--quiet); }
+.collapsed .ag.off { color: var(--quiet); text-decoration: line-through; }
+.collapsed .ag.lern { color: var(--quiet); }
+.collapsed .mks { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
 .collapsed .mk { margin-top: 0; width: 14px; height: 14px; }
 .collapsed .mk svg { width: 8px; height: 8px; }
 .collapsed em { margin-left: 4px; font-style: normal; font-size: 14px; color: var(--quiet); }
 .collapsed em.all { color: var(--ok-text); }
+.wplus { align-self: flex-start; display: flex; align-items: center; gap: 6px; min-height: 36px; margin: 0 0 -6px -6px; padding: 0 8px; border: 0; border-radius: 10px; background: transparent; color: var(--quiet); font-size: 14px; font-weight: 600; }
+.wplus:hover { background: var(--soft); color: var(--ink); }
+.wadd, .wmenu { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 12px; background: var(--soft); }
+.wmenu { margin: 2px 0 4px; }
+.wmenu > .chipbtn { align-self: flex-start; }
 .daynote { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--quiet); }
 .daynote.ok { color: var(--ok-text); }
 .chev { flex: 0 0 auto; width: 32px; height: 32px; margin: -6px -8px 0 0; padding: 0; border: 0; border-radius: 10px; background: transparent; display: flex; align-items: center; justify-content: center; color: var(--quiet); }
@@ -424,7 +437,7 @@ select.inp { padding: 0 8px; }
 .kal .days { grid-column: 2 / 9; grid-row: 2; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
 .kal .cell { min-width: 0; min-height: 44px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 4px 3px 6px; border-left: 1px solid var(--line); }
 .kal .cell:first-child { border-left: 0; }
-@media (min-width: 900px) { .kal .cell { min-height: 66px; align-items: stretch; padding: 6px 6px 8px; } }
+@media (min-width: 900px) { .kal .cell { height: 94px; overflow: hidden; align-items: stretch; padding: 6px 6px 8px; } }
 .kal .cell .n { font-size: 13px; font-weight: 600; white-space: nowrap; }
 .kal .cell .m { margin-top: -3px; font-size: 10px; font-weight: 700; letter-spacing: 0.02em; }
 .kal .cell.before { color: var(--quiet); }
@@ -432,13 +445,19 @@ select.inp { padding: 0 8px; }
 .kal .cell.puffer { outline: 1.5px dashed var(--ring); outline-offset: -3px; border-radius: 8px; }
 .kal .cell.today { box-shadow: inset 0 0 0 2px var(--ink); border-radius: 8px; }
 .kal .cell.today .n { font-weight: 800; }
-.kal .tm { display: none; min-width: 0; font-size: 12px; font-weight: 500; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kal .tm { display: none; flex: 0 0 auto; min-width: 0; font-size: 12px; font-weight: 500; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .kal .tm.once { padding: 1px 4px; border-radius: 4px; background: var(--hl); color: var(--hl-text); font-weight: 700; }
 .kal .tdots { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px; }
 .kal .tdots i { width: 7px; height: 7px; box-sizing: border-box; border-radius: 4px; background: var(--ink); }
 .kal .cell.before .tdots i { background: var(--ring); }
 .kal .tdots i.once { background: var(--hl-dot); border: 1px solid var(--hl-text); }
-@media (min-width: 900px) { .kal .tm { display: block; } .kal .tdots { display: none; } }
+.kal .foot { display: none; align-items: center; flex-wrap: wrap; gap: 3px; margin-top: auto; }
+.kal .foot i { width: 6px; height: 6px; border-radius: 3px; background: var(--ink); opacity: 0.55; }
+.kal .cell.before .foot i { background: var(--ring); opacity: 1; }
+.kal .foot .more { margin-right: 3px; font-size: 11px; font-weight: 700; color: var(--quiet); }
+@media (min-width: 900px) { .kal .tm { display: block; } .kal .foot { display: flex; } .kal .tdots { display: none; } }
+.kal .kwbtn em { display: none; margin-top: 6px; font-style: normal; font-size: 12px; font-weight: 600; color: var(--ink); white-space: nowrap; }
+@media (min-width: 900px) { .kal .kwbtn:hover em, .kal .kwbtn:focus-visible em { display: block; } .kal .kwbtn:hover { background: var(--soft); } }
 .kal .sum { grid-column: 2 / 9; grid-row: 3; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 10px 10px; font-size: 13px; line-height: 1.4; color: var(--quiet); }
 .kal .group .okchip, .h2row h2 { flex-shrink: 0; white-space: nowrap; }
 .okchip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px 2px 6px; border-radius: 999px; background: var(--ok-soft); color: var(--ok-text); font-size: 12px; font-weight: 700; }
@@ -1298,7 +1317,7 @@ const vStd = (v) => (typeof v.std === 'number' && v.std > 0 ? v.std : EST_H);
 // Blöcke, die beim erneuten Planen stehen bleiben (erledigt, heute begonnen, frei hinzugefügt, mitgenommen)
 function keptBlocks(d) {
   const t = today();
-  return blocksAt(d).filter((b) => !(b.status === 'offen' && (b.quelle === 'liste' || b.quelle === 'claude') && !b.mitgenommen && !b.restVon && b.tag !== t));
+  return blocksAt(d).filter((b) => !(b.status === 'offen' && (b.quelle === 'liste' || b.quelle === 'claude') && !b.mitgenommen && !b.restVon && !b.fest && b.tag !== t));
 }
 const blockH = (b) => (typeof b.std === 'number' && b.std > 0 ? b.std : (b.zeit ? num(b.zeit, 0) / 60 : 0));
 // Erste Woche nach einer freien Pause (mind. 3 Tage in der Vorwoche) plant Claude bewusst leichter
@@ -1652,6 +1671,11 @@ function pullToday(id) {
   if (b && isDate(b.tag) && b.tag < t && offen > 0) part.zeitFrueher = Object.assign({}, isObj(b.zeitFrueher) ? b.zeitFrueher : {}, { [b.tag]: num((b.zeitFrueher || {})[b.tag], 0) + offen });
   patch('bloecke', id, part);
 }
+// Von Hand auf einen Tag gelegt: bleibt dort, auch beim Verteilen und wenn ein Termin dazukommt
+function moveBlock(id, d) {
+  if (!D.bloecke[id] || !isDate(d)) return;
+  undoable('Liegt jetzt am ' + WDL[wdOf(d)], () => patch('bloecke', id, { tag: d, fest: true, zurueckgelegt: false }));
+}
 function pushToPool(id) {
   if (timerRef() === 'b:' + id) stopTimer();
   undoable('In „Noch offen“ zurückgelegt', () => patch('bloecke', id, { tag: null, zurueckgelegt: true }));
@@ -1763,14 +1787,14 @@ function clearPlanBlocks(T) {
   const t = today();
   Object.keys(D.bloecke).forEach((id) => {
     const b = D.bloecke[id];
-    if (b.woche === T && b.status === 'offen' && (b.quelle === 'liste' || b.quelle === 'claude') && !b.mitgenommen && !b.restVon && b.tag !== t) del('bloecke', id);
+    if (b.woche === T && b.status === 'offen' && (b.quelle === 'liste' || b.quelle === 'claude') && !b.mitgenommen && !b.restVon && !b.fest && b.tag !== t) del('bloecke', id);
   });
 }
 function planRows(T) {
   const kept = {};
   Object.keys(D.bloecke).forEach((id) => {
     const b = D.bloecke[id];
-    if (b.woche === T && b.vorhaben && b.status !== 'gestrichen') kept[b.vorhaben] = (kept[b.vorhaben] || 0) + (b.status === 'erledigt' || b.tag === today() || b.restVon ? num(b.std, vStd(D.vorhaben[b.vorhaben] || {})) : 0);
+    if (b.woche === T && b.vorhaben && b.status !== 'gestrichen') kept[b.vorhaben] = (kept[b.vorhaben] || 0) + (b.status === 'erledigt' || b.tag === today() || b.restVon || b.fest ? num(b.std, vStd(D.vorhaben[b.vorhaben] || {})) : 0);
   });
   return vorhabenFor(T).filter((v) => String(v.name || '').trim()).map((v) => ({
     id: v.id, titel: v.name.trim(), hours: Math.max(0, vStd(v) - (kept[v.id] || 0)), modus: v.modus || null,
@@ -1870,7 +1894,7 @@ function reflowDay(date) {
   const room = (d) => freeH(d) - num(split[d], 0) / 60 - load(d);
   let guard = 0;
   while (room(date) < -0.01 && guard++ < 5) {
-    const bl = blocksAt(date).filter((b) => b.status === 'offen' && b.quelle === 'claude').pop();
+    const bl = blocksAt(date).filter((b) => b.status === 'offen' && b.quelle === 'claude' && !b.fest).pop();
     if (!bl) break;
     const cap = capacity(W, split, today());
     const target = Object.keys(cap).sort().find((d) => d !== date && room(d) >= num(bl.std, 1) && blocksAt(d).length < cfg().bloeckeProTag);
@@ -2222,7 +2246,7 @@ function viewHeute() {
       (open ? '<div style="display:flex;flex-direction:column;gap:6px;padding:0 8px 8px">' + (pl.n ? pl.html : '<span style="padding:6px 8px;font-size:14px;color:var(--quiet)">Nichts offen. Alles ist im Plan.</span>') + '</div>' : '') + '</div>');
   }
   const right = routineTiles(t);
-  h += '<div class="cols' + (past && !isOpenDay(t) && !(S.korr && S.korr[t]) ? ' locked' : '') + '"><section class="stack">' + left.join('') + '</section>' + (right ? '<div class="stack l">' + right + '</div>' : '') + '</div>';
+  h += '<div class="cols' + (right ? ' zweidrittel' : '') + (past && !isOpenDay(t) && !(S.korr && S.korr[t]) ? ' locked' : '') + '"><section class="stack">' + left.join('') + '</section>' + (right ? '<div class="stack l">' + right + '</div>' : '') + '</div>';
   return h;
 }
 
@@ -2270,7 +2294,7 @@ function dayItems(d, W) {
   });
   blocksAt(d).forEach((b) => {
     if (b.status === 'offen' && d < t) return; // liegt in „Noch offen" bzw. „Liegen geblieben"
-    items.push({ k: 'b', id: b.id, title: b.titel, gebiet: b.gebiet, done: b.status === 'erledigt', suffix: b.nachgetragen ? 'nachgetragen' : '', extra: !!b.zusaetzlich && b.status === 'erledigt', push: b.status === 'offen' && d >= t && W === mondayOf(t) });
+    items.push({ k: 'b', id: b.id, title: b.titel, gebiet: b.gebiet, done: b.status === 'erledigt', suffix: b.nachgetragen ? 'nachgetragen' : '', extra: !!b.zusaetzlich && b.status === 'erledigt', edit: b.status === 'offen' && d >= t, date: d, W: W });
   });
   if (!pz.frei && !pz.wdh) {
     const li = wdhListe(d);
@@ -2291,16 +2315,31 @@ function itemHtml(it) {
   const mk = '<span class="mk' + (it.done ? ' on' : '') + (it.x ? ' x' : '') + '"' + (it.x ? ' role="img" aria-label="liegen geblieben"' : '') + '>' + (it.x ? '<svg viewBox="0 0 24 24" aria-hidden="true">' + ICON.x + '</svg>' : CHECK_SVG) + '</span>';
   const dot = it.gebiet && thema(it.gebiet) ? '<span class="idot"' + gStyle(it.gebiet) + '></span>' : '';
   let push = '';
-  if (it.push && it.k === 'b') push = '<button class="push" aria-label="' + esc(it.title + ' zurück in „Noch offen diese Woche“') + '" title="Zurück in „Noch offen diese Woche“" data-a="pushB" data-id="' + esc(it.id) + '">' + ico('tray', 's') + '</button>';
+  if (it.edit && it.k === 'b') push = '<button class="dots" aria-label="' + esc('Optionen: ' + it.title) + '" aria-expanded="' + (S.wMenu === it.id) + '" data-a="wMenu" data-id="' + esc(it.id) + '">' + DOTS_SVG + '</button>';
   if (it.k === 'w' && it.liste) {
     const key = it.date;
     const open = !!S.wdhTag[key];
     return '<div class="it' + (it.done ? ' done' : '') + '">' + mk + '<button class="tx wbtn" aria-expanded="' + open + '" data-a="wdhTag" data-d="' + it.date + '">' + esc(it.title) + '<span class="sf">' + esc(it.suffix) + '</span></button></div>' +
       (open ? '<div class="wlist" data-k="wl-' + it.date + '">' + it.liste.map((x) => '<span class="wl">' + wdhRing(x.stufe, !!x.r, null, true) + '<span>' + esc(x.titel) + '</span></span>').join('') + '</div>' : '');
   }
-  if (it.push && it.k === 'w') push = '<button class="push" aria-label="Wiederholung ' + esc(it.suffix) + ' zurück in „Noch offen diese Woche“" title="Zurück in „Noch offen diese Woche“" data-a="pushW" data-d="' + it.date + '">' + ico('tray', 's') + '</button>';
   return '<div class="it' + (it.done || it.muted ? ' done' : '') + '">' + mk + dot + '<span class="tx">' + (it.time ? '<span class="tm">' + esc(it.time) + '</span>' : '') + esc(it.title) +
-    (it.suffix ? '<span class="sf">' + esc(it.suffix) + '</span>' : '') + (it.extra ? '<span class="plus">zusätzlich</span>' : '') + '</span>' + push + '</div>';
+    (it.suffix ? '<span class="sf">' + esc(it.suffix) + '</span>' : '') + (it.extra ? '<span class="plus">zusätzlich</span>' : '') + '</span>' + push + '</div>' + (it.edit && it.k === 'b' && S.wMenu === it.id ? blockMenu(it) : '');
+}
+function blockMenu(it) {
+  const t = today();
+  const id = esc(it.id);
+  const days = weekDates(it.W).filter((x) => x >= t && x !== it.date);
+  return '<div class="wmenu" data-k="wm-' + id + '">' +
+    (S.wRen === it.id ? '<div style="display:flex;gap:8px;flex-wrap:wrap"><label class="sr-only" for="w-ren">Neuer Titel</label><input id="w-ren" class="inp grow" data-in="wRen" data-enter="wRenSave" data-id="' + id + '" value="' + esc(fv('wRen')) + '" autocomplete="off"><button class="btn" data-a="wRenSave" data-id="' + id + '">Speichern</button></div>'
+      : '<button class="chipbtn" data-a="wRen" data-id="' + id + '">Umbenennen</button>') +
+    (days.length ? '<span class="flabel">Auf anderen Tag legen</span><div class="chips" role="group" aria-label="Auf anderen Tag legen">' + days.map((x) => '<button class="sel" data-a="wMove" data-id="' + id + '" data-d="' + x + '">' + WD[wdOf(x)] + ' ' + fmtDM(x) + '</button>').join('') + '</div>' : '') +
+    '<div class="chips"><button class="chipbtn" data-a="wPool" data-id="' + id + '">Zurück in „Noch offen“</button><button class="chipbtn" data-a="wDel" data-id="' + id + '">Löschen</button></div></div>';
+}
+function dayAdd(d, W) {
+  if (S.tfOpen && S.tfDay === d) return terminForm(W, true);
+  if (S.wAdd !== d) return '<button class="wplus" data-a="wAdd" data-d="' + d + '">' + ico('plus', 'xs') + 'Hinzufügen</button>';
+  return '<div class="wadd" data-k="wa-' + d + '"><div style="display:flex;gap:8px;flex-wrap:wrap"><label class="sr-only" for="w-add">Was willst du am ' + esc(WDL[wdOf(d)]) + ' lernen?</label><input id="w-add" class="inp grow" data-in="wAddText" data-enter="wAddSave" data-d="' + d + '" value="' + esc(fv('wAddText')) + '" placeholder="Was willst du lernen?" autocomplete="off"><button class="btn" data-a="wAddSave" data-d="' + d + '">Eintragen</button></div>' +
+    '<div style="display:flex;gap:4px;justify-content:space-between"><button class="linkbtn" style="color:var(--quiet)" data-a="tfOpen" data-d="' + d + '">stattdessen Termin</button><button class="linkbtn" style="color:var(--quiet);text-decoration:none" data-a="wAddClose">Abbrechen</button></div></div>';
 }
 function dayCard(d, W) {
   const t = today();
@@ -2311,7 +2350,7 @@ function dayCard(d, W) {
   const puf = isPufferDay(d) && !pz.frei && !free;
   const key = W + d;
   const canToggle = items.length > 0;
-  const def = d >= t;
+  const def = isToday;
   const open = S.dayOpen[key] != null ? S.dayOpen[key] : def;
   const expanded = !canToggle || open;
   const dn = items.filter((i) => i.done).length;
@@ -2325,9 +2364,12 @@ function dayCard(d, W) {
   const cls = 'day' + (isToday ? ' today' : '') + (pz.frei ? ' pause' : (free ? ' frei' : (puf ? ' puffer' : '')));
   let h = '<div class="' + cls + '" data-k="d-' + d + '"><button class="lbl" aria-label="' + esc(WDL[wdOf(d)] + ' ' + fmtDM(d) + (isToday ? ', heute' : '')) + '"' + (canToggle ? ' aria-expanded="' + expanded + '" data-a="dayT" data-key="' + key + '" data-open="' + expanded + '"' : '') + '><b>' + WD[wdOf(d)] + '</b><span>' + fmtDM(d) + '</span></button><div class="items">';
   if (isToday) h += '<span class="badge-today">Heute</span>';
-  if (expanded) h += items.map(itemHtml).join('');
-  else h += '<button class="collapsed" tabindex="-1" aria-hidden="true" data-a="dayT" data-key="' + key + '" data-open="false">' + items.map((i) => '<span class="mk' + (i.done ? ' on' : '') + '">' + CHECK_SVG + '</span>').join('') +
-    '<em class="' + (dn === items.length ? 'all' : '') + '">' + (dn === items.length ? dn + ' erledigt' : dn + ' von ' + items.length + ' erledigt') + '</em></button>';
+  if (expanded) h += items.map(itemHtml).join('') + (d >= t && !pz.frei ? dayAdd(d, W) : '');
+  else h += '<button class="collapsed" tabindex="-1" aria-hidden="true" data-a="dayT" data-key="' + key + '" data-open="false">' + items.filter((i) => i.k === 't').map((i) => '<span class="ag' + (i.muted ? ' off' : '') + '"><span class="tm">' + esc(i.time || '') + '</span><span>' + esc(i.title) + '</span></span>').join('') +
+    items.filter((i) => i.k === 'w').map((i) => '<span class="ag lern">Wiederholung: ' + esc(i.suffix) + '</span>').join('') +
+    (items.some((i) => i.k === 'b') ? '<span class="ag lern">Lernen: ' + esc(items.filter((i) => i.k === 'b').map((i) => i.title).join(' · ')) + '</span>' : '') +
+    '<span class="mks">' + items.map((i) => '<span class="mk' + (i.done ? ' on' : '') + '">' + CHECK_SVG + '</span>').join('') +
+    '<em class="' + (dn === items.length ? 'all' : '') + '">' + (dn === items.length ? dn + ' erledigt' : dn + ' von ' + items.length + ' erledigt') + '</em></span></button>';
   if (note) h += '<span class="daynote' + (noteOk ? ' ok' : '') + '">' + (noteOk ? ico('heute', 'xs') : '') + esc(note) + '</span>';
   if (d < t) h += '<button class="linkbtn" style="min-height:36px;margin:-4px 0 -8px -4px;font-size:13px;color:var(--quiet)" aria-label="' + esc(WDL[wdOf(d)] + ' ' + fmtDM(d) + (isOpenDay(d) ? ' bearbeiten' : ' ansehen oder korrigieren')) + '" data-a="editDay" data-d="' + d + '">' + (isOpenDay(d) ? 'Tag bearbeiten' : 'Tag ansehen · korrigieren') + '</button>';
   h += '</div>' + (canToggle ? '<button class="chev' + (expanded ? ' open' : '') + '" tabindex="-1" aria-hidden="true" data-a="dayT" data-key="' + key + '" data-open="' + expanded + '">' + ico('down', 'xs') + '</button>' : '') + '</div>';
@@ -2382,12 +2424,12 @@ function terminCheck(titel, von, bis, ganz) {
   if (!ganz && bis && timeToMin(bis) <= timeToMin(von)) return '„bis“ muss nach „von“ liegen.';
   return '';
 }
-function terminForm(W, nurTag) {
+function terminForm(W, imTag) {
   if (!S.tfOpen) return '';
   const t = today();
-  const days = nurTag ? [nurTag] : weekDates(W).filter((d) => d >= t);
+  const days = typeof imTag === 'string' ? [imTag] : weekDates(W).filter((d) => d >= t);
   const sel = S.tfDay && days.indexOf(S.tfDay) >= 0 ? S.tfDay : days[0];
-  return '<div class="form" data-k="tform"><h3 style="font-size:15px;font-weight:700">' + (nurTag ? 'Termin oder Klausur heute' : 'Einmaliger Termin') + '</h3>' + (nurTag ? '' : '<div class="chips" role="group" aria-label="Tag">' +
+  return '<div class="form" data-k="tform"><h3 style="font-size:15px;font-weight:700">' + (typeof imTag === 'string' ? 'Termin oder Klausur heute' : 'Einmaliger Termin' + (imTag ? ' am ' + esc(WDL[wdOf(sel)]) : '')) + '</h3>' + (imTag ? '' : '<div class="chips" role="group" aria-label="Tag">' +
     days.map((d) => '<button class="sel" aria-pressed="' + (d === sel) + '" data-a="tfDay" data-d="' + d + '">' + WD[wdOf(d)] + ' ' + fmtDM(d) + '</button>').join('') + '</div>') +
     '<label for="tf-titel">Titel</label><input id="tf-titel" class="inp" data-in="tfTitel" value="' + esc(fv('tfTitel')) + '" placeholder="z. B. Sprechstunde" autocomplete="off">' +
     zeitFelder('tf', 'tfVon', 'tfBis', 'tfGanz', false) +
@@ -2528,8 +2570,7 @@ function viewWoche() {
     left.push('<div class="infobox"><span style="font-size:15px;font-weight:700">Rückblick</span><span class="small" style="font-size:14px">' + (f.done.length ? f.done.length + (f.done.length === 1 ? ' Block' : ' Blöcke') + ' erledigt' : 'Keine Blöcke eingetragen') + (f.zeit ? ' · erfasst ' + fmtHM(f.zeit) : '') + '. Tippe einen Tag an, um ihn aufzuklappen.</span></div>');
   }
   const canT = !isPast && !allPause;
-  left.push('<section class="stack"><div class="h2row"><h2 class="h2">Die Tage</h2>' + (canT ? '<button class="linkbtn" style="text-decoration:none;display:flex;align-items:center;gap:6px;margin:-2px -4px" aria-expanded="' + S.tfOpen + '" data-a="tfOpen">' + ico('plus', 'xs') + 'Termin</button>' : '') + '</div>' +
-    (canT ? terminForm(W) : '') + weekDates(W).map((d) => dayCard(d, W)).join('') + '</section>');
+  left.push('<section class="stack"><div class="h2row"><h2 class="h2">Die Tage</h2></div>' + weekDates(W).map((d) => dayCard(d, W)).join('') + '</section>');
   if (isPast) {
     const lg = Object.keys(D.bloecke).map((id) => Object.assign({ id: id }, D.bloecke[id])).filter((b) => b.woche === W && b.status === 'offen');
     if (lg.length) left.push('<section class="stack"><h2 class="h2">Liegen geblieben</h2><div class="softbox">' + lg.map((b) => '<div class="pitem" data-k="lg-' + esc(b.id) + '"><span class="mk x" role="img" aria-label="liegen geblieben"><svg viewBox="0 0 24 24" aria-hidden="true">' + ICON.x + '</svg></span><div class="body">' + gLine(b.gebiet) + '<span class="t">' + esc(b.titel) + '</span><span class="small">entscheidest du in der aktuellen Woche</span></div></div>').join('') + '</div></section>');
@@ -2537,7 +2578,7 @@ function viewWoche() {
     const pl = poolList(W, t, isCur);
     if (pl.n) {
       left.push('<section class="stack"><h2 class="h2">Noch offen diese Woche</h2><div class="softbox">' + pl.html + '</div><span class="small" style="margin:0 4px">' +
-        (isCur ? 'Mit „+ Heute“ holst du sie dir in den Tag, am Puffertag sind sie dran. Mit dem Pfeil neben einem Block legst du ihn hierher zurück.' : 'Diese Vorhaben liegen ohne Tag in der Woche.') + '</span></section>');
+        (isCur ? 'Mit „+ Heute“ holst du sie dir in den Tag, am Puffertag sind sie dran. Über „⋯“ an einem Block legst du ihn hierher zurück.' : 'Diese Vorhaben liegen ohne Tag in der Woche.') + '</span></section>');
     }
   }
   if (wk.einschaetzung && wk.einschaetzung.text) {
@@ -2550,7 +2591,7 @@ function viewWoche() {
     if (!isCur || planned || S.planShow[W] || planBusy[W]) right.push(planCard(W));
     else right.push('<div class="infobox"><span style="font-size:15px;font-weight:700">Diese Woche ist noch nicht geplant</span><span class="small" style="font-size:14px">Sie läuft trotzdem mit Wiederholung, Terminen und Routinen.</span><button class="linkbtn" data-a="planShow" data-w="' + W + '">Diese Woche planen</button></div>');
   }
-  h += '<div class="cols"><div class="stack l">' + left.join('') + '</div>' + (right.length ? '<div class="stack l">' + right.join('') + '</div>' : '') + '</div>';
+  h += '<div class="cols' + (right.length ? ' zweidrittel' : '') + '"><div class="stack l">' + left.join('') + '</div>' + (right.length ? '<div class="stack l">' + right.join('') + '</div>' : '') + '</div>';
   return h;
 }
 
@@ -2607,7 +2648,7 @@ function kalWeek(W, lanes, spans, runStart) {
   const t = today();
   const past = addDays(W, 6) < t;
   let h = '<div class="grid week' + (past ? ' past' : '') + '" data-k="kw-' + W + '"' + (W === mondayOf(t) ? ' id="kw-now"' : '') + '>' +
-    '<button class="kwbtn" data-a="kalOpenWeek" data-w="' + W + '" aria-label="KW ' + kwOf(W) + ', ' + fmtDM(W) + ' bis ' + fmtDM(addDays(W, 6)) + ': Woche öffnen"><b>' + (window.innerWidth >= 900 ? 'KW ' : '') + kwOf(W) + '</b><span>' + fmtDM(W) + '–' + fmtDM(addDays(W, 6)) + '</span></button>';
+    '<button class="kwbtn" data-a="kalOpenWeek" data-w="' + W + '" aria-label="KW ' + kwOf(W) + ', ' + fmtDM(W) + ' bis ' + fmtDM(addDays(W, 6)) + ': Woche öffnen"><b>' + (window.innerWidth >= 900 ? 'KW ' : '') + kwOf(W) + '</b><span>' + fmtDM(W) + '–' + fmtDM(addDays(W, 6)) + '</span><em aria-hidden="true">öffnen ›</em></button>';
   const bands = [];
   spans.forEach((x) => {
     const a = x.von > W ? x.von : W;
@@ -2629,9 +2670,11 @@ function kalWeek(W, lanes, spans, runStart) {
     const terms = termineAt(d);
     const cls = 'cell' + (d < t ? ' before' : '') + (frei ? ' frei' : '') + (puf && d !== t ? ' puffer' : '') + (d === t ? ' today' : '');
     const tap = d >= t;
-    h += (tap ? '<button class="' + cls + '" data-a="kNew" data-v="termin" data-d="' + d + '" aria-label="' + esc('Termin eintragen am ' + fmtLong(d) + (terms.length ? ', schon ' + terms.length + (terms.length === 1 ? ' Termin' : ' Termine') : '')) + '">' : '<div class="' + cls + '">') + '<span class="n">' + dmy(d).d + (first && window.innerWidth >= 900 ? '. ' + MONS[dmy(d).m - 1] + (dmy(d).m === 1 ? ' ' + dmy(d).y : '') : '') + '</span>' + (first && window.innerWidth < 900 ? '<span class="m">' + MONS[dmy(d).m - 1] + (dmy(d).m === 1 ? ' ’' + String(dmy(d).y).slice(2) : '') + '</span>' : '') +
-      terms.slice(0, 2).map((x) => '<span class="tm' + (x.einmalig || x.ganztags ? ' once' : '') + '">' + esc((fmtTime(x.von) ? fmtTime(x.von) + (fmtTime(x.bis) && window.innerWidth >= 900 ? '–' + fmtTime(x.bis) : '') + ' ' : '') + x.titel) + '</span>').join('') +
-      (terms.length > 2 ? '<span class="tm" style="color:var(--quiet)">+' + (terms.length - 2) + ' weitere</span>' : '') +
+    const bes = terms.filter((x) => x.einmalig || x.ganztags); const reg = terms.filter((x) => !(x.einmalig || x.ganztags));
+    const tip = terms.length ? ' title="' + esc(terms.map((x) => (terminText(x) ? terminText(x) + ' ' : '') + x.titel).join('\n')) + '"' : '';
+    h += (tap ? '<button class="' + cls + '"' + tip + ' data-a="kNew" data-v="termin" data-d="' + d + '" aria-label="' + esc('Termin eintragen am ' + fmtLong(d) + (terms.length ? ', schon ' + terms.length + (terms.length === 1 ? ' Termin' : ' Termine') : '')) + '">' : '<div class="' + cls + '"' + tip + '>') + '<span class="n">' + dmy(d).d + (first && window.innerWidth >= 900 ? '. ' + MONS[dmy(d).m - 1] + (dmy(d).m === 1 ? ' ' + dmy(d).y : '') : '') + '</span>' + (first && window.innerWidth < 900 ? '<span class="m">' + MONS[dmy(d).m - 1] + (dmy(d).m === 1 ? ' ’' + String(dmy(d).y).slice(2) : '') + '</span>' : '') +
+      bes.slice(0, 2).map((x) => '<span class="tm once">' + esc(x.titel) + '</span>').join('') +
+      (bes.length > 2 || reg.length ? '<span class="foot">' + (bes.length > 2 ? '<span class="more">+' + (bes.length - 2) + '</span>' : '') + reg.map(() => '<i></i>').join('') + '</span>' : '') +
       (terms.length ? '<span class="tdots">' + terms.map((x) => '<i' + (x.einmalig || x.ganztags ? ' class="once"' : '') + '></i>').join('') + '</span>' : '') + (tap ? '</button>' : '</div>');
   });
   h += '</div>';
@@ -4122,11 +4165,25 @@ const ACT = {
   wkNext: () => { S.wk = addDays(S.wk || mondayOf(today()), 7); S.tfOpen = false; },
   wkCur: () => { S.wk = null; S.tfOpen = false; },
   dayT: (d) => { S.dayOpen[d.key] = d.open !== 'true'; },
+  wAdd: (d) => { S.wAdd = d.d; S.tfOpen = false; S.wMenu = null; F.wAddText = ''; focusSoon('w-add'); },
+  wAddClose: () => { S.wAdd = null; },
+  wAddSave: (d) => {
+    const txt = String(F.wAddText || '').trim();
+    if (!txt) { toast('Schreib kurz, was du lernen willst.', false); focusSoon('w-add'); return 'keep'; }
+    undoable('Eingetragen am ' + WDL[wdOf(d.d)], () => addBlock({ text: txt, date: d.d }));
+    F.wAddText = ''; focusSoon('w-add');
+  },
+  wMenu: (d) => { S.wMenu = S.wMenu === d.id ? null : d.id; S.wRen = null; },
+  wRen: (d) => { S.wRen = d.id; F.wRen = (D.bloecke[d.id] || {}).titel || ''; focusSoon('w-ren'); },
+  wRenSave: (d) => { if (!String(F.wRen || '').trim()) { focusSoon('w-ren'); return 'keep'; } renameBlock(d.id, F.wRen); S.wRen = null; S.wMenu = null; },
+  wMove: (d) => { moveBlock(d.id, d.d); S.wMenu = null; },
+  wPool: (d) => { pushToPool(d.id); S.wMenu = null; },
+  wDel: (d) => { deleteBlock(d.id); S.wMenu = null; },
   pushB: (d) => pushToPool(d.id),
   carryKeep: (d) => carryKeep(d.id),
   carryDrop: (d) => carryDrop(d.id),
   tGanz: (d) => { F[d.k] = !F[d.k]; return 'keep'; },
-  tfOpen: () => { S.tfOpen = !S.tfOpen; S.tfHeute = false; F.tfTitel = ''; F.tfVon = ''; F.tfBis = ''; F.tfGanz = false; F.tfKlausur = false; F.tfGeb = null; F.tfErr = ''; S.tfDay = null; if (S.tfOpen) focusSoon('tf-titel'); },
+  tfOpen: (d) => { S.tfOpen = d.d ? true : !S.tfOpen; S.tfHeute = false; S.wAdd = null; F.tfTitel = ''; F.tfVon = ''; F.tfBis = ''; F.tfGanz = false; F.tfKlausur = false; F.tfGeb = null; F.tfErr = ''; S.tfDay = d.d || null; if (S.tfOpen) { S.dayOpen[mondayOf(d.d || today()) + (d.d || today())] = true; focusSoon('tf-titel'); } },
   // Aus „Heute“: spontaner Termin oder spontane Klausur, Uhrzeit ab jetzt
   tfHeute: () => {
     const m = Math.floor(nowMin() / 5) * 5; const hm = (x) => String(Math.floor(x / 60) % 24).padStart(2, '0') + ':' + String(x % 60).padStart(2, '0');
@@ -4211,7 +4268,7 @@ window.addEventListener('resize', () => { const w = window.innerWidth >= 900; if
 document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleRender(); });
 // Zuletzt geöffnete Ansicht gilt, solange die App offen ist (auch nach Neuladen); nach dem Beenden startet „Heute“
 try { const v = sessionStorage.getItem('ls-view'); if (v && VIEW_FN[v]) S.view = v; } catch (e) { /* egal */ }
-window.__ls = { D: D, S: S, F: F, cfg: cfg, today: today, setSim: (d, m) => { setSim(d, m); scheduleRender(); }, progress: progress, pufferDate: pufferDate, capacity2: (T) => capacity(T, wdhSplit(T), planFrom(T), true), srItems: srItems, wdhListe: wdhListe, wdhSplit: wdhSplit, wdhForecast: wdhForecast, wdhRichtwert: wdhRichtwert, wdhUeberhang: wdhUeberhang, allocRegel: allocRegel, fillWdh: fillWdh, srRate: srRate, wdhState: wdhState, poolOf: poolOf, carryOf: carryOf, vorhabenFor: vorhabenFor, capacity: capacity, termineAt: termineAt, routinenAt: routinenAt, pauseAt: pauseAt, erfasstAt: erfasstAt, dbState: () => dbState };
+window.__ls = { D: D, S: S, F: F, cfg: cfg, today: today, setSim: (d, m) => { setSim(d, m); scheduleRender(); }, progress: progress, pufferDate: pufferDate, capacity2: (T) => capacity(T, wdhSplit(T), planFrom(T), true), srItems: srItems, wdhListe: wdhListe, wdhSplit: wdhSplit, wdhForecast: wdhForecast, wdhRichtwert: wdhRichtwert, wdhUeberhang: wdhUeberhang, allocRegel: allocRegel, fillWdh: fillWdh, srRate: srRate, wdhState: wdhState, poolOf: poolOf, carryOf: carryOf, vorhabenFor: vorhabenFor, capacity: capacity, termineAt: termineAt, routinenAt: routinenAt, pauseAt: pauseAt, erfasstAt: erfasstAt, dbState: () => dbState, moveBlock: moveBlock, clearPlanBlocks: (T) => { clearPlanBlocks(T); scheduleRender(); } };
 scheduleRender();
 initDb();
 if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch((e) => console.warn('Offline-Speicher', e));
