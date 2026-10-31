@@ -49,7 +49,7 @@ L.run(async () => {
   const termin = { titel: 'Klausur Strafrecht', datum: '2026-11-10', von: '08:00', bis: '14:00' };
   p = await L.open({ termine: { t1: termin } }, 'sim-2026-11-07-1000', 1280);
   await L.go(p, 'woche'); await L.click(p, '[data-a=wkNext]');
-  await L.click(p, '[data-a=vAdd]'); await L.fill(p, '.vrow input.inp', 'Großes Vorhaben'); await p.press('.vrow input.inp', 'Tab'); await p.waitForTimeout(150);
+  await L.click(p, '[data-a=vAdd]'); await L.fill(p, '.vrow input.inp[data-ch=vName]', 'Großes Vorhaben'); await p.press('.vrow input.inp[data-ch=vName]', 'Tab'); await p.waitForTimeout(150);
   await L.click(p, '[data-a=vStd][data-h="12"]');
   await L.click(p, '[data-a=planClaude]'); await p.waitForTimeout(300);
   let s = await L.store(p);

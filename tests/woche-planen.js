@@ -7,9 +7,9 @@ L.run(async () => {
   // 1) Mittwoch: laufende Woche planen
   let p = await L.open({}, 'sim-2026-10-28-1000');
   await L.go(p, 'woche'); await L.click(p, '[data-a=planShow]');
-  await L.click(p, '[data-a=vAdd]'); await L.fill(p, '.vrow input.inp', 'Sachenrecht – Eigentümer-Besitzer'); await p.press('.vrow input.inp', 'Tab'); await p.waitForTimeout(150);
+  await L.click(p, '[data-a=vAdd]'); await L.fill(p, '.vrow input.inp[data-ch=vName]', 'Sachenrecht – Eigentümer-Besitzer'); await p.press('.vrow input.inp[data-ch=vName]', 'Tab'); await p.waitForTimeout(150);
   await L.click(p, '[data-a=vStd][data-h="6"]');
-  await L.click(p, '[data-a=vAdd]'); await p.locator('.vrow input.inp').nth(1).fill('Klausur ZPO'); await p.locator('.vrow input.inp').nth(1).press('Tab'); await p.waitForTimeout(150);
+  await L.click(p, '[data-a=vAdd]'); await p.locator('.vrow input.inp[data-ch=vName]').nth(1).fill('Klausur ZPO'); await p.locator('.vrow input.inp[data-ch=vName]').nth(1).press('Tab'); await p.waitForTimeout(150);
   let s = await L.store(p);
   L.expect('zwei Vorhaben angelegt', Object.values(s.vorhaben).map((v) => [v.name, v.std]).sort(), [['Klausur ZPO', null], ['Sachenrecht – Eigentümer-Besitzer', 6]]);
   await L.click(p, '[data-a=planClaude]'); await p.waitForTimeout(300);
