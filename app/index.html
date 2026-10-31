@@ -4089,7 +4089,7 @@ function keysOverlay() {
 function navSide() {
   return '<nav class="side" aria-label="Ansichten"><span class="brand">Lernsystem</span>' +
     VIEWS.map((v) => '<button data-a="nav" data-v="' + v.k + '"' + (S.view === v.k ? ' aria-current="page"' : '') + '>' + ico(v.icon, 's') + v.label + '</button>').join('') +
-    '<button class="bottomlink" data-a="nav" data-v="einstellungen"' + (S.view === 'einstellungen' ? ' aria-current="page"' : '') + '>' + ico('einst', 's') + 'Einstellungen</button><button class="bottomlink" style="margin-top:0;font-size:13px;color:var(--quiet)" data-a="keysOpen">? Tastenkürzel</button></nav>';
+    '<button class="bottomlink" data-a="nav" data-v="einstellungen"' + (S.view === 'einstellungen' ? ' aria-current="page"' : '') + '>' + ico('einst', 's') + 'Einstellungen</button></nav>';
 }
 function navBottom() {
   return '<nav class="bottom" aria-label="Ansichten">' + VIEWS.map((v) => '<button data-a="nav" data-v="' + v.k + '"' + (S.view === v.k ? ' aria-current="page"' : '') + '>' + ico(v.icon) + v.label + '</button>').join('') + '</nav>';
