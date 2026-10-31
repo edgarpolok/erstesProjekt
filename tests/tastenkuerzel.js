@@ -26,10 +26,7 @@ L.run(async () => {
   await taste(p, '?');
   await L.click(p, '[data-a=keysClose]');
   L.expect('Knopf „Schließen“ schließt die Übersicht', await p.$(dlg), null);
-  L.has('Seitenleiste hat den Knopf „? Tastenkürzel“', await L.text(p, '[data-a=keysOpen]'), '? Tastenkürzel');
-  await L.click(p, '[data-a=keysOpen]');
-  L.ok('Knopf in der Seitenleiste öffnet die Übersicht', (await p.$(dlg)) !== null);
-  await taste(p, 'Escape');
+  L.expect('kein Knopf „? Tastenkürzel“ in der Seitenleiste', await p.locator('.side [data-a=keysOpen]').count(), 0);
   await p.context().close();
 
   // 3) n: neuer Eintrag in Heute mit Fokus im Feld

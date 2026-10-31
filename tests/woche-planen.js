@@ -22,7 +22,7 @@ L.run(async () => {
   L.ok('nichts in vergangene Tage verteilt', plan.every((b) => b.tag >= '2026-10-28' && b.tag <= '2026-11-01'), plan.map((b) => b.tag));
   L.ok('alle Blöcke offen und in dieser Woche', plan.every((b) => b.status === 'offen' && b.woche === '2026-10-26'));
   // Termin aus der Woche: heute 10–15 Uhr
-  await L.click(p, '[data-a=tfOpen]'); await L.fill(p, '#tf-titel', 'Sprechstunde'); await L.fill(p, '#tf-von', '10:00'); await L.fill(p, '#tf-bis', '15:00'); await L.click(p, '[data-a=tfSave]');
+  await L.click(p, '[data-a=wAdd]'); await L.click(p, '[data-a=tfOpen]'); await L.fill(p, '#tf-titel', 'Sprechstunde'); await L.fill(p, '#tf-von', '10:00'); await L.fill(p, '#tf-bis', '15:00'); await L.click(p, '[data-a=tfSave]');
   s = await L.store(p);
   L.expect('Termin aus der Woche gespeichert', Object.values(s.termine).map((t) => [t.titel, t.datum, t.von, t.bis]), [['Sprechstunde', '2026-10-28', '10:00', '15:00']]);
   L.has('Termin steht in der Woche', await L.text(p), 'Sprechstunde');
