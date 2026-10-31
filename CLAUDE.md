@@ -14,7 +14,7 @@ Persönlicher Lernplaner eines Jurastudenten als Web-App. Antworten und Texte in
 - Daten liegen in `localStorage` unter `lernsystem-daten-v1`, aufgeteilt in Sammlungen (`themen`, `bloecke`, `vorhaben`, `wochen`, `tage`, `termine`, `routinen`, `etappen`, `pausen`, `meta`, `module`). `put`/`patch`/`del` ändern den Stand `D` und speichern gebündelt.
 - Sichern und Laden: Einstellungen → „Daten auf diesem Gerät“, Format `{ format: 'lernsystem', version: 1, exportiert, daten }`.
 - `app/sw.js`: Offline-Speicher; die Seite selbst zuerst aus dem Netz, damit Updates sofort ankommen.
-- Erweiterungen im Datenmodell: wöchentliche Termine mit `ausfall: [{ von, bis }]`; Klausuren sind einmalige Termine mit `art: 'klausur'`, `gebiet`, `ergebnis: { punkte, ohne, am }`, `fehler: [{ text, block }]` (Fehler → Lerneinheit mit `quelle: 'klausur'` im Eingang); Themen haben neben `durchAm` (laufender Durchgang) `frueher: [Datum|null]` (vorige Durchgänge); Etappen haben `stoff: [Themen-Ids]` und `stoffKomplett`; `meta.config.sicherungTage` (Erinnerung ans Sichern, 0 = aus).
+- Erweiterungen im Datenmodell: wöchentliche Termine mit `ausfall: [{ von, bis }]`; Lernblöcke mit `fest: true` hat der Nutzer selbst auf einen Tag gelegt (bleiben beim Verteilen und Ausweichen liegen); Klausuren sind einmalige Termine mit `art: 'klausur'`, `gebiet`, `ergebnis: { punkte, ohne, am }`, `fehler: [{ text, block }]` (Fehler → Lerneinheit mit `quelle: 'klausur'` im Eingang); Themen haben neben `durchAm` (laufender Durchgang) `frueher: [Datum|null]` (vorige Durchgänge); Etappen haben `stoff: [Themen-Ids]` und `stoffKomplett`; `meta.config.sicherungTage` (Erinnerung ans Sichern, 0 = aus).
 - Tastenkürzel (`KEYS`, Übersicht mit „?“ und in den Einstellungen): N, 1–4, T, /, ⌘Z, ?, Esc – nur außerhalb von Eingabefeldern.
 - Keine Claude-Funktionen: Wochenverteilung (`allocRegel`) und Wocheneinschätzung laufen nach festen Regeln.
 
@@ -64,6 +64,7 @@ Playwright und Chromium sind in der Cloud-Umgebung vorinstalliert. Jede Testdate
 | `gliederung.js` | Gliederung einfügen (Einrückung, Nummern, vier Ebenen, Vorhandenes weiterverwenden) |
 | `etappe-stoff.js` | Etappe mit Stoff: „X von Y bisher angelegten Themen“, Balken erst bei vollständigem Stoff |
 | `woche-kalender-ansicht.js` | Woche: Tage zugeklappt mit Terminen (Uhrzeit) und „Lernen: …“, nur heute offen, zwei Drittel Breite; Kalender: wöchentliche Termine als Punkte, Besonderes als Text mit „+N“, gleich hohe Tage |
+| `woche-tage-bearbeiten.js` | Woche: „+ Hinzufügen“ an heute/kommenden Tagen (Lernblock, „stattdessen Termin“), „⋯“-Menü (Umbenennen, anderer Tag, „Noch offen“, Löschen) mit Rückgängig; von Hand gelegte Blöcke (`fest`) bleiben beim Ausweichen und erneuten Verteilen liegen |
 | `app-offline.js` | über einen eigenen Webserver: Neuladen, Service Worker offline, Updates sofort, Sichern/Laden, keine fremden Dienste |
 
 Unter `file://` hält Chromium localStorage/sessionStorage beim Neuladen nicht zuverlässig; alles, was das Neuladen überstehen muss, prüft deshalb `app-offline.js` über http.
