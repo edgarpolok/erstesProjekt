@@ -14,8 +14,8 @@ Persönlicher Lernplaner eines Jurastudenten als Web-App. Antworten und Texte in
 - Daten liegen in `localStorage` unter `lernsystem-daten-v1`, aufgeteilt in Sammlungen (`themen`, `bloecke`, `vorhaben`, `wochen`, `tage`, `termine`, `routinen`, `etappen`, `pausen`, `meta`, `module`). `put`/`patch`/`del` ändern den Stand `D` und speichern gebündelt.
 - Sichern und Laden: Einstellungen → „Daten auf diesem Gerät“, Format `{ format: 'lernsystem', version: 1, exportiert, daten }`.
 - `app/sw.js`: Offline-Speicher; die Seite selbst zuerst aus dem Netz, damit Updates sofort ankommen.
-- Erweiterungen im Datenmodell: wöchentliche Termine mit `ausfall: [{ von, bis }]`; Lernblöcke mit `fest: true` hat der Nutzer selbst auf einen Tag gelegt (bleiben beim Verteilen und Ausweichen liegen); Klausuren sind einmalige Termine mit `art: 'klausur'`, `gebiet`, `ergebnis: { punkte, ohne, am }`, `fehler: [{ text, block }]` (Fehler → Lerneinheit mit `quelle: 'klausur'` im Eingang); Themen haben neben `durchAm` (laufender Durchgang) `frueher: [Datum|null]` (vorige Durchgänge); Etappen haben `stoff: [Themen-Ids]` und `stoffKomplett`; `meta.config.sicherungTage` (Erinnerung ans Sichern, 0 = aus).
-- Tastenkürzel (`KEYS`, Übersicht mit „?“ und in den Einstellungen): N, 1–4, T, /, ⌘Z, ?, Esc – nur außerhalb von Eingabefeldern.
+- Erweiterungen im Datenmodell: wöchentliche Termine mit `ausfall: [{ von, bis }]`; Lernblöcke mit `fest: true` hat der Nutzer selbst auf einen Tag gelegt (bleiben beim Verteilen und Ausweichen liegen); Klausuren sind einmalige Termine mit `art: 'klausur'`, `gebiet`, `ergebnis: { punkte, ohne, am }`, `fehler: [{ text, block }]` (Fehler → Lerneinheit mit `quelle: 'klausur'` im Eingang); wöchentliche Klausuren sind wöchentliche Termine mit `art: 'klausur'`, Ergebnis und Fehler je Termin unter `ergebnisse: { datum: { ergebnis, fehler } }` (in der Statistik mit Id `termin@datum`); spontan eintragen unter Heute → Hinzufügen → Mehr; Themen haben neben `durchAm` (laufender Durchgang) `frueher: [Datum|null]` (vorige Durchgänge); Etappen haben `stoff: [Themen-Ids]` und `stoffKomplett`; `meta.config.sicherungTage` (Erinnerung ans Sichern, 0 = aus); Tagesliste der Wiederholung `tage[d].wdh = { min, liste: [{ ref, min, geholt? }], bew: { ref: { r, vorher, nachgetragen?, zeitNach? } }, zeiten: { ref: Minuten } }` (älteres `wdh.zeit` = Zeit für den ganzen Tag, zählt weiter mit; `wochen[*].wdhMin/wdhVerteilung` werden nicht mehr benutzt). Timer einer Zeile: `art: 'w'`, `id: 'Tag~t.themaId'`.
+- Keine Tastenkürzel (auf Wunsch des Nutzers entfernt: Zahlen störten bei Eingaben).
 - Keine Claude-Funktionen: Wochenverteilung (`allocRegel`) und Wocheneinschätzung laufen nach festen Regeln.
 
 ## Regeln aus dem Entwurf, die nicht kaputtgehen dürfen
@@ -24,7 +24,7 @@ Persönlicher Lernplaner eines Jurastudenten als Web-App. Antworten und Texte in
 - Termine verrutschen nie; ausweichen müssen nur verteilte Lernblöcke.
 - Vergangene Tage: frei bearbeitbar bis 23:59 des Folgetags; danach nur nach unten korrigieren (Haken weg, Zeit verringern, Text, Löschen). Hinzufügen nur über „Fehler korrigieren“, dann mit Schildchen „nachgetragen“.
 - Timer über Mitternacht: Zeit zählt für den Starttag; holt man einen Block danach in einen neuen Tag, bleibt die alte Zeit beim alten Tag (`zeitFrueher`).
-- Wiederholung: Abstände 1, 3, 7, 14, 30, 60, 90, 120 Tage, jeweils ab der letzten Wiederholung; Zeit der Woche verteilt sich nach Fälligkeit, Überfälliges über die restlichen Tage. Neues (und seine Folgewiederholungen) bekommt in geplanten Wochen Zeit dazu.
+- Wiederholung: Abstände 1, 3, 7, 14, 30, 60, 90, 120 Tage, jeweils ab der letzten Wiederholung. Jedes fällige Thema ist eine eigene Zeile im „Plan für heute“ (mit Ring: Zahl = Abstand, Bogen = Stufe; Timer und Zeit je Zeile; Bewertung = erledigt). Richtwert pro Tag (`meta.config.wdhProTag`, Standard 60 min) × Tagesumfang (halber Tag die Hälfte, freier Tag nichts automatisch); Ältestes zuerst, was darüber liegt, steht einzeln in „Noch offen“ („+ Heute“ holt es dazu) und kommt am nächsten Tag zuerst. Der Richtwert begrenzt nichts. Die Woche zeigt pro Tag eine aufklappbare Zeile, künftige Tage „voraussichtlich“ (gerechnet mit „sicher“). Die Wochenplanung zeigt nur eine Schätzung, die beim Verteilen frei gehalten wird. Rechte Spalte in Heute: nur Routinen.
 - Datenändernde Aktionen gehen über `undoable(...)` und sind 5 Sekunden lang rückgängig zu machen. Ausnahme: Abhaken und Bewerten nimmt man durch nochmaliges Tippen zurück. Nachfrage vor dem Löschen nur bei Themen; Blöcke, Pausen, Routinen, Termine und Vorhaben löschen sofort, mit Rückgängig.
 
 ## Testen
@@ -48,7 +48,7 @@ Playwright und Chromium sind in der Cloud-Umgebung vorinstalliert. Jede Testdate
 | `heute.js` | Hinzufügen, Abhaken, Zeit, Rest bei Teilerledigung, Termine und Routinen des Tages |
 | `woche-planen.js` | Vorhaben planen, Termin aus der Woche, Liegengebliebenes mitnehmen/streichen, spätere Tage |
 | `verteilen.js` | `allocRegel` (Kapazität, alles verteilt, am Stück), Termine verrutschen nie, Blöcke weichen aus |
-| `wiederholung.js` | Abstände 1–120 ab der letzten Wiederholung, Verteilung nach Fälligkeit, Zeit für Neues und Folgewiederholungen |
+| `wiederholung.js` | Abstände 1–120 ab der letzten Wiederholung, Zeilen im Tag bis zum Richtwert (halber/freier Tag), Rest in „Noch offen“, holen und später, Ring und Fälligkeit, Zeit je Zeile, Vorschau in der Woche, Wiederholungspause |
 | `timer.js` | Timer über Neuladen und Mitternacht, `zeitFrueher` |
 | `nachtragen.js` | Kulanzfenster bis 23:59 des Folgetags, nur nach unten korrigieren, „Fehler korrigieren“ → „nachgetragen“ |
 | `termine-kalender.js` | Termine (einmalig, ganztägig, wöchentlich), Pausen, Etappen, Zeitstrahl, Statistik |
@@ -57,9 +57,8 @@ Playwright und Chromium sind in der Cloud-Umgebung vorinstalliert. Jede Testdate
 | `rueckgaengig.js` | Rückgängig je Aktion (stellt den alten Stand genau her), nochmal tippen bei Abhaken/Bewerten, 5 Sekunden |
 | `kein-druck.js` | keine roten Markierungen außer dem gedämpften X, keine Serien, Statistik nur unter Kalender → „Statistik“ |
 | `sicherung-erinnerung.js` | Erinnerung ans Sichern in der Woche ab Planungstag, Abstand einstellbar |
-| `tastenkuerzel.js` | Kürzel, Übersicht mit „?“, keine Auslösung beim Tippen |
 | `termin-ausfall.js` | wöchentliche Termine fallen an einem Tag oder in einem Zeitraum aus |
-| `klausuren.js` | Klausur eintragen, Blöcke weichen aus, Punkte, Fehler → Wiederholung, Schnitt und Verlauf |
+| `klausuren.js` | Klausur eintragen (Kalender, Woche, spontan aus Heute, wöchentlich), Blöcke weichen aus, Punkte je Termin, Fehler → Wiederholung, Schnitt und Verlauf |
 | `durchgaenge.js` | neuer Durchgang auf jeder Ebene, Stand und Zeitstrahl |
 | `gliederung.js` | Gliederung einfügen (Einrückung, Nummern, vier Ebenen, Vorhandenes weiterverwenden) |
 | `etappe-stoff.js` | Etappe mit Stoff: „X von Y bisher angelegten Themen“, Balken erst bei vollständigem Stoff |

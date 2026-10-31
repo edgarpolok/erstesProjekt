@@ -31,12 +31,12 @@ L.run(async () => {
 
   // Wiederholungs-Timer über Mitternacht: Zeit zählt für Silvester
   p = await L.open({ bloecke: { e1: { titel: 'Einheit', woche: '2026-12-21', tag: '2026-12-22', status: 'erledigt', erledigtAm: '2026-12-22', wiederholen: true, sr: { stufe: 1, faellig: '2026-12-23', letzte: null, bewertung: null } } } }, 'sim-2026-12-31-2350');
-  await L.click(p, '[data-a=wdhOpen]'); await L.click(p, '[data-a=startT][data-art=w]');
+  await L.click(p, '[data-a=startT][data-art=w]');
   s = await L.store(p); await p.context().close();
   p = await L.open(s, 'sim-2027-01-01-0030');
   await L.click(p, '[data-a=stopT]');
   s = await L.store(p);
-  L.expect('Wiederholung: 40 min am 31.12., nichts am 1.1.', [s.tage['2026-12-31'].wdh.zeit, (s.tage['2027-01-01'] && s.tage['2027-01-01'].wdh || {}).zeit || null], [40, null]);
+  L.expect('Wiederholung: 40 min am 31.12., nichts am 1.1.', [s.tage['2026-12-31'].wdh.zeiten['e:e1'], (s.tage['2027-01-01'] && s.tage['2027-01-01'].wdh || {}).zeiten || null], [40, null]);
   await p.context().close();
 
   // Löschen während der Timer läuft: Timer stoppt, Rückgängig bringt den Block mit der Zeit zurück
@@ -54,7 +54,7 @@ L.run(async () => {
   // Zurücklegen aus der Woche während der Timer läuft
   p = await L.open(blockAm('2026-12-30'), 'sim-2026-12-30-1000', 1280);
   await L.click(p, '[data-a=startT][data-art=b][data-id=b1]');
-  await L.go(p, 'woche'); await L.click(p, '[data-a=pushB][data-id=b1]');
+  await L.go(p, 'woche'); await L.click(p, '[data-a=wMenu][data-id=b1]'); await L.click(p, '[data-a=wPool][data-id=b1]');
   s = await L.store(p);
   L.expect('zurückgelegt: Timer aus, Block ohne Tag', [s.meta.timer.laeuft, s.bloecke.b1.tag], [false, null]);
   await p.context().close();

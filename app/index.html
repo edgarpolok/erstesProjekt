@@ -201,6 +201,25 @@ select.inp { padding: 0 8px; }
 .seg3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 3px; border-radius: 12px; background: var(--soft); }
 .seg3 button { min-height: 44px; padding: 0 6px; border-radius: 9px; border: 0; background: transparent; color: var(--quiet); font-size: 14px; font-weight: 600; }
 .seg3 button[aria-pressed="true"] { background: var(--pick); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
+.wring { position: relative; flex: 0 0 auto; width: 44px; height: 44px; margin: -9px -2px -9px -9px; display: flex; align-items: center; justify-content: center; }
+.wring svg { position: absolute; left: 7px; top: 7px; width: 30px; height: 30px; transform: rotate(-90deg); }
+.wring circle { fill: none; stroke-width: 2.2; }
+.wring .tr { stroke: var(--line); }
+.wring .fg { stroke: var(--ring); stroke-linecap: round; }
+.wring b { position: relative; font-size: 11px; font-weight: 700; line-height: 1; color: var(--quiet); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.wring .c { width: 26px; height: 26px; box-sizing: border-box; border-radius: 13px; border: 2px solid var(--ok); background: var(--ok); display: flex; align-items: center; justify-content: center; }
+.wring .c svg { position: static; width: 13px; height: 13px; transform: none; fill: none; stroke: var(--ok-mark); stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; }
+.wring.pop .c { animation: pop 320ms ease-out; }
+.wring.sm { width: 22px; height: 22px; margin: 0; }
+.wring.sm svg { left: 0; top: 0; width: 22px; height: 22px; }
+.wring.sm b { font-size: 8px; }
+.wring.sm .c { width: 18px; height: 18px; border-radius: 9px; }
+.wring.sm .c svg { width: 9px; height: 9px; }
+.wbtn { border: 0; background: transparent; padding: 0; margin: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.wbtn .sf { white-space: normal; }
+.wlist { display: flex; flex-direction: column; gap: 4px; padding: 0 0 4px 26px; }
+.wlist .wl { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--quiet); min-width: 0; }
+.wlist .wl > span:last-child { overflow-wrap: anywhere; min-width: 0; }
 .ratebox { display: flex; flex-direction: column; gap: 6px; margin: 2px 8px 2px 36px; }
 .ratebox > span { font-size: 13px; font-weight: 600; color: var(--quiet); }
 
@@ -882,7 +901,8 @@ const DEF_CFG = {
   planungstag: 5,
   erinnerung: '20:00',
   sicherungTage: 14, // Erinnerung ans Sichern in der Woche (ab Planungstag), 0 = aus
-  wdhStandard: true
+  wdhStandard: true,
+  wdhProTag: 60 // Richtwert Wiederholung in Minuten an einem ganzen Tag (halber Tag: die Hälfte, freier Tag: nichts automatisch)
 };
 const FACTOR = { voll: 1, halb: 0.5, frei: 0 };
 const GFARBEN = ['blau', 'violett', 'orange', 'petrol', 'rosa', 'oliv'];
@@ -895,7 +915,8 @@ function cfg() {
   if (!Array.isArray(c.tagesumfang) || c.tagesumfang.length !== 7) c.tagesumfang = DEF_CFG.tagesumfang.slice();
   c.tagesumfang = c.tagesumfang.map((x) => (FACTOR[x] != null ? x : 'voll'));
   c.bloeckeProTag = Math.min(10, Math.max(1, Math.round(num(c.bloeckeProTag, DEF_CFG.bloeckeProTag))));
-  ['zeitKurz', 'zeitMittel', 'zeitLang', 'bloeckeProTag', 'obergrenze', 'maxAbstand', 'pufferTag', 'planungstag', 'sicherungTage'].forEach((k) => { c[k] = num(c[k], DEF_CFG[k]); });
+  ['zeitKurz', 'zeitMittel', 'zeitLang', 'bloeckeProTag', 'obergrenze', 'maxAbstand', 'pufferTag', 'planungstag', 'sicherungTage', 'wdhProTag'].forEach((k) => { c[k] = num(c[k], DEF_CFG[k]); });
+  c.wdhProTag = Math.min(600, Math.max(0, Math.round(c.wdhProTag)));
   c.pufferTag = Math.min(6, Math.max(0, Math.round(c.pufferTag)));
   c.planungstag = Math.min(6, Math.max(0, Math.round(c.planungstag)));
   c.obergrenze = Math.min(24, Math.max(0, c.obergrenze));
@@ -1115,105 +1136,91 @@ function pufferDate(W) {
   return alt || null;
 }
 
-/* ---------- Woche: Wiederholungszeit ---------- */
-function spreadWdh(days, total) {
-  if (!days.length || total <= 0) return days.map(() => 0);
-  const F = days.map((d) => (isPufferDay(d) ? Math.min(freeH(d), 1) : freeH(d)));
-  const sum = F.reduce((a, b) => a + b, 0);
-  const mins = F.map((f) => Math.max(15, Math.round((total * f) / sum / 15) * 15));
-  let diff = mins.reduce((a, b) => a + b, 0) - total;
+/* ---------- Wiederholung im Tag: Richtwert pro Tag, jedes fällige Thema als eigene Zeile ---------- */
+// Richtwert eines Tages: Minuten pro Tag × Tagesumfang (ganz, halb, frei); in Pausen nichts
+function wdhRichtwert(date) {
+  const pz = pauseAt(date);
+  if (pz.frei || pz.wdh) return 0;
+  const c = cfg();
+  return Math.round((c.wdhProTag * FACTOR[c.tagesumfang[wdOf(date)]]) / 5) * 5;
+}
+const wdhStufe = (sr) => Math.max(1, Math.min(Math.round(num(sr && sr.stufe, 1)), maxStufe()));
+const wdhSort = (a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : String(a.titel).localeCompare(b.titel));
+// Timer- und Zeit-Schlüssel einer Zeile: Tag~Ref (ohne Doppelpunkt, damit „w:…“ eindeutig bleibt)
+const wKey = (date, ref) => date + '~' + String(ref).replace(':', '.');
+function wParse(id) {
+  const s = String(id || ''); const i = s.indexOf('~');
+  return i < 0 ? { date: s, ref: null } : { date: s.slice(0, i), ref: s.slice(i + 1).replace('.', ':') };
+}
+// Vorschau ab morgen bis „until“: Fälliges (ältestes zuerst) bis zum Richtwert, der Rest rückt in den nächsten Tag.
+// Gerechnet wird nach jeder Wiederholung mit „sicher“; deshalb heißt es „voraussichtlich“.
+let wdhCache = null;
+function wdhForecast(until) {
+  const t = today();
+  const refs = [D.themen, D.bloecke, D.tage, D.meta, D.pausen];
+  if (wdhCache && wdhCache.t === t && wdhCache.until === until && wdhCache.refs.every((r, i) => r === refs[i])) return wdhCache.res;
+  const res = { days: {}, over: {} };
+  const st = wdhState(t);
+  const offenHeute = new Set((st.liste || []).filter((x) => !(st.bew[x.ref] && st.bew[x.ref].r)).map((x) => x.ref));
+  const queue = srItems().map((it) => {
+    const s0 = wdhStufe(it.sr);
+    if (offenHeute.has(it.ref)) { const s1 = Math.min(s0 + 1, maxStufe()); return { ref: it.ref, d: addDays(t, abstand(s1)), st: s1, titel: it.titel, gebiet: it.gebiet }; }
+    return { ref: it.ref, d: it.sr.faellig, st: s0, titel: it.titel, gebiet: it.gebiet };
+  });
   let guard = 0;
-  while (diff > 0 && guard++ < 200) {
-    let i = -1;
-    F.forEach((f, k) => { if (mins[k] > 15 && (i < 0 || f > F[i])) i = k; });
-    if (i < 0) F.forEach((f, k) => { if (mins[k] > 0 && (i < 0 || f <= F[i])) i = k; }); // bei Gleichstand späte Tage zuerst leeren
-    if (i < 0) break;
-    mins[i] -= 15; diff -= 15;
+  for (let d = addDays(t, 1); d <= until && guard++ < 400; d = addDays(d, 1)) {
+    const rw = wdhRichtwert(d);
+    const avail = queue.filter((x) => x.d <= d).sort(wdhSort);
+    const day = []; let used = 0;
+    if (rw > 0) avail.forEach((x) => {
+      const m = minFor(x.st);
+      if (used + m > rw && day.length) return;
+      day.push({ ref: x.ref, min: m, stufe: x.st, faellig: x.d, titel: x.titel, gebiet: x.gebiet, r: null, vorschau: true });
+      used += m;
+      x.st = Math.min(x.st + 1, maxStufe()); x.d = addDays(d, abstand(x.st));
+    });
+    res.days[d] = day; res.over[d] = avail.length - day.length;
   }
-  while (diff < 0 && guard++ < 400) {
-    let i = -1;
-    F.forEach((f, k) => { if (!(isPufferDay(days[k]) && mins[k] >= 30) && (i < 0 || f > F[i])) i = k; });
-    if (i < 0) break;
-    mins[i] += 15; diff += 15;
-  }
-  // Puffer: höchstens etwa 30 min
-  days.forEach((d, k) => {
-    if (isPufferDay(d) && mins[k] > 30) {
-      let extra = mins[k] - 30; mins[k] = 30;
-      let j = -1; F.forEach((f, x) => { if (!isPufferDay(days[x]) && (j < 0 || f > F[j])) j = x; });
-      if (j >= 0) mins[j] += extra; // sonst wartet der Rest auf die nächste Woche
-    }
-  });
-  return mins;
+  wdhCache = { t: t, until: until, refs: refs, res: res };
+  return res;
 }
-// Erst bekommt jedes Fällige seine Minuten am ersten möglichen Tag ab Fälligkeit (Überfälliges zuerst), der Rest verteilt sich nach freier Zeit
-function splitWdh(W, total, from, list) {
-  const days = weekDates(W).filter((d) => d >= from && !pauseAt(d).frei && !pauseAt(d).wdh && freeH(d) >= 1);
-  const out = {};
-  weekDates(W).forEach((d) => { out[d] = 0; });
-  if (!days.length || total <= 0) return out;
-  const due = days.map(() => 0);
-  let left = total;
-  // Künftig Fälliges kommt an seinen Tag; Überfälliges und heute Fälliges verteilt sich (ältestes zuerst) auf den Tag mit der wenigsten Wiederholung
-  (Array.isArray(list) ? list : []).filter((x) => !x.neu).slice().sort((x, y) => (x.d < y.d ? -1 : x.d > y.d ? 1 : 0)).forEach((x) => {
-    if (left < x.m) return; // passt nicht mehr: wartet auf die nächste Woche
-    let k = days.findIndex((d) => d >= x.d);
-    if (k < 0) return;
-    if (x.d <= days[0]) { // Stau: auf normale Tage mit der wenigsten Wiederholung, den Puffer nur, wenn es keinen anderen gibt
-      const norm = days.map((d, i) => i).filter((i) => !isPufferDay(days[i]));
-      const pool = norm.length ? norm : days.map((d, i) => i);
-      k = pool[0]; pool.forEach((i) => { if (due[i] < due[k]) k = i; });
-    }
-    if (isPufferDay(days[k]) && due[k] + x.m > 30) {
-      let j = days.findIndex((d, i) => i > k && !isPufferDay(d));
-      if (j < 0) days.forEach((d, i) => { if (!isPufferDay(d) && (j < 0 || due[i] < due[j])) j = i; }); // sonst ein früherer normaler Tag
-      if (j >= 0) k = j;
-    }
-    due[k] += x.m; left -= x.m;
-  });
-  const rest = spreadWdh(days, left);
-  days.forEach((d, k) => { out[d] = due[k] + rest[k]; });
-  return out;
+// Eine Zeile der Tagesliste mit Stufe und Fälligkeit vor der Bewertung des Tages
+function wdhEintrag(x, st) {
+  const it = srByRef(x.ref);
+  if (!it) return null;
+  const b = st.bew[x.ref] || {};
+  const base = b.r && b.vorher ? b.vorher : it.sr;
+  return { ref: x.ref, kind: it.kind, id: it.id, min: num(x.min, minFor(wdhStufe(base))), stufe: wdhStufe(base), faellig: base && isDate(base.faellig) ? base.faellig : null, titel: it.titel, gebiet: it.gebiet, r: b.r || null, next: b.r ? it.sr : null };
 }
-// Fälliges bis Wochenende, mit erneutem Fälligwerden bei kurzen Abständen; dazu eine Schätzung für Neues
-function wdhNeed(W, exclude) {
-  const end = addDays(W, 6);
+// Wiederholung eines Tages: vergangene Tage und heute aus der Tagesliste, später voraussichtlich
+function wdhListe(date) {
   const t = today();
-  const start = W > t ? W : t;
-  const ex = new Set(exclude || []);
-  let min = 0; const refs = new Set(); let reps = 0; const list = []; const covered = [];
-  srItems().forEach((it) => {
-    if (it.sr.faellig > end) return;
-    if (ex.has(it.ref)) { covered.push(it.titel); return; }
-    let d = it.sr.faellig < start ? start : it.sr.faellig; let st = num(it.sr.stufe, 1); let n = 0;
-    while (d <= end && n < 3) {
-      min += minFor(st); reps++; refs.add(it.ref); n++; list.push({ d: d, m: minFor(st), ref: it.ref, first: n === 1 });
-      st = Math.min(st + 1, maxStufe()); d = addDays(d, abstand(st));
-    }
-  });
-  let neu = 0;
-  const curW = mondayOf(t);
-  if (W > curW) {
-    neu = Object.keys(D.bloecke).filter((id) => { const b = D.bloecke[id]; return b.woche === curW && b.status === 'offen' && (!b.tag || b.tag >= t) && !b.wdhVon; }).length;
-    neu = Math.min(4, neu);
+  const pz = pauseAt(date);
+  if (date <= t) {
+    const st = wdhState(date);
+    if (st.aus) return [];
+    if (st.liste) return st.liste.map((x) => wdhEintrag(x, st)).filter(Boolean);
+    if (date < t || pz.frei || pz.wdh) return [];
+    return fillWdh(t, wdhRichtwert(t)).map((x) => wdhEintrag(x, st)).filter(Boolean);
   }
-  for (let i = 0; i < neu; i++) list.push({ d: end, m: cfg().zeitKurz, ref: 'neu' + i, first: true, neu: true });
-  min += neu * cfg().zeitKurz;
-  list.sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : 0));
-  return { due: refs.size, reps: reps, neu: neu, min: min, sugg: Math.ceil(min / 15) * 15, list: list, covered: covered };
+  return wdhForecast(addDays(mondayOf(date), 6)).days[date] || [];
 }
-function weekWdh(W) {
-  const wk = D.wochen[W] || {};
-  if (wk.wdhVerteilung && isObj(wk.wdhVerteilung)) {
-    const out = {}; weekDates(W).forEach((d) => { out[d] = num(wk.wdhVerteilung[d], 0); });
-    return { split: out, fest: true, min: num(wk.wdhMin, 0) };
-  }
-  const t = today();
-  if (addDays(W, 6) < t) return { split: {}, fest: false, min: 0 };
-  const need = wdhNeed(W);
-  return { split: splitWdh(W, need.sugg, W > t ? W : t, need.list), fest: false, min: need.sugg };
+const wdhMinAt = (date) => wdhListe(date).reduce((a, x) => a + num(x.min, 0), 0);
+function wdhSplit(W) { const out = {}; weekDates(W).forEach((d) => { out[d] = wdhMinAt(d); }); return out; }
+// Heute fällig, aber nicht in der Tagesliste: steht einzeln in „Noch offen“
+function wdhUeberhang(date) {
+  const pz = pauseAt(date);
+  if (pz.frei || pz.wdh) return [];
+  const st = wdhState(date);
+  if (!st.liste && wdhRichtwert(date) > 0) return [];
+  const inL = new Set((st.liste || []).map((x) => x.ref));
+  return srItems().filter((it) => it.sr.faellig <= date && !inL.has(it.ref)).map((it) => Object.assign({ d: it.sr.faellig }, it)).sort(wdhSort);
 }
-const wdhMinAt = (date) => num(weekWdh(mondayOf(date)).split[date], 0);
+const wdhUeberAt = (date) => (date === today() ? wdhUeberhang(date).length : (date > today() ? num(wdhForecast(addDays(mondayOf(date), 6)).over[date], 0) : 0));
+function faelligText(f, date) {
+  if (!isDate(f) || f >= date) return 'fällig ' + (date === today() ? 'heute' : 'an diesem Tag');
+  return 'fällig seit ' + (dayDiff(date, f) === 1 && date === today() ? 'gestern' : fmtShort(f));
+}
 
 /* ---------- Tagesstand ---------- */
 const tag = (date) => D.tage[date] || {};
@@ -1222,17 +1229,15 @@ function wdhState(date) {
   const liste = Array.isArray(w.liste) ? w.liste.filter((x) => x && srByRef(x.ref)) : null; // null: noch nicht gefüllt
   const bew = isObj(w.bew) ? w.bew : {};
   const rated = liste ? liste.filter((x) => bew[x.ref] && bew[x.ref].r).length : 0;
-  return { liste: liste, bew: bew, rated: rated, done: !!(liste && liste.length && rated === liste.length), aus: !!w.ausgelassen, zeit: num(w.zeit, 0), min: num(w.min, 0) };
+  const zeiten = isObj(w.zeiten) ? w.zeiten : {};
+  const zeitZeilen = Object.keys(zeiten).reduce((a, k) => a + num(zeiten[k], 0), 0);
+  return { liste: liste, bew: bew, rated: rated, done: !!(liste && liste.length && rated === liste.length), aus: !!w.ausgelassen, zeit: num(w.zeit, 0) + zeitZeilen, zeitAlt: num(w.zeit, 0), zeiten: zeiten, min: num(w.min, 0) };
 }
-// Gilt der Wiederholungsblock an diesem Tag? (geplant, nicht pausiert, nicht ausgelassen, nicht leer)
+// Steht an diesem Tag Wiederholung an? (nicht pausiert, nicht ausgelassen, nicht leer)
 function wdhPlanned(date) {
   const pz = pauseAt(date);
   if (pz.frei || pz.wdh) return false;
-  const m = wdhMinAt(date);
-  const st = wdhState(date);
-  if (st.aus) return false;
-  if (st.liste) return st.liste.length > 0;
-  return m > 0;
+  return wdhListe(date).length > 0;
 }
 function blocksAt(date) {
   return Object.keys(D.bloecke).filter((id) => D.bloecke[id].tag === date && D.bloecke[id].status !== 'gestrichen')
@@ -1421,36 +1426,25 @@ function carryOf(W) {
 
 /* ================= Aktionen: alles, was Daten schreibt ================= */
 let ensureBusy = {};
-// Heute: Wochen-Wiederholung festhalten (falls ungeplant) und die Themen des Tages einmal füllen
+// Heute: die Tagesliste der Wiederholung einmal füllen (bis zum Richtwert, ältestes zuerst);
+// ändert sich der Richtwert, bleiben Bewertetes und Geholtes stehen, der Rest wird neu gefüllt
 function ensureToday() {
   if (dbState !== 'ok') return;
   const t = today();
-  const W = mondayOf(t);
   const pz = pauseAt(t);
-  if (pz.frei) return;
-  const wk = D.wochen[W] || {};
-  // Ungeplante Woche: Wiederholungszeit jeden Morgen für die restlichen Tage neu nach Fälligkeit (vergangene Tage bleiben)
-  const auto = !wk.wdhVerteilung || (wk.wdhAuto && !wk.status && wk.wdhAutoAm !== t);
-  if (auto && !ensureBusy['w' + W + t]) {
-    ensureBusy['w' + W + t] = true;
-    const need = wdhNeed(W);
-    const fresh = splitWdh(W, need.sugg, t, need.list);
-    const old = isObj(wk.wdhVerteilung) ? wk.wdhVerteilung : {};
-    const split = {};
-    weekDates(W).forEach((d) => { split[d] = d < t ? num(old[d], 0) : num(fresh[d], 0); });
-    const sum = Object.keys(split).reduce((a, d) => a + split[d], 0);
-    patch('wochen', W, { wdhMin: sum, wdhVerteilung: split, wdhAuto: true, wdhAutoAm: t });
-  }
-  if (pz.wdh) return;
-  const min = wdhMinAt(t);
+  if (pz.frei || pz.wdh) return;
+  const rw = wdhRichtwert(t);
   const w = tag(t).wdh || {};
-  const hasBew = isObj(w.bew) && Object.keys(w.bew).some((k) => w.bew[k] && w.bew[k].r);
-  if (Array.isArray(w.liste) && (num(w.min, -1) === min || hasBew)) return;
-  if (!Array.isArray(w.liste) && min <= 0) return;
-  const key = 'd' + t + ':' + min;
+  if (Array.isArray(w.liste) && num(w.min, -1) === rw) return;
+  if (!Array.isArray(w.liste) && rw <= 0) return;
+  const key = 'd' + t + ':' + rw;
   if (ensureBusy[key]) return;
   ensureBusy[key] = true;
-  patch('tage', t, { wdh: { min: min, liste: fillWdh(t, min) } });
+  const bew = isObj(w.bew) ? w.bew : {};
+  const keep = (Array.isArray(w.liste) ? w.liste : []).filter((x) => x && (x.geholt || (bew[x.ref] && bew[x.ref].r)));
+  const used = keep.reduce((a, x) => a + num(x.min, 0), 0);
+  const more = rw - used > 0 ? fillWdh(t, rw - used, keep.map((x) => x.ref)) : [];
+  patch('tage', t, { wdh: { min: rw, liste: keep.concat(more) } });
 }
 
 /* ---------- Vergangene Tage: Kulanzfenster bis 23:59 des Folgetags, danach nur noch nach unten korrigieren ---------- */
@@ -1473,25 +1467,6 @@ function ensureThemaSr(themaId, date) {
   if (t && !validSr(t.sr)) { patch('themen', themaId, { sr: srNeu(date) }); return true; }
   return false;
 }
-// In einer Woche mit fester Verteilung: Minuten für eine neu fällige Einheit am Fälligkeitstag dazulegen (Rückgabe für das Rückgängigmachen)
-function wdhZeitDazu(faellig, min) {
-  const W = mondayOf(faellig);
-  const wk = D.wochen[W] || {};
-  if (!isObj(wk.wdhVerteilung) || (wk.wdhAuto && !wk.status)) return null; // ungeplante Wochen rechnen jeden Morgen neu
-  const day = weekDates(W).find((d) => d >= faellig && d >= today() && !pauseAt(d).frei && !pauseAt(d).wdh);
-  if (!day) return null;
-  const m = min || minFor(1);
-  patch('wochen', W, { wdhVerteilung: { [day]: num(wk.wdhVerteilung[day], 0) + m }, wdhMin: num(wk.wdhMin, 0) + m });
-  const st = wdhState(day);
-  if (st.liste && !st.rated) patch('tage', day, { wdh: { liste: null, min: null } }); // am Tag neu füllen
-  return { tag: day, min: m };
-}
-function wdhZeitWeg(z) {
-  if (!z || !isDate(z.tag)) return;
-  const W = mondayOf(z.tag); const wk = D.wochen[W] || {};
-  if (!isObj(wk.wdhVerteilung)) return;
-  patch('wochen', W, { wdhVerteilung: { [z.tag]: Math.max(0, num(wk.wdhVerteilung[z.tag], 0) - num(z.min, 0)) }, wdhMin: Math.max(0, num(wk.wdhMin, 0) - num(z.min, 0)) });
-}
 function setBlockDone(id, done) {
   const b = D.bloecke[id];
   if (!b) return;
@@ -1504,21 +1479,13 @@ function setBlockDone(id, done) {
     else {
       const w = typeof b.wiederholen === 'boolean' ? b.wiederholen : cfg().wdhStandard;
       part.wiederholen = w;
-      let neu = false;
-      if (w) { if (b.thema) neu = ensureThemaSr(b.thema, date); else if (!validSr(b.sr)) { part.sr = srNeu(date); neu = true; } }
-      if (neu) {
-        const f1 = addDays(date, abstand(1));
-        part.wdhZeit = wdhZeitDazu(f1);
-        // merken, dass dieses Neue nicht in der Planung steckt: auch seine Folgewiederholungen in dieser Woche bekommen Zeit
-        if (part.wdhZeit) { if (b.thema) patch('themen', b.thema, { plusWoche: mondayOf(f1) }); else part.plusWoche = mondayOf(f1); }
-      }
+      if (w) { if (b.thema) ensureThemaSr(b.thema, date); else if (!validSr(b.sr)) part.sr = srNeu(date); }
     }
     patch('bloecke', id, part);
     pop('b' + id);
     syncRest(id, true);
   } else {
-    const part = { status: 'offen', erledigtAm: null, restAus: null, wdhZeit: null };
-    if (b.wdhZeit) wdhZeitWeg(b.wdhZeit);
+    const part = { status: 'offen', erledigtAm: null, restAus: null };
     if (!b.thema && b.sr && !b.sr.letzte) part.sr = null;
     if (b.wdhVon && isObj(b.bewertung)) { unrateBlock(b); part.bewertung = null; }
     patch('bloecke', id, part);
@@ -1557,18 +1524,12 @@ function rateRef(date, ref, r) {
   const vorher = e && e.r ? (e.vorher || null) : clone(it.sr || null);
   if (!r) {
     if (e && e.r) writeSr(ref, vorher);
-    if (e && e.plus) wdhZeitWeg(e.plus);
-    patch('tage', date, { wdh: { bew: { [ref]: { r: null, vorher: null, plus: null } } } });
+    patch('tage', date, { wdh: { bew: { [ref]: { r: null, vorher: null } } } });
     Object.keys(D.bloecke).forEach((id) => { const b = D.bloecke[id]; if (b.wdhVon && 't:' + b.wdhVon === ref && isObj(b.bewertung) && (b.bewertung.datum || b.erledigtAm) === date) patch('bloecke', id, { bewertung: null }); });
     return;
   }
-  if (e && e.plus) wdhZeitWeg(e.plus);
-  const neu = srRate(vorher, r, date);
-  writeSr(ref, neu);
-  const [k, id] = String(ref).split(':');
-  const src = k === 't' ? D.themen[id] : D.bloecke[id];
-  const plus = src && src.plusWoche && src.plusWoche === mondayOf(neu.faellig) && neu.faellig > date ? wdhZeitDazu(neu.faellig, minFor(neu.stufe)) : null;
-  patch('tage', date, { wdh: { bew: { [ref]: { r: r, vorher: vorher, plus: plus } } } });
+  writeSr(ref, srRate(vorher, r, date));
+  patch('tage', date, { wdh: { bew: { [ref]: { r: r, vorher: vorher } } } });
 }
 function unrateBlock(b) {
   if (!b || !b.wdhVon || !isObj(b.bewertung)) return;
@@ -1624,8 +1585,7 @@ function rateWdh(date, ref, r) {
   }
   rateRef(date, ref, off ? null : r);
   if (!off && markNach(date)) patch('tage', date, { wdh: { bew: { [ref]: { nachgetragen: true } } } });
-  const after = wdhState(date);
-  if (after.done) pop('wdh' + date);
+  if (!off) pop('w' + wKey(date, ref));
 }
 
 /* ---------- Nur für heute (mit Rückgängig) ---------- */
@@ -1657,11 +1617,20 @@ function toggleAusfall(tid, date) {
 }
 function restoreTermin(date, tid) { patch('tage', date, { termine: { [tid]: { faelltAus: false } } }); }
 function skipRoutine(date, rid, titel) { undoable(titel + ' heute ausgelassen', () => patch('tage', date, { routinen: { [rid]: { heuteNicht: true, erledigt: false } } })); }
-function dropWdh(date) {
-  if (timerRef() === 'w:' + date) stopTimer();
-  undoable('Wiederholung heute ausgelassen', () => patch('tage', date, { wdh: { ausgelassen: true } }));
+// Eine Wiederholung von heute zurück nach „Noch offen“ (sie bleibt fällig und kommt morgen zuerst)
+function wdhSpaeter(date, ref) {
+  if (timerRef() === 'w:' + wKey(date, ref)) stopTimer();
+  const raw = Array.isArray((tag(date).wdh || {}).liste) ? tag(date).wdh.liste : [];
+  undoable('In „Noch offen“ zurückgelegt', () => patch('tage', date, { wdh: { liste: raw.filter((x) => x && x.ref !== ref) } }));
 }
-function restoreWdh(date) { patch('tage', date, { wdh: { ausgelassen: false } }); }
+function wdhHolen(ref) {
+  const t = today();
+  const it = srByRef(ref);
+  if (!it) return;
+  const w = tag(t).wdh || {};
+  const raw = Array.isArray(w.liste) ? w.liste.filter((x) => x && x.ref !== ref) : [];
+  patch('tage', t, { wdh: { liste: raw.concat([{ ref: ref, min: minFor(wdhStufe(it.sr)), geholt: true }]), min: Array.isArray(w.liste) ? num(w.min, wdhRichtwert(t)) : wdhRichtwert(t), ausgelassen: false } });
+}
 function backToWeek(id) {
   const b = D.bloecke[id];
   if (!b) return;
@@ -1711,35 +1680,6 @@ function pushToPool(id) {
   if (timerRef() === 'b:' + id) stopTimer();
   undoable('In „Noch offen“ zurückgelegt', () => patch('bloecke', id, { tag: null, zurueckgelegt: true }));
 }
-function pushWdh(date) {
-  const W = mondayOf(date);
-  const ww = weekWdh(W);
-  const m = num(ww.split[date], 0);
-  if (!m) return;
-  const split = Object.assign({}, ww.split, { [date]: 0 });
-  const wk = D.wochen[W] || {};
-  undoable('Wiederholung in „Noch offen“ zurückgelegt', () => {
-    patch('wochen', W, { wdhMin: ww.min, wdhVerteilung: split, wdhOffen: num(wk.wdhOffen, 0) + m, wdhAuto: false });
-    if (tag(date).wdh && !wdhState(date).rated) patch('tage', date, { wdh: { liste: [], min: 0 } });
-  });
-}
-function pullWdhToday() {
-  const t = today();
-  const W = mondayOf(t);
-  const wk = D.wochen[W] || {};
-  const extra = num(wk.wdhOffen, 0);
-  if (!extra) return;
-  const ww = weekWdh(W);
-  const split = Object.assign({}, ww.split, { [t]: num(ww.split[t], 0) + extra });
-  patch('wochen', W, { wdhMin: ww.min, wdhVerteilung: split, wdhOffen: 0, wdhAuto: false });
-  const st = wdhState(t);
-  if (st.liste && st.rated) {
-    const more = fillWdh(t, extra, st.liste.map((x) => x.ref));
-    patch('tage', t, { wdh: { liste: st.liste.concat(more), min: split[t], ausgelassen: false } });
-  } else {
-    patch('tage', t, { wdh: { liste: fillWdh(t, split[t]), min: split[t], ausgelassen: false } });
-  }
-}
 function addBlock(f) {
   const t = f.date || today();
   const titel = String(f.text || '').trim();
@@ -1756,15 +1696,15 @@ function addBlock(f) {
   return true;
 }
 function wdhNachtragen(date) {
-  const liste = fillWdh(date, wdhMinAt(date) || 30).filter((x) => { const it = srByRef(x.ref); return !(it && it.sr && isDate(it.sr.letzte) && it.sr.letzte > date); });
+  const liste = fillWdh(date, wdhRichtwert(date) || 30).filter((x) => { const it = srByRef(x.ref); return !(it && it.sr && isDate(it.sr.letzte) && it.sr.letzte > date); });
   if (!liste.length) { toast('An diesem Tag war nichts fällig.', false); return; }
   patch('tage', date, { wdh: { min: liste.reduce((a, x) => a + x.min, 0), liste: liste, ausgelassen: false } });
-  S.wdhOpen = true;
 }
+function wZeit(id) { const p = wParse(id); const st = wdhState(p.date); return p.ref ? num(st.zeiten[p.ref], 0) : st.zeitAlt; }
 function setZeit(ref, min) {
   const [k, id] = ref.split(':');
   if (k === 'b') { patch('bloecke', id, { zeit: min || null }); syncRest(id, true); }
-  else if (k === 'w') patch('tage', id, { wdh: { zeit: min || null } });
+  else if (k === 'w') { const p = wParse(id); if (p.ref) patch('tage', p.date, { wdh: { zeiten: { [p.ref]: min || null } } }); else patch('tage', id, { wdh: { zeit: min || null } }); }
 }
 
 /* ---------- Timer: übersteht Neuladen und Gerätewechsel ---------- */
@@ -1784,8 +1724,9 @@ function stopTimer() {
   if (t.art === 'b' && D.bloecke[t.id]) {
     patch('bloecke', t.id, { zeit: num(D.bloecke[t.id].zeit, 0) + add });
   } else if (t.art === 'w') {
-    const d = t.id || today();
-    patch('tage', d, { wdh: { zeit: wdhState(d).zeit + add } });
+    const p = wParse(t.id || today());
+    if (p.ref) patch('tage', p.date, { wdh: { zeiten: { [p.ref]: num(wdhState(p.date).zeiten[p.ref], 0) + add } } });
+    else patch('tage', p.date, { wdh: { zeit: wdhState(p.date).zeitAlt + add } });
   } else {
     const d = isDate(t.datum) ? t.datum : today();
     const id = uid('b');
@@ -1834,14 +1775,6 @@ function vorhabenMove(T, id, dir) {
   const tmp = list[i]; list[i] = list[j]; list[j] = tmp;
   list.forEach((v, k) => { if (num(v.reihenfolge, -1) !== k + 1) patch('vorhaben', v.id, { reihenfolge: k + 1 }); });
 }
-function planWdhSet(T, min) { patch('wochen', T, { wdhMin: Math.max(0, min), wdhGewaehlt: true }); }
-function planWdhReset(T) { patch('wochen', T, { wdhGewaehlt: false, wdhMin: null }); }
-function planWdhValue(T) {
-  const wk = D.wochen[T] || {};
-  const ex = vorhabenFor(T).filter((v) => v.wdhVon && String(v.name || '').trim()).map((v) => 't:' + v.wdhVon);
-  const need = wdhNeed(T, ex);
-  return { need: need, val: wk.wdhGewaehlt && typeof wk.wdhMin === 'number' ? wk.wdhMin : need.sugg };
-}
 function routineWeekToggle(T, rid) {
   const wk = D.wochen[T] || {};
   const aus = Array.isArray(wk.routinenAus) ? wk.routinenAus.slice() : [];
@@ -1869,14 +1802,7 @@ function planRows(T) {
   })).filter((r) => r.hours > 0.01);
 }
 function finishWeekDoc(T, status, extra) {
-  const pv = planWdhValue(T);
-  const split = splitWdh(T, pv.val, planFrom(T), pv.need.list);
-  patch('wochen', T, Object.assign({ status: status, wdhMin: pv.val, wdhVerteilung: split, geplantAm: today(), wdhAuto: false }, extra || {}));
-  const t = today();
-  if (T <= t && addDays(T, 6) >= t) {
-    const st = wdhState(t);
-    if (!st.rated) patch('tage', t, { wdh: { min: split[t] || 0, liste: fillWdh(t, split[t] || 0) } });
-  }
+  patch('wochen', T, Object.assign({ status: status, geplantAm: today() }, extra || {}));
 }
 function dropEmptyVorhaben(T) {
   vorhabenFor(T).forEach((v) => { if (!String(v.name || '').trim() && v.ab === T) del('vorhaben', v.id); });
@@ -1900,9 +1826,8 @@ async function submitClaude(T) {
   if (planBusy[T]) return;
   dropEmptyVorhaben(T);
   planBusy[T] = true; scheduleRender();
-  const pv = planWdhValue(T);
   const from = planFrom(T);
-  const split = splitWdh(T, pv.val, from, pv.need.list);
+  const split = wdhSplit(T);
   const cap = capacity(T, split, from, true);
   const rows = planRows(T);
   let res = null; let quelle = 'regel';
@@ -1955,8 +1880,8 @@ function addTerminOnce(date, titel, von, bis, ganztags, extra) {
   return true;
 }
 // Jede Woche am Wochentag des gewählten Tags, ab diesem Tag, optional bis zu einem Enddatum
-function addTerminWeekly(date, titel, von, bis, ganztags, endet) {
-  put('termine', uid('t'), { titel: titel, wochentage: [wdOf(date)], von: ganztags ? '' : von || '', bis: ganztags ? '' : bis || '', ganztags: !!ganztags, ab: date, endet: isDate(endet) ? endet : null, zustand: 'aktiv', erstellt: nowMs() });
+function addTerminWeekly(date, titel, von, bis, ganztags, endet, extra) {
+  put('termine', uid('t'), Object.assign({ titel: titel, wochentage: [wdOf(date)], von: ganztags ? '' : von || '', bis: ganztags ? '' : bis || '', ganztags: !!ganztags, ab: date, endet: isDate(endet) ? endet : null, zustand: 'aktiv', erstellt: nowMs() }, extra || {}));
   [date, addDays(date, 7)].forEach((d) => reflowDay(d));
 }
 // In einer übergebenen Woche: passt ein Block nach einem neuen Termin nicht mehr, wandert er auf einen Tag mit Platz, sonst nach „noch offen“
@@ -1964,7 +1889,7 @@ function reflowDay(date) {
   const W = mondayOf(date);
   const wk = D.wochen[W] || {};
   if (wk.status !== 'uebergeben' || date < today()) return;
-  const split = weekWdh(W).split;
+  const split = wdhSplit(W);
   const load = (d) => blocksAt(d).filter((b) => b.status === 'offen' && b.quelle === 'claude').reduce((a, b) => a + num(b.std, 1), 0);
   const room = (d) => freeH(d) - num(split[d], 0) / 60 - load(d);
   let guard = 0;
@@ -2030,7 +1955,7 @@ async function maybeEinschaetzung(W) {
 
 /* ================= Ansicht: Heute ================= */
 const S = {
-  view: 'heute', menu: null, edit: null, wvon: null, editT: null, wdhOpen: false, wdhMenu: false, poolOpen: null,
+  view: 'heute', menu: null, edit: null, wvon: null, editT: null, wdhTag: {}, poolOpen: null,
   adding: false, addMore: false, addDone: false, addG: undefined, wk: null, dayOpen: {}, tfOpen: false, tfDay: null,
   planOpen: {}, vMore: {}, planShow: {}
 };
@@ -2170,40 +2095,43 @@ function rowBlock(b) {
   }
   return h + '</div>';
 }
-function wdhBlock(t) {
-  const pz = pauseAt(t);
-  if (pz.wdh) return '<div class="note">' + ico('wdh', 'xs') + 'Wiederholung ruht · ' + esc(pz.wdh.name || 'Pause') + ', bis ' + esc(fmtDMon(pz.wdh.bis)) + '</div>';
-  const st = wdhState(t);
-  if (st.aus) return '<div class="cancelled"><span>Wiederholung ' + (S.day ? '' : 'heute ') + 'ausgelassen</span><button class="quietbtn" data-a="restoreWdh">zurückholen</button></div>';
-  const m = wdhMinAt(t);
-  if (!st.liste && S.day) return '<div class="note" style="justify-content:space-between;flex-wrap:wrap"><span style="display:flex;align-items:center;gap:10px">' + ico('wdh', 'xs') + 'Für diesen Tag ist keine Wiederholung erfasst.</span><button class="linkbtn" data-a="wdhNach">nachtragen</button></div>';
-  if (!st.liste) return m > 0 ? '<div class="note">' + ico('wdh', 'xs') + 'Wiederholung wird vorbereitet …</div>' : '';
-  if (!st.liste.length) return m > 0 ? '<div class="note">' + ico('wdh', 'xs') + 'Wiederholung · heute ist nichts fällig</div>' : '';
-  const ref = 'w:' + t;
+// Kleiner Ring: Zahl = Abstand in Tagen, der Bogen füllt sich mit der Stufe; erledigt wird er zum Haken
+function wdhRing(stufe, on, popKey, klein) {
+  const n = maxStufe(); const st = Math.max(1, Math.min(stufe, n)); const a = abstand(st);
+  const C = 2 * Math.PI * 10;
+  const lab = on ? 'erledigt' : a + '-Tage-Wiederholung, Stufe ' + st + ' von ' + n;
+  return '<span class="wring' + (on ? ' on' : '') + (klein ? ' sm' : '') + (popKey && popId === popKey ? ' pop' : '') + '" role="img" aria-label="' + esc(lab) + '" title="' + esc(lab) + '">' +
+    (on ? '<span class="c">' + CHECK_SVG + '</span>' : '<svg viewBox="0 0 24 24" aria-hidden="true"><circle class="tr" cx="12" cy="12" r="10"/><circle class="fg" cx="12" cy="12" r="10" stroke-dasharray="' + (C * st / n).toFixed(2) + ' ' + C.toFixed(2) + '"/></svg><b>' + a + '</b>') + '</span>';
+}
+function rowWdh(date, x) {
+  const on = !!x.r;
+  const wid = wKey(date, x.ref);
+  const ref = 'w:' + wid;
+  const k = 'w' + wid;
   const running = timerRef() === ref;
-  const items = st.liste.map((x) => Object.assign({ min: x.min }, srByRef(x.ref)));
-  const summary = st.done ? 'Alles bewertet' : items.map((x) => shortName(x.titel)).join(' · ');
-  let h = '<div class="card wdh" data-k="wdh"><div style="display:flex;align-items:center;padding-right:6px">' +
-    '<button class="headbtn" aria-expanded="' + S.wdhOpen + '" data-a="wdhOpen"><span class="wico' + (st.done ? ' ok' : '') + (popId === 'wdh' + t ? ' pop' : '') + '">' + (st.done ? ico('check', 'xs') : ico('wdh', 'xs')) + '</span>' +
-    '<span style="flex:1 1 auto;display:flex;flex-direction:column;gap:2px;min-width:0"><span class="small" style="font-weight:600">' + (S.day ? '' : 'heute ') + (st.min || m) + ' min</span>' +
-    '<span style="font-size:16px;font-weight:600">Wiederholung</span><span class="small">' + esc(summary) + '</span></span>' +
-    '<svg class="ico s" viewBox="0 0 24 24" aria-hidden="true" style="transform:' + (S.wdhOpen ? 'rotate(180deg)' : 'none') + ';color:var(--quiet)">' + ICON.down + '</svg></button>' +
-    '<button class="dots" style="margin:0 -4px" aria-label="Optionen: Wiederholung" aria-expanded="' + S.wdhMenu + '" data-a="wdhMenu">' + DOTS_SVG + '</button></div>';
-  if (S.wdhMenu) h += '<div class="actions" style="margin:0 14px 12px 52px"><button class="chipbtn" data-a="dropWdh">' + (S.day ? 'Auslassen' : 'Heute auslassen') + '</button></div>';
-  if (S.wdhOpen) {
-    items.forEach((x) => {
-      const r = st.bew[x.ref] && st.bew[x.ref].r;
-      h += '<div class="item" data-k="w-' + esc(x.ref) + '"><div style="display:flex;align-items:center;gap:10px;min-width:0"><span class="mini' + (r ? ' on' : '') + '">' + CHECK_SVG + '</span>' +
-        '<div style="display:flex;flex-direction:column;gap:1px;min-width:0">' + (x.gebiet ? '<span class="gname"' + gStyle(x.gebiet) + ' style="flex-wrap:wrap"><span class="dot"></span>' + esc(gName(x.gebiet)) + '<span style="font-weight:500;color:var(--quiet);white-space:nowrap"> · ' + x.min + ' min</span></span>' : '<span class="small">' + x.min + ' min · noch keinem Thema zugeordnet</span>') +
-        '<span style="font-size:15px;font-weight:600;overflow-wrap:anywhere">' + esc(x.titel) + nachTag(r && st.bew[x.ref]) + '</span></div></div>' +
-        (x.kind === 't' && thema(x.id) ? notizHtml(thema(x.id).notiz) : '') +
-        rateSeg(x.titel, r, 'rateW', ' data-ref="' + esc(x.ref) + '"') + (r && x.kind === 't' ? notizFeld(x.id, x.ref.replace(':', '_')) : '') + '</div>';
-    });
-    h += '<div class="foot"><span style="flex:1 1 auto;font-size:13px;font-weight:600;color:var(--quiet)">Zeit für den Block</span>' +
-      (running ? '<span class="running">läuft</span>' : (S.day ? '' : '<button class="play" style="margin:0" aria-label="Timer starten: Wiederholung" data-a="startT" data-art="w" data-id="' + t + '"><span>' + PLAY_SVG + '</span></button>')) +
-      timeChip(ref, st.zeit, 'Wiederholung') + '</div>' + (S.editT === ref ? '<div style="padding:0 0 12px">' + timeEditor(ref, '0:45') + '</div>' : '');
-  }
+  const st = wdhState(date);
+  const z = num(st.zeiten[x.ref], 0);
+  const b = st.bew[x.ref] || {};
+  const meta = on
+    ? 'Wiederholung · nächste ' + (x.next && isDate(x.next.faellig) ? fmtShort(x.next.faellig) + ' (in ' + abstand(wdhStufe(x.next)) + (abstand(wdhStufe(x.next)) === 1 ? ' Tag)' : ' Tagen)') : '')
+    : 'Wiederholung · ' + x.min + ' min · ' + faelligText(x.faellig, date);
+  let h = '<div class="row wrow' + (on ? ' done' : '') + '" data-k="r-' + esc(k) + '"><div class="top">' + wdhRing(x.stufe, on, k) +
+    '<div class="body">' + gLine(x.gebiet) + '<span class="title">' + esc(x.titel) + nachTag(b.nachgetragen || b.zeitNach ? { nachgetragen: true } : null) + '</span><span class="meta">' + esc(meta) + '</span></div>';
+  if (!on && !running && !S.day) h += '<button class="play" aria-label="Timer starten: ' + esc(x.titel) + '" data-a="startT" data-art="w" data-id="' + esc(wid) + '"><span>' + PLAY_SVG + '</span></button>';
+  if (running) h += '<span class="running">läuft</span>';
+  if (on || z) h += timeChip(ref, z, x.titel);
+  if (!on && !S.day) h += '<button class="dots" aria-label="Optionen: ' + esc(x.titel) + '" aria-expanded="' + (S.menu === k) + '" data-a="menu" data-m="' + esc(k) + '">' + DOTS_SVG + '</button>';
+  h += '</div>';
+  if (S.menu === k) h += '<div class="actions"><button class="chipbtn" data-a="laterW" data-ref="' + esc(x.ref) + '">Später · zurück in „Noch offen“</button></div>';
+  h += timeEditor(ref, '0:15');
+  h += '<div class="ratebox">' + (x.kind === 't' && thema(x.id) ? notizHtml(thema(x.id).notiz) : '') + rateSeg(x.titel, x.r, 'rateW', ' data-ref="' + esc(x.ref) + '"') + (on && x.kind === 't' && thema(x.id) ? notizFeld(x.id, x.ref.replace(':', '_')) : '') + '</div>';
   return h + '</div>';
+}
+// Vergangener Tag ohne Wiederholungsliste: nachtragen
+function wdhNachHinweis(t) {
+  const pz = pauseAt(t);
+  if (pz.frei || pz.wdh || wdhState(t).liste) return '';
+  return '<div class="note" style="justify-content:space-between;flex-wrap:wrap"><span style="display:flex;align-items:center;gap:10px">' + ico('wdh', 'xs') + 'Für diesen Tag ist keine Wiederholung erfasst.</span><button class="linkbtn" data-a="wdhNach">nachtragen</button></div>';
 }
 function poolItemMeta(b, t) {
   if (b.mitgenommen) return 'aus KW ' + kwOf(b.ausWoche || b.woche) + ' mitgenommen';
@@ -2217,15 +2145,17 @@ function poolList(W, t, withPull) {
   const pool = poolOf(W);
   const wk = D.wochen[W] || {};
   let h = '';
-  if (num(wk.wdhOffen, 0) > 0) {
-    h += '<div class="pitem" data-k="p-wdh"><div class="body"><span class="t">Wiederholung · ' + num(wk.wdhOffen, 0) + ' min</span><span class="small">zurückgelegt</span></div>' +
-      (withPull ? '<button class="pull" aria-label="Heute machen: Wiederholung" data-a="pullWdh">+ Heute</button>' : '') + '</div>';
-  }
+  const ueb = W === mondayOf(today()) ? wdhUeberhang(today()) : [];
+  ueb.forEach((it) => {
+    const stf = wdhStufe(it.sr);
+    h += '<div class="pitem" data-k="p-w-' + esc(it.ref) + '">' + wdhRing(stf, false, null, true) + '<div class="body"><span class="t">' + esc(it.titel) + '</span><span class="small">' + esc('Wiederholung · ' + minFor(stf) + ' min · ' + faelligText(it.sr.faellig, today())) + '</span></div>' +
+      (withPull ? '<button class="pull" aria-label="' + esc('Heute machen: ' + it.titel) + '" data-a="pullW" data-ref="' + esc(it.ref) + '">+ Heute</button>' : '') + '</div>';
+  });
   pool.forEach((b) => {
     h += '<div class="pitem" data-k="p-' + esc(b.id) + '"><div class="body">' + gLine(b.gebiet) + '<span class="t">' + esc(b.titel) + bsp(b) + '</span><span class="small">' + esc(poolItemMeta(b, t)) + '</span></div>' +
       (withPull ? '<button class="pull" aria-label="Heute machen: ' + esc(b.titel) + '" data-a="pull" data-id="' + esc(b.id) + '">+ Heute</button>' : '') + '</div>';
   });
-  return { html: h, n: pool.length + (num(wk.wdhOffen, 0) > 0 ? 1 : 0) };
+  return { html: h, n: pool.length + ueb.length };
 }
 function addForm() {
   if (!S.adding && S.day) return '<div class="addrow"><button class="addbtn" data-a="startAdd">' + ico('plus', 'xs') + 'Lerneinheit nachtragen</button></div>';
@@ -2238,9 +2168,10 @@ function addForm() {
     '<input id="neu-eintrag" class="inp" data-in="addText" value="' + esc(fv('addText')) + '" placeholder="z. B. Fälle zu Rom I" data-enter="doAdd" autocomplete="off">' +
     (S.day ? '' : '<button class="switch ink" role="switch" aria-checked="' + S.addDone + '" data-a="addDone"><span class="tr"></span>Schon erledigt</button>') +
     gebietChips(g, 'addG') +
-    '<button class="more" aria-expanded="' + S.addMore + '" data-a="addMore">' + (S.addMore ? 'Weniger' : 'Mehr: Wiederholung von …') + '<svg class="ico xs" viewBox="0 0 24 24" aria-hidden="true" style="transform:' + (S.addMore ? 'rotate(180deg)' : 'none') + '">' + ICON.down + '</svg></button>' +
+    '<button class="more" aria-expanded="' + S.addMore + '" data-a="addMore">' + (S.addMore ? 'Weniger' : 'Mehr: Wiederholung von …, Termin, Klausur') + '<svg class="ico xs" viewBox="0 0 24 24" aria-hidden="true" style="transform:' + (S.addMore ? 'rotate(180deg)' : 'none') + '">' + ICON.down + '</svg></button>' +
     (S.addMore ? '<div style="display:flex;flex-direction:column;gap:6px"><label class="flabel" for="neu-wdh">Wiederholung von</label>' + themaSuche('neu-wdh', 'addWdh') +
-      '<span class="small">Abgehakt fragt der Eintrag nach der Bewertung, und das Thema bekommt seinen nächsten Termin.</span></div>' : '') +
+      '<span class="small">Abgehakt fragt der Eintrag nach der Bewertung, und das Thema bekommt seinen nächsten Termin.</span>' +
+      (S.day ? '' : '<button class="chipbtn" style="align-self:flex-start;margin-top:6px" data-a="tfHeute">Stattdessen Termin oder Klausur heute eintragen</button>') + '</div>' : '') +
     '<div class="formbtns"><button class="btn ghost" data-a="cancelAdd">Abbrechen</button><button class="btn" data-a="doAdd">Hinzufügen</button></div></div>';
 }
 function routineTiles(t) {
@@ -2299,24 +2230,22 @@ function viewHeute() {
       '<span class="s">' + (pz.frei ? 'Bis ' + esc(fmtDMon(pz.frei.bis)) + ' ruhen Vorschlag, Wiederholung und Erinnerung. Wenn du magst, kannst du trotzdem etwas eintragen.' : 'Nichts geplant, nichts offen. Wenn du magst, kannst du trotzdem etwas hinzufügen.') + '</span></div>';
   }
   const left = [];
-  const plan = termShown.map((x) => rowTermin(t, x)).join('') + blocks.map(rowBlock).join('');
+  const plan = termShown.map((x) => rowTermin(t, x)).join('') + blocks.map(rowBlock).join('') + wdhListe(t).map((x) => rowWdh(t, x)).join('');
   if (!(pz.frei || freeDay) || plan || past) {
     left.push('<div class="h2row"><h2 class="h2">' + (past ? (pz.frei ? 'Pause · ' + (pz.frei.name || 'frei') : 'An diesem Tag') : (puffer ? 'Puffertag' : 'Plan für heute')) + '</h2>' + (total ? '<span class="small">' + (past ? 'erfasst: ' : 'heute erfasst: ') + fmtHM(total) + '</span>' : '') + '</div>');
   }
   left.push(plan);
   left.push(cancelled.map((x) => '<div class="cancelled" data-k="c-' + esc(x.id) + '"><span><s>' + esc(x.titel) + '</s> · ' + (past ? 'fiel aus' : 'fällt heute aus') + '</span><button class="quietbtn" data-a="restoreTermin" data-id="' + esc(x.id) + '">zurückholen</button></div>').join(''));
-  const wide = window.innerWidth >= 900;
-  if (!pz.frei && !freeDay && !wide) left.push(wdhBlock(t));
-  left.push(addForm());
-  if (!pz.frei && !freeDay && !past) {
+  if (past) left.push(wdhNachHinweis(t));
+  left.push(S.tfOpen && S.tfHeute && !past ? terminForm(W, t) : addForm());
+  if (!pz.frei && !past) {
     const pl = poolList(W, t, true);
     const open = S.poolOpen == null ? puffer : S.poolOpen;
     left.push('<div class="pool"><button aria-expanded="' + open + '" data-a="poolOpen">Noch offen diese Woche' + (pl.n ? ' · ' + pl.n : '') +
       '<svg class="ico s" viewBox="0 0 24 24" aria-hidden="true" style="color:var(--quiet);transform:' + (open ? 'rotate(180deg)' : 'none') + '">' + ICON.down + '</svg></button>' +
       (open ? '<div style="display:flex;flex-direction:column;gap:6px;padding:0 8px 8px">' + (pl.n ? pl.html : '<span style="padding:6px 8px;font-size:14px;color:var(--quiet)">Nichts offen. Alles ist im Plan.</span>') + '</div>' : '') + '</div>');
   }
-  const wb = (!pz.frei && !freeDay && wide) ? wdhBlock(t) : '';
-  const right = (wb ? '<section class="stack"><h2 class="h2">Am Abend</h2>' + wb + '</section>' : '') + routineTiles(t);
+  const right = routineTiles(t);
   h += '<div class="cols' + (right ? ' zweidrittel' : '') + (past && !isOpenDay(t) && !(S.korr && S.korr[t]) ? ' locked' : '') + '"><section class="stack">' + left.join('') + '</section>' + (right ? '<div class="stack l">' + right + '</div>' : '') + '</div>';
   return h;
 }
@@ -2368,13 +2297,12 @@ function dayItems(d, W) {
     items.push({ k: 'b', id: b.id, title: b.titel, gebiet: b.gebiet, done: b.status === 'erledigt', suffix: b.nachgetragen ? 'nachgetragen' : '', extra: !!b.zusaetzlich && b.status === 'erledigt', edit: b.status === 'offen' && d >= t, date: d, W: W });
   });
   if (!pz.frei && !pz.wdh) {
-    const ww = weekWdh(W);
-    const m = num(ww.split[d], 0);
-    const st = wdhState(d);
-    if (m > 0 || (st.liste && st.liste.length)) {
-      const nothing = st.liste && !st.liste.length;
+    const li = wdhListe(d);
+    if (li.length) {
+      const st = wdhState(d);
       const wn = Object.keys(st.bew).some((r) => st.bew[r] && st.bew[r].r && st.bew[r].nachgetragen);
-      items.push({ k: 'w', title: 'Wiederholung', suffix: (wn ? 'nachgetragen · ' : '') + (st.aus ? 'ausgelassen' : (nothing ? 'nichts fällig' : (st.min || m) + ' min')) + (!ww.fest && d >= t ? ' · Vorschlag' : ''), done: st.done, muted: st.aus || nothing, push: d >= t && W === mondayOf(t) && !st.rated && !st.aus && !nothing && m > 0, date: d });
+      const over = wdhUeberAt(d);
+      items.push({ k: 'w', title: 'Wiederholung', suffix: (wn ? 'nachgetragen · ' : '') + anz(li.length, 'Thema', 'Themen') + ' · ' + li.reduce((a, x) => a + num(x.min, 0), 0) + ' min' + (d > t ? ' · voraussichtlich' : '') + (over ? ' · ' + over + ' weitere in „Noch offen“' : ''), done: li.every((x) => x.r), date: d, liste: li });
     }
   }
   routinenAt(d).forEach((r) => {
@@ -2388,7 +2316,12 @@ function itemHtml(it) {
   const dot = it.gebiet && thema(it.gebiet) ? '<span class="idot"' + gStyle(it.gebiet) + '></span>' : '';
   let push = '';
   if (it.edit && it.k === 'b') push = '<button class="dots" aria-label="' + esc('Optionen: ' + it.title) + '" aria-expanded="' + (S.wMenu === it.id) + '" data-a="wMenu" data-id="' + esc(it.id) + '">' + DOTS_SVG + '</button>';
-  if (it.push && it.k === 'w') push = '<button class="push" aria-label="Wiederholung ' + esc(it.suffix) + ' zurück in „Noch offen diese Woche“" title="Zurück in „Noch offen diese Woche“" data-a="pushW" data-d="' + it.date + '">' + ico('tray', 's') + '</button>';
+  if (it.k === 'w' && it.liste) {
+    const key = it.date;
+    const open = !!S.wdhTag[key];
+    return '<div class="it' + (it.done ? ' done' : '') + '">' + mk + '<button class="tx wbtn" aria-expanded="' + open + '" data-a="wdhTag" data-d="' + it.date + '">' + esc(it.title) + '<span class="sf">' + esc(it.suffix) + '</span></button></div>' +
+      (open ? '<div class="wlist" data-k="wl-' + it.date + '">' + it.liste.map((x) => '<span class="wl">' + wdhRing(x.stufe, !!x.r, null, true) + '<span>' + esc(x.titel) + '</span></span>').join('') + '</div>' : '');
+  }
   return '<div class="it' + (it.done || it.muted ? ' done' : '') + '">' + mk + dot + '<span class="tx">' + (it.time ? '<span class="tm">' + esc(it.time) + '</span>' : '') + esc(it.title) +
     (it.suffix ? '<span class="sf">' + esc(it.suffix) + '</span>' : '') + (it.extra ? '<span class="plus">zusätzlich</span>' : '') + '</span>' + push + '</div>' + (it.edit && it.k === 'b' && S.wMenu === it.id ? blockMenu(it) : '');
 }
@@ -2433,6 +2366,7 @@ function dayCard(d, W) {
   if (isToday) h += '<span class="badge-today">Heute</span>';
   if (expanded) h += items.map(itemHtml).join('') + (d >= t && !pz.frei ? dayAdd(d, W) : '');
   else h += '<button class="collapsed" tabindex="-1" aria-hidden="true" data-a="dayT" data-key="' + key + '" data-open="false">' + items.filter((i) => i.k === 't').map((i) => '<span class="ag' + (i.muted ? ' off' : '') + '"><span class="tm">' + esc(i.time || '') + '</span><span>' + esc(i.title) + '</span></span>').join('') +
+    items.filter((i) => i.k === 'w').map((i) => '<span class="ag lern">Wiederholung: ' + esc(i.suffix) + '</span>').join('') +
     (items.some((i) => i.k === 'b') ? '<span class="ag lern">Lernen: ' + esc(items.filter((i) => i.k === 'b').map((i) => i.title).join(' · ')) + '</span>' : '') +
     '<span class="mks">' + items.map((i) => '<span class="mk' + (i.done ? ' on' : '') + '">' + CHECK_SVG + '</span>').join('') +
     '<em class="' + (dn === items.length ? 'all' : '') + '">' + (dn === items.length ? dn + ' erledigt' : dn + ' von ' + items.length + ' erledigt') + '</em></span></button>';
@@ -2493,13 +2427,14 @@ function terminCheck(titel, von, bis, ganz) {
 function terminForm(W, imTag) {
   if (!S.tfOpen) return '';
   const t = today();
-  const days = weekDates(W).filter((d) => d >= t);
+  const days = typeof imTag === 'string' ? [imTag] : weekDates(W).filter((d) => d >= t);
   const sel = S.tfDay && days.indexOf(S.tfDay) >= 0 ? S.tfDay : days[0];
-  return '<div class="form" data-k="tform"><h3 style="font-size:15px;font-weight:700">Einmaliger Termin' + (imTag ? ' am ' + esc(WDL[wdOf(sel)]) : '') + '</h3>' + (imTag ? '' : '<div class="chips" role="group" aria-label="Tag">' +
+  return '<div class="form" data-k="tform"><h3 style="font-size:15px;font-weight:700">' + (typeof imTag === 'string' ? 'Termin oder Klausur heute' : 'Einmaliger Termin' + (imTag ? ' am ' + esc(WDL[wdOf(sel)]) : '')) + '</h3>' + (imTag ? '' : '<div class="chips" role="group" aria-label="Tag">' +
     days.map((d) => '<button class="sel" aria-pressed="' + (d === sel) + '" data-a="tfDay" data-d="' + d + '">' + WD[wdOf(d)] + ' ' + fmtDM(d) + '</button>').join('') + '</div>') +
     '<label for="tf-titel">Titel</label><input id="tf-titel" class="inp" data-in="tfTitel" value="' + esc(fv('tfTitel')) + '" placeholder="z. B. Sprechstunde" autocomplete="off">' +
     zeitFelder('tf', 'tfVon', 'tfBis', 'tfGanz', false) +
     '<button class="switch ink" role="switch" aria-checked="' + !!F.tfKlausur + '" data-a="tGanz" data-k="tfKlausur"><span class="tr"></span>Klausur (Punkte trägst du später unter Kalender → Statistik ein)</button>' +
+    (F.tfKlausur && gebiete().length ? '<span class="flabel">Rechtsgebiet</span>' + gebietChips(F.tfGeb || null, 'tfGeb') : '') +
     '<span class="small">Zählt auf die Obergrenze. Passt ein verteilter Block dann nicht mehr, wandert er auf einen Tag mit Platz oder in „Noch offen“.</span>' +
     (F.tfErr ? '<span class="err">' + esc(F.tfErr) + '</span>' : '') +
     '<div class="formbtns"><button class="btn ghost" data-a="tfClose">Abbrechen</button><button class="btn" data-a="tfSave" data-d="' + (sel || '') + '">Eintragen</button></div></div>';
@@ -2530,22 +2465,15 @@ function planCard(T) {
     const v = wk.verteilung || {};
     const headTxt = wk.status === 'fertig' ? 'Die Wochenliste steht' : 'Automatisch verteilt';
     return '<section class="plancard" id="planen">' + head + '<div class="okbox" role="status"><span class="h">' + ico('check', 'xs') + esc(headTxt) + '</span>' + body +
-      '<span class="small">Wiederholung: ' + fmtH(num(wk.wdhMin, 0)) + ' auf die Tage verteilt.' + (wk.status === 'uebergeben' ? ' In „Heute“ kannst du jeden Tag umwerfen.' : '') + '</span>' +
+      '<span class="small">Wiederholung: jeden Tag bis etwa ' + cfg().wdhProTag + ' min, was darüber liegt, steht in „Noch offen“.' + (wk.status === 'uebergeben' ? ' In „Heute“ kannst du jeden Tag umwerfen.' : '') + '</span>' +
       '<button class="linkbtn" data-a="reopenPlan" data-w="' + T + '">Vorhaben ändern</button></div></section>';
   }
-  const pv = planWdhValue(T);
-  const need = pv.need;
   const from = planFrom(T);
-  const split = splitWdh(T, pv.val, from, pv.need.list);
+  const split = wdhSplit(T);
   const cap = capacity(T, split, from, true);
   const platz = Object.keys(cap).reduce((a, d) => a + cap[d], 0);
-  let slip = 0;
-  if (pv.val < need.sugg) { let used = 0; const out = new Set(); need.list.forEach((x) => { if (used + x.m <= pv.val) used += x.m; else if (x.first && !x.neu) out.add(x.ref); }); slip = out.size; }
-  const wDue = (need.due ? (need.due === 1 ? '1 Thema' : need.due + ' Themen') + ' fällig' : 'Nichts fällig') + (need.neu ? ', dazu Neues aus dieser Woche' : '') + '. Vorschlag: ' + (need.sugg ? 'etwa ' + fmtH(need.sugg) : 'keine Wiederholungszeit') + '.' +
-    (need.covered.length ? ' ' + joinDe(need.covered) + (need.covered.length > 1 ? ' stehen' : ' steht') + ' schon als Vorhaben drin.' : '');
-  const wHint = pv.val < need.sugg
-    ? 'Bei ' + fmtH(pv.val) + (slip === 1 ? ' rutscht etwa ein Thema' : ' rutschen etwa ' + nWord(slip) + ' Themen') + ' eine Woche weiter. Überfälliges kommt zuerst dran.'
-    : (pv.val > need.sugg ? 'Passt, mit etwas Luft. ' : 'Passt. ') + 'Die Zeit wird auf Tage mit Platz verteilt, die Themen füllt jeden Morgen der Tag.';
+  const wSum = weekDates(T).filter((d) => d >= from).reduce((a, d) => a + num(split[d], 0), 0);
+  const wDue = wSum ? 'Voraussichtlich etwa ' + fmtH(wSum) + ' in dieser Woche, jeden Tag bis etwa ' + cfg().wdhProTag + ' min, am halben Tag die Hälfte.' : 'In dieser Woche ist voraussichtlich nichts fällig.';
   const nTermine = weekDates(T).filter((d) => d >= from).reduce((a, d) => a + termineAt(d).length, 0);
   const rDefs = Object.keys(D.routinen).filter((id) => (D.routinen[id].zustand || 'aktiv') === 'aktiv').sort((a, b) => num(D.routinen[a].reihenfolge, 99) - num(D.routinen[b].reihenfolge, 99));
   const aus = Array.isArray(wk.routinenAus) ? wk.routinenAus : [];
@@ -2554,9 +2482,8 @@ function planCard(T) {
   const sumH = rows.filter((v) => String(v.name || '').trim()).reduce((a, v) => a + vStd(v), 0);
   let h = '<section class="plancard" id="planen">' + head;
   h += '<section class="subcard" aria-label="Wiederholung"><div style="display:flex;align-items:center;gap:10px"><span class="wico" style="width:26px;height:26px;border-radius:13px;background:var(--soft);display:flex;align-items:center;justify-content:center">' + ico('wdh', 'xs') + '</span><h3>Wiederholung</h3></div>' +
-    '<p style="font-size:14px;line-height:1.45">' + esc(wDue) + '</p><div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px"><div class="stepper" role="group" aria-label="Wiederholungszeit"><button aria-label="30 Minuten weniger" data-a="wLess" data-w="' + T + '">' + ico('minus', 's') + '</button><output aria-live="polite">' + fmtH(pv.val) + '</output><button aria-label="30 Minuten mehr" data-a="wMore" data-w="' + T + '">' + ico('plus', 's') + '</button></div>' +
-    (pv.val === need.sugg ? '<span class="pillq">Vorschlag</span>' : '<button class="linkbtn" data-a="wReset" data-w="' + T + '">Vorschlag übernehmen (' + fmtH(need.sugg) + ')</button>') + '</div>' +
-    '<span class="small">' + esc(wHint) + '</span></section>';
+    '<p style="font-size:14px;line-height:1.45">' + esc(wDue) + '</p>' +
+    '<span class="small">Ist beim Verteilen schon eingerechnet. Was an einem Tag darüber liegt, steht einzeln in „Noch offen“ und kommt am nächsten Tag zuerst. Den Richtwert änderst du in den Einstellungen.</span></section>';
   if (nachPause(T)) h += '<span class="small">Erste Woche nach der Pause: Der Platz ist bewusst etwas kleiner gerechnet.</span>';
   h += '<div class="infobox"><span style="font-size:14px;line-height:1.45"><b>Schon drin:</b> ' + nTermine + (nTermine === 1 ? ' Termin' : ' Termine') + ' · ' + esc(rOn.length ? joinDe(rOn) : 'keine Routinen') + '</span><span style="font-size:15px;font-weight:700">Platz für Vorhaben: etwa ' + fmtDays(platz) + '</span></div>';
   h += '<div style="display:flex;flex-direction:column;gap:10px"><h3 style="font-size:14px;font-weight:600">Was willst du ' + (T <= t ? 'diese' : 'nächste') + ' Woche schaffen?</h3>';
@@ -2651,7 +2578,7 @@ function viewWoche() {
     const pl = poolList(W, t, isCur);
     if (pl.n) {
       left.push('<section class="stack"><h2 class="h2">Noch offen diese Woche</h2><div class="softbox">' + pl.html + '</div><span class="small" style="margin:0 4px">' +
-        (isCur ? 'Mit „+ Heute“ holst du sie dir in den Tag, am Puffertag sind sie dran. Mit dem Pfeil neben einem Block legst du ihn hierher zurück.' : 'Diese Vorhaben liegen ohne Tag in der Woche.') + '</span></section>');
+        (isCur ? 'Mit „+ Heute“ holst du sie dir in den Tag, am Puffertag sind sie dran. Über „⋯“ an einem Block legst du ihn hierher zurück.' : 'Diese Vorhaben liegen ohne Tag in der Woche.') + '</span></section>');
     }
   }
   if (wk.einschaetzung && wk.einschaetzung.text) {
@@ -2782,8 +2709,8 @@ function kalForm() {
       zeitFelder('k-t', 'kTVon', 'kTBis', 'kGanz', true) +
       '<button class="switch ink" role="switch" aria-checked="' + !!F.kKlausur + '" data-a="kKlausur"><span class="tr"></span>Klausur</button>';
     if (F.kKlausur) h += '<span class="flabel">Rechtsgebiet</span>' + (gebiete().length ? gebietChips(F.kGeb || null, 'kGeb') : '<span class="small">Lege unter Themen ein Gebiet an, dann kannst du es hier wählen.</span>');
-    if (!f.id && !F.kKlausur) {
-      h += '<button class="switch ink" role="switch" aria-checked="' + !!F.kWdh + '" data-a="tGanz" data-k="kWdh"><span class="tr"></span>jede Woche wiederholen' + (isDate(F.kVon) ? ' (' + WDL[wdOf(F.kVon)] + ')' : '') + '</button>';
+    if (!f.id) {
+      h += '<button class="switch ink" role="switch" aria-checked="' + !!F.kWdh + '" data-a="tGanz" data-k="kWdh"><span class="tr"></span>' + (F.kKlausur ? 'jede Woche (z. B. Klausurenkurs)' : 'jede Woche wiederholen') + (isDate(F.kVon) ? ' (' + WDL[wdOf(F.kVon)] + ')' : '') + '</button>';
       if (F.kWdh) h += '<label for="k-tend">bis (optional)</label><input id="k-tend" type="date" class="inp" style="background:var(--card)" data-in="kTEnd" value="' + esc(fv('kTEnd')) + '"><span class="small">Ändern, pausieren oder beenden kannst du wiederkehrende Termine in den Einstellungen.</span>';
     }
   } else {
@@ -2955,8 +2882,40 @@ Object.assign(EXTRA_ACT, {
 /* ---------- Klausuren: Punkte, Fehler, Verlauf (nur hier, nicht auf Heute) ---------- */
 const klausurPunkte = (x) => (x.ergebnis && typeof x.ergebnis.punkte === 'number' ? x.ergebnis.punkte : null);
 const hNum1 = (v) => String(Math.round(v * 10) / 10).replace('.', ',');
+// Einmalige Klausuren und jeder bisherige Termin einer wöchentlichen Klausur (Id „termin@datum“, Ergebnis unter ergebnisse[datum])
 function klausurenListe() {
-  return Object.keys(D.termine).map((id) => Object.assign({ id: id }, D.termine[id])).filter((x) => x.art === 'klausur' && isDate(x.datum));
+  const t = today(); const out = [];
+  Object.keys(D.termine).forEach((id) => {
+    const x = D.termine[id];
+    if (!x || x.art !== 'klausur') return;
+    if (isDate(x.datum)) { out.push(Object.assign({ id: id }, x)); return; }
+    const days = Array.isArray(x.wochentage) ? x.wochentage : (typeof x.wochentag === 'number' ? [x.wochentag] : []);
+    if (!days.length || !isDate(x.ab)) return;
+    const erg = isObj(x.ergebnisse) ? x.ergebnisse : {};
+    const end = isDate(x.endet) && x.endet < t ? x.endet : t;
+    for (let d = x.ab < addDays(t, -730) ? addDays(t, -730) : x.ab; d <= end; d = addDays(d, 1)) {
+      const statt = days.indexOf(wdOf(d)) >= 0 && !ausfallAm(x, d) && !(Array.isArray(x.ausser) && x.ausser.indexOf(d) >= 0) && !pauseAt(d).frei && !((tag(d).termine || {})[id] || {}).faelltAus;
+      if (statt || erg[d]) out.push(klGet(id + '@' + d));
+    }
+  });
+  return out;
+}
+function klGet(kid) {
+  const i = String(kid).indexOf('@');
+  if (i < 0) { const x = D.termine[kid]; return x ? Object.assign({ id: kid }, x) : null; }
+  const tid = kid.slice(0, i); const d = kid.slice(i + 1); const x = D.termine[tid];
+  if (!x || !isDate(d)) return null;
+  const e = (isObj(x.ergebnisse) ? x.ergebnisse : {})[d] || {};
+  return { id: kid, termin: tid, titel: x.titel || 'Klausur', datum: d, gebiet: x.gebiet || null, art: 'klausur', woechentlich: true, ergebnis: e.ergebnis || null, fehler: Array.isArray(e.fehler) ? e.fehler : [] };
+}
+function klPatch(kid, part) {
+  const i = String(kid).indexOf('@');
+  if (i < 0) { patch('termine', kid, part); return; }
+  const tid = kid.slice(0, i); const d = kid.slice(i + 1); const x = D.termine[tid];
+  if (!x) return;
+  const all = Object.assign({}, isObj(x.ergebnisse) ? x.ergebnisse : {});
+  all[d] = Object.assign({}, all[d] || {}, part);
+  patch('termine', tid, { ergebnisse: all });
 }
 function klausurForm(x) {
   const fehler = Array.isArray(x.fehler) ? x.fehler : [];
@@ -2979,7 +2938,7 @@ function klausurenHtml() {
   const alle = klausurenListe();
   let h = '<section class="panel" aria-label="Klausuren"><div class="h2row" style="margin:0"><h2>Klausuren</h2><span class="small">alle geschriebenen</span></div>';
   const past = alle.filter((x) => x.datum <= t).sort((a, b) => (a.datum < b.datum ? 1 : -1));
-  if (!past.length) return h + '<span class="small" style="font-size:14px">Trag Klausuren im Kalender über „+ Klausur“ ein. Nach der Rückgabe stehen hier Punkte, Schnitt und Verlauf.</span></section>';
+  if (!past.length) return h + '<span class="small" style="font-size:14px">Trag Klausuren im Kalender über „+ Klausur“ ein, spontane unter Heute → Hinzufügen → Mehr. Nach der Rückgabe stehen hier Punkte, Schnitt und Verlauf.</span></section>';
   const mit = past.filter((x) => klausurPunkte(x) != null).sort((a, b) => (a.datum < b.datum ? -1 : 1));
   if (mit.length) {
     const g = {};
@@ -3003,15 +2962,13 @@ function klausurenHtml() {
   return h + '</section>';
 }
 function klausurFehlerWdh(id, i) {
-  const x = D.termine[id]; const fehler = x && Array.isArray(x.fehler) ? x.fehler : [];
+  const x = klGet(id); const fehler = x && Array.isArray(x.fehler) ? x.fehler : [];
   const f = fehler[i]; if (!f || (f.block && D.bloecke[f.block])) return;
   const t = today(); const bid = uid('b'); const f1 = addDays(t, abstand(1));
   undoable('In die Wiederholung gelegt', () => {
     const part = { titel: x.titel + ': ' + f.text, woche: mondayOf(t), tag: null, gebiet: x.gebiet && thema(x.gebiet) ? topOf(x.gebiet) : null, status: 'erledigt', erledigtAm: t, wiederholen: true, sr: srNeu(t), quelle: 'klausur', klausur: id, erstellt: nowMs() };
-    part.wdhZeit = wdhZeitDazu(f1);
-    if (part.wdhZeit) part.plusWoche = mondayOf(f1);
     put('bloecke', bid, part);
-    patch('termine', id, { fehler: fehler.map((y, j) => (j === i ? Object.assign({}, y, { block: bid }) : y)) });
+    klPatch(id, { fehler: fehler.map((y, j) => (j === i ? Object.assign({}, y, { block: bid }) : y)) });
   });
 }
 function viewZahlen() {
@@ -3123,30 +3080,30 @@ Object.assign(EXTRA_ACT, {
   kOpenWeek: () => {},
   kalOpenWeek: (d) => { S.view = 'woche'; S.wk = d.w === mondayOf(today()) ? null : d.w; window.scrollTo(0, 0); },
   kAusfall: (d) => { toggleAusfall(d.id, d.d); return 'keep'; },
-  kKlausur: () => { F.kKlausur = !F.kKlausur; if (F.kKlausur) { F.kWdh = false; if (!F.kTVon && !F.kGanz) { F.kTVon = '09:00'; F.kTBis = '14:00'; } } return 'keep'; },
+  kKlausur: () => { F.kKlausur = !F.kKlausur; if (F.kKlausur) { if (!F.kTVon && !F.kGanz) { F.kTVon = '09:00'; F.kTBis = '14:00'; } } return 'keep'; },
   klOpen: (d) => {
     if (K.kl === d.id) { K.kl = null; return; }
-    const x = D.termine[d.id]; if (!x) return;
+    const x = klGet(d.id); if (!x) return;
     K.kl = d.id; const p = klausurPunkte(x); F.klPunkte = p == null ? '' : String(p); F.klOhne = !!(x.ergebnis && x.ergebnis.ohne); F.klFehler = ''; F.klErr = ''; focusSoon('kl-punkte');
   },
   klClose: () => { K.kl = null; },
   klSave: (d) => {
-    const x = D.termine[d.id]; if (!x) return;
+    const x = klGet(d.id); if (!x) return;
     const v = String(F.klPunkte == null ? '' : F.klPunkte).trim();
     const n = Number(v);
     if (!F.klOhne && v !== '' && !(Number.isInteger(n) && n >= 0 && n <= 18)) { F.klErr = 'Punkte bitte als ganze Zahl von 0 bis 18.'; return 'keep'; }
     F.klErr = '';
     const erg = F.klOhne ? { punkte: null, ohne: true, am: today() } : (v === '' ? null : { punkte: n, ohne: false, am: today() });
-    undoable(erg ? 'Ergebnis gespeichert' : 'Ergebnis entfernt', () => patch('termine', d.id, { ergebnis: erg }));
+    undoable(erg ? 'Ergebnis gespeichert' : 'Ergebnis entfernt', () => klPatch(d.id, { ergebnis: erg }));
     K.kl = null;
   },
   klFAdd: (d) => {
-    const x = D.termine[d.id]; const txt = String(F.klFehler || '').trim(); if (!x || !txt) return 'keep';
+    const x = klGet(d.id); const txt = String(F.klFehler || '').trim(); if (!x || !txt) return 'keep';
     F.klFehler = '';
-    undoable('Notiert', () => patch('termine', d.id, { fehler: (Array.isArray(x.fehler) ? x.fehler : []).concat([{ text: txt, block: null }]) }));
+    undoable('Notiert', () => klPatch(d.id, { fehler: (Array.isArray(x.fehler) ? x.fehler : []).concat([{ text: txt, block: null }]) }));
     focusSoon('kl-fehler'); return 'keep';
   },
-  klFDel: (d) => { const x = D.termine[d.id]; if (!x || !Array.isArray(x.fehler)) return 'keep'; undoable('Entfernt', () => patch('termine', d.id, { fehler: x.fehler.filter((_, i) => i !== Number(d.i)) })); return 'keep'; },
+  klFDel: (d) => { const x = klGet(d.id); if (!x || !Array.isArray(x.fehler)) return 'keep'; undoable('Entfernt', () => klPatch(d.id, { fehler: x.fehler.filter((_, i) => i !== Number(d.i)) })); return 'keep'; },
   klWdh: (d) => { klausurFehlerWdh(d.id, Number(d.i)); return 'keep'; },
   kGeb: (d) => { F.kGeb = F.kGeb === d.g ? null : d.g; return 'keep'; },
   kStoffAdd: () => { const id = F.kStoffSel; if (id && thema(id) && (F.kStoff || []).indexOf(id) < 0) F.kStoff = (F.kStoff || []).concat([id]); F.kStoffSel = ''; return 'keep'; },
@@ -3176,6 +3133,7 @@ Object.assign(EXTRA_ACT, {
       const ganz = !!F.kGanz; const von = ganz ? '' : F.kTVon; const bis = ganz ? '' : (F.kTBis || '');
       const kl = F.kKlausur ? { art: 'klausur', gebiet: F.kGeb || null } : { art: null, gebiet: null };
       if (f.id) undoable(F.kKlausur ? 'Klausur gespeichert' : 'Termin gespeichert', () => patch('termine', f.id, Object.assign({ titel: name, datum: F.kVon, von: von, bis: bis, ganztags: ganz, beispiel: false }, kl)));
+      else if (F.kKlausur && F.kWdh) undoable('Klausur eingetragen, jede Woche am ' + WDL[wdOf(F.kVon)], () => addTerminWeekly(F.kVon, name, von, bis, ganz, F.kTEnd, kl));
       else if (F.kKlausur) undoable('Klausur eingetragen', () => addTerminOnce(F.kVon, name, von, bis, ganz, kl));
       else if (F.kWdh) undoable('Termin eingetragen, jede Woche am ' + WDL[wdOf(F.kVon)], () => addTerminWeekly(F.kVon, name, von, bis, ganz, F.kTEnd));
       else undoable('Termin eingetragen', () => addTerminOnce(F.kVon, name, von, bis, ganz));
@@ -3758,7 +3716,9 @@ const selChips = (label, vals, cur, k, fmt) => '<div class="chips" role="group" 
 function stellschrauben() {
   const c = cfg();
   let h = '<section class="panel" aria-label="Stellschrauben"><h2>Stellschrauben</h2><span class="small">Zu Beginn einer Etappe oder in der Monatssitzung anpassen. Änderungen gelten ab jetzt, nichts rückwirkend.</span><div>';
-  h += sRow('wzeit', 'Wiederholungszeit pro Woche', 'in der Planungskarte', () => '<span class="small" style="font-size:14px">Die legst du jede Woche in der Planungskarte fest. Vorgeschlagen wird sie nach den fälligen Themen.</span><button class="linkbtn" data-a="nav" data-v="woche">Zur Woche</button>');
+  h += sRow('wdhtag', 'Wiederholung pro Tag', c.wdhProTag ? 'etwa ' + c.wdhProTag + ' min' : 'nichts automatisch', () =>
+    selChips('Wiederholung pro Tag', [0, 30, 45, 60, 75, 90, 120], c.wdhProTag, 'wdhProTag', (v) => (v ? v + ' min' : 'keine')) +
+    '<span class="small">Richtwert für einen ganzen Tag; am halben Tag die Hälfte, am freien Tag nichts automatisch. Was darüber fällig ist, steht in „Noch offen“ und lässt sich jederzeit dazuholen.</span>');
   h += sRow('zeit', 'Zeit pro Thema nach Abstand', c.zeitKurz + ' · ' + c.zeitMittel + ' · ' + c.zeitLang + ' min', () =>
     '<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">' + [['esZK', '1–7 Tage'], ['esZM', '14–30 Tage'], ['esZL', 'ab 60 Tagen']].map((x) =>
       '<div style="display:flex;flex-direction:column;gap:4px;min-width:0"><label class="flabel" for="' + x[0] + '">' + x[1] + '</label><input id="' + x[0] + '" class="inp" type="number" inputmode="numeric" min="5" max="180" data-in="' + x[0] + '" value="' + esc(fv(x[0])) + '" data-enter="esZeit"></div>').join('') + '</div>' +
@@ -3818,7 +3778,7 @@ function termineHtml() {
     if (ES.tForm && ES.tForm.id === id) return '<div style="padding:8px 0;border-top:1px solid var(--line)">' + terminFormE() + '</div>';
     const days = Array.isArray(x.wochentage) ? x.wochentage : (typeof x.wochentag === 'number' ? [x.wochentag] : []);
     const span = (isDate(x.ab) ? 'ab ' + fmtDM(x.ab) : '') + (isDate(x.endet) ? (isDate(x.ab) ? ' ' : '') + 'bis ' + fmtDM(x.endet) : '');
-    return '<div class="spanrow" style="flex-wrap:wrap" data-k="et-' + esc(id) + '"><span class="sw term"></span><span class="tx"><b' + (z !== 'aktiv' ? ' style="color:var(--quiet)"' : '') + '>' + esc(x.titel) + bsp(x) + '</b><span class="small">' + esc(days.slice().sort().map((i) => WD[i]).join(', ') + (terminText(x) ? ' · ' + terminText(x) : '') + (span ? ' · ' + span : '')) + '</span></span>' +
+    return '<div class="spanrow" style="flex-wrap:wrap" data-k="et-' + esc(id) + '"><span class="sw term"></span><span class="tx"><b' + (z !== 'aktiv' ? ' style="color:var(--quiet)"' : '') + '>' + esc(x.titel) + bsp(x) + (x.art === 'klausur' ? '<span class="tag-bsp">Klausur</span>' : '') + '</b><span class="small">' + esc(days.slice().sort().map((i) => WD[i]).join(', ') + (terminText(x) ? ' · ' + terminText(x) : '') + (span ? ' · ' + span : '')) + '</span></span>' +
       '<button class="linkbtn" style="align-self:center" aria-label="Termin ' + esc(x.titel) + ' ändern" data-a="esTEdit" data-id="' + esc(id) + '">ändern</button><div style="flex:1 1 100%">' + zChips(z, 'esTZ', id, 'Zustand ' + x.titel) + '</div></div>';
   }).join('') + '</div>' : '<span class="small" style="font-size:14px">Noch keine wiederkehrenden Termine.</span>';
   if (!ES.tForm) h += '<button class="addbtn" style="min-height:44px" data-a="esTNew">' + ico('plus', 'xs') + 'Termin</button>';
@@ -3941,8 +3901,7 @@ function viewEinstellungen() {
   const design = '<section class="panel" aria-label="Darstellung"><h2>Darstellung</h2><div class="seg3" role="group" aria-label="Hell oder dunkel">' +
     [['auto', 'Automatisch'], ['hell', 'Hell'], ['dunkel', 'Dunkel']].map((x) => '<button aria-pressed="' + (dv === x[0]) + '" data-a="esDesign" data-v="' + x[0] + '">' + x[1] + '</button>').join('') + '</div>' +
     '<span class="small">„Automatisch“ folgt der Einstellung deines Macs.</span></section>';
-  const kuerzel = '<section class="panel" aria-label="Tastenkürzel"><h2>Tastenkürzel</h2>' + keysHtml() + '</section>';
-  return h + '<div class="cols"><div class="stack l">' + design + stellschrauben() + datenHtml() + kuerzel + '</div><div class="stack l">' + routinenHtml() + termineHtml() + '</div></div>';
+  return h + '<div class="cols"><div class="stack l">' + design + stellschrauben() + datenHtml() + '</div><div class="stack l">' + routinenHtml() + termineHtml() + '</div></div>';
 }
 function nextOrder(col) { const ids = Object.keys(D[col]); return ids.length ? Math.max(...ids.map((i) => num(D[col][i].reihenfolge, 0))) + 1 : 1; }
 Object.assign(EXTRA_ACT, {
@@ -4076,16 +4035,6 @@ function placeholder(title, text) {
   return '<header class="head"><div class="col"><h1>' + esc(title) + '</h1></div><button class="iconbtn gear" aria-label="Einstellungen" data-a="nav" data-v="einstellungen">' + ico('einst') + '</button></header>' +
     '<div class="placeholder"><b>Noch im Bau</b><span>' + esc(text) + '</span></div>';
 }
-/* ---------- Tastenkürzel (Mac) ---------- */
-const KEYS = [['N', 'Neuer Eintrag in Heute'], ['1', 'Heute'], ['2', 'Woche'], ['3', 'Kalender'], ['4', 'Themen'], ['T', 'Timer starten (freie Lernzeit) oder stoppen'], ['/', 'Themen durchsuchen'], ['⌘ Z', 'Rückgängig, solange die Meldung zu sehen ist'], ['?', 'Diese Übersicht öffnen'], ['Esc', 'Menü oder Übersicht schließen']];
-const keysHtml = () => '<div style="display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 12px;align-items:center" data-k="keys">' + KEYS.map((k) =>
-  '<kbd style="font:600 13px/1 inherit;min-width:28px;text-align:center;padding:5px 7px;border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;background:var(--card);color:var(--ink)">' + esc(k[0]) + '</kbd><span style="font-size:14px">' + esc(k[1]) + '</span>').join('') + '</div>' +
-  '<span class="small">Die Kürzel gelten, solange du nicht in ein Eingabefeld tippst.</span>';
-function keysOverlay() {
-  if (!S.keysOpen) return '';
-  return '<div style="position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;padding:16px">' +
-    '<section class="panel" role="dialog" aria-modal="true" aria-label="Tastenkürzel" style="max-width:420px;width:100%;max-height:90vh;overflow:auto"><div class="h2row" style="margin:0"><h2>Tastenkürzel</h2><button class="linkbtn" data-a="keysClose">Schließen</button></div>' + keysHtml() + '</section></div>';
-}
 function navSide() {
   return '<nav class="side" aria-label="Ansichten"><span class="brand">Lernsystem</span>' +
     VIEWS.map((v) => '<button data-a="nav" data-v="' + v.k + '"' + (S.view === v.k ? ' aria-current="page"' : '') + '>' + ico(v.icon, 's') + v.label + '</button>').join('') +
@@ -4108,7 +4057,7 @@ function doRender() {
   const root = document.getElementById('app');
   if (!root) return;
   const t = today();
-  if (lastDay && lastDay !== t) { S.menu = null; S.edit = null; S.editT = null; S.wdhOpen = false; S.poolOpen = null; S.wk = null; }
+  if (lastDay && lastDay !== t) { S.menu = null; S.edit = null; S.editT = null; S.wdhTag = {}; S.poolOpen = null; S.wk = null; }
   lastDay = t;
   let body;
   if (dbState === 'laedt') body = '<div class="empty" role="status"><span class="spin"></span> Lädt deinen Planer …</div>';
@@ -4117,7 +4066,7 @@ function doRender() {
     try { body = VIEW_FN[S.view](); } catch (e) { console.error(e); body = '<div class="err" role="alert">Diese Ansicht konnte nicht angezeigt werden. Lade die Seite neu. (' + esc(e && e.message) + ')</div>'; }
   }
   const html = '<div class="app">' + navSide() + '<div class="main">' + timerBar() + '<main class="wrap' + (S.view === 'heute' ? '' : '') + '" id="main">' + body + '</main></div></div>' + navBottom() +
-    (toastState ? '<div class="toast" role="status"><span>' + esc(toastState.text) + '</span>' + (toastState.snap ? '<button data-a="undo">Rückgängig</button>' : '') + '</div>' : '') + keysOverlay();
+    (toastState ? '<div class="toast" role="status"><span>' + esc(toastState.text) + '</span>' + (toastState.snap ? '<button data-a="undo">Rückgängig</button>' : '') + '</div>' : '');
   const tpl = document.createElement('template');
   tpl.innerHTML = html;
   morphChildren(root, tpl.content);
@@ -4139,17 +4088,17 @@ function doRender() {
 }
 
 /* ---------- Ereignisse ---------- */
-function closeMenus() { S.menu = null; S.wdhMenu = false; }
+function closeMenus() { S.menu = null; }
 const ACT = {
   nav: (d) => { S.view = d.v; S.day = null; S.korrAsk = null; closeMenus(); S.edit = null; S.editT = null; if (d.v === 'woche') S.wk = null; try { sessionStorage.setItem('ls-view', d.v); } catch (e) { /* egal */ } window.scrollTo(0, 0); },
-  menu: (d) => { const m = S.menu === d.m ? null : d.m; S.menu = m; S.edit = null; S.wvon = null; S.editT = null; S.wdhMenu = false; return 'keep'; },
+  menu: (d) => { const m = S.menu === d.m ? null : d.m; S.menu = m; S.edit = null; S.wvon = null; S.editT = null; return 'keep'; },
   tTermin: (d) => { const day = curDay(); const st = ((tag(day).termine || {})[d.id]) || {}; if (!st.erledigt && !guardAdd(day)) return 'keep'; toggleTermin(day, d.id); },
   tBlock: (d) => { const b = D.bloecke[d.id] || {}; const on = b.status !== 'erledigt'; if (on && !guardAdd(b.tag || curDay())) return 'keep'; setBlockDone(d.id, on); },
   tRoutine: (d) => { const day = curDay(); const st = ((tag(day).routinen || {})[d.id]) || {}; if (!st.erledigt && !st.heuteNicht && !guardAdd(day)) return 'keep'; toggleRoutine(day, d.id); },
   cancelTermin: (d) => cancelTermin(curDay(), d.id, d.t),
   restoreTermin: (d) => restoreTermin(curDay(), d.id),
   skipR: (d) => skipRoutine(curDay(), d.id, d.t),
-  editDay: (d) => { S.day = d.d; S.view = 'heute'; S.korrAsk = null; closeMenus(); S.adding = false; S.wdhOpen = false; window.scrollTo(0, 0); },
+  editDay: (d) => { S.day = d.d; S.view = 'heute'; S.korrAsk = null; closeMenus(); S.adding = false; window.scrollTo(0, 0); },
   dayBack: () => { const d = S.day; S.day = null; S.view = 'woche'; S.wk = d && mondayOf(d) !== mondayOf(today()) ? mondayOf(d) : null; S.adding = false; window.scrollTo(0, 0); },
   korrAsk: () => { S.korrAsk = curDay(); },
   korrNo: () => { S.korrAsk = null; },
@@ -4167,14 +4116,14 @@ const ACT = {
   delB: (d) => deleteBlock(d.id),
   startT: (d) => {
     if (d.art === 'b') { const b = D.bloecke[d.id]; if (b) startTimer('b', d.id, b.titel); }
-    else if (d.art === 'w') startTimer('w', d.id, 'Wiederholung');
+    else if (d.art === 'w') { const it = srByRef(wParse(d.id).ref); startTimer('w', d.id, it ? 'Wiederholung: ' + it.titel : 'Wiederholung'); }
     else startTimer('f', '', 'Freie Lernzeit');
   },
   stopT: () => stopTimer(),
   openT: (d) => {
     if (S.editT === d.ref) { S.editT = null; return; }
     const [k, id] = d.ref.split(':');
-    const cur = k === 'b' ? num((D.bloecke[id] || {}).zeit, 0) : wdhState(id).zeit;
+    const cur = k === 'b' ? num((D.bloecke[id] || {}).zeit, 0) : wZeit(id);
     F.zeit = cur ? fmtHM(cur).replace(' h', '') : '';
     S.editT = d.ref; focusSoon('zeit-' + d.ref.replace(':', '-'));
   },
@@ -4185,22 +4134,20 @@ const ACT = {
     if (m == null || m > 24 * 60) { toast('Zeit bitte als 1:30 oder in Minuten eingeben.', false); return 'keep'; }
     const [k, id] = String(ref).split(':');
     const b = k === 'b' ? D.bloecke[id] : null;
-    const day = b ? (b.tag || curDay()) : id;
-    const cur = b ? num(b.zeit, 0) : wdhState(id).zeit;
+    const day = b ? (b.tag || curDay()) : wParse(id).date;
+    const cur = b ? num(b.zeit, 0) : wZeit(id);
     if (m > cur && !guardAdd(day)) return 'keep';
     setZeit(ref, m); S.editT = null;
-    if (m > cur && markNach(day)) { if (b) patch('bloecke', id, { nachgetragen: true }); else patch('tage', id, { wdh: { zeitNachgetragen: true } }); }
+    if (m > cur && markNach(day)) { if (b) patch('bloecke', id, { nachgetragen: true }); else { const wp = wParse(id); if (wp.ref) patch('tage', wp.date, { wdh: { bew: { [wp.ref]: { zeitNach: true } } } }); else patch('tage', id, { wdh: { zeitNachgetragen: true } }); } }
   },
   keepB: (d) => toggleWiederholen(d.id),
   rateB: (d) => rateBlock(d.id, d.r),
-  wdhOpen: () => { S.wdhOpen = !S.wdhOpen; },
-  wdhMenu: () => { S.wdhMenu = !S.wdhMenu; S.menu = null; return 'keep'; },
-  dropWdh: () => { S.wdhOpen = false; dropWdh(curDay()); },
-  restoreWdh: () => restoreWdh(curDay()),
+  wdhTag: (d) => { S.wdhTag[d.d] = !S.wdhTag[d.d]; return 'keep'; },
+  laterW: (d) => { S.menu = null; wdhSpaeter(curDay(), d.ref); },
   rateW: (d) => rateWdh(curDay(), d.ref, d.r),
   poolOpen: () => { const t = today(); const cur = S.poolOpen == null ? isPufferDay(t) : S.poolOpen; S.poolOpen = !cur; },
   pull: (d) => pullToday(d.id),
-  pullWdh: () => pullWdhToday(),
+  pullW: (d) => wdhHolen(d.ref),
   startAdd: () => { if (S.day && !guardAdd(S.day)) return 'keep'; S.adding = true; S.addDone = !!S.day; S.addMore = false; S.addG = undefined; F.addText = ''; F.addWdh = ''; F.addWdhQ = ''; focusSoon('neu-eintrag'); },
   cancelAdd: () => { S.adding = false; },
   addDone: () => { S.addDone = !S.addDone; return 'keep'; },
@@ -4213,8 +4160,6 @@ const ACT = {
     S.adding = false; F.addText = '';
   },
   undo: () => undoToast(),
-  keysOpen: () => { S.keysOpen = true; },
-  keysClose: () => { S.keysOpen = false; },
   /* Woche */
   wkPrev: () => { S.wk = addDays(S.wk || mondayOf(today()), -7); S.tfOpen = false; },
   wkNext: () => { S.wk = addDays(S.wk || mondayOf(today()), 7); S.tfOpen = false; },
@@ -4235,26 +4180,30 @@ const ACT = {
   wPool: (d) => { pushToPool(d.id); S.wMenu = null; },
   wDel: (d) => { deleteBlock(d.id); S.wMenu = null; },
   pushB: (d) => pushToPool(d.id),
-  pushW: (d) => pushWdh(d.d),
   carryKeep: (d) => carryKeep(d.id),
   carryDrop: (d) => carryDrop(d.id),
   tGanz: (d) => { F[d.k] = !F[d.k]; return 'keep'; },
-  tfOpen: (d) => { S.tfOpen = d.d ? true : !S.tfOpen; S.wAdd = null; F.tfTitel = ''; F.tfVon = ''; F.tfBis = ''; F.tfGanz = false; F.tfKlausur = false; F.tfErr = ''; S.tfDay = d.d || null; if (S.tfOpen) { S.dayOpen[mondayOf(d.d || today()) + (d.d || today())] = true; focusSoon('tf-titel'); } },
-  tfClose: () => { S.tfOpen = false; },
+  tfOpen: (d) => { S.tfOpen = d.d ? true : !S.tfOpen; S.tfHeute = false; S.wAdd = null; F.tfTitel = ''; F.tfVon = ''; F.tfBis = ''; F.tfGanz = false; F.tfKlausur = false; F.tfGeb = null; F.tfErr = ''; S.tfDay = d.d || null; if (S.tfOpen) { S.dayOpen[mondayOf(d.d || today()) + (d.d || today())] = true; focusSoon('tf-titel'); } },
+  // Aus „Heute“: spontaner Termin oder spontane Klausur, Uhrzeit ab jetzt
+  tfHeute: () => {
+    const m = Math.floor(nowMin() / 5) * 5; const hm = (x) => String(Math.floor(x / 60) % 24).padStart(2, '0') + ':' + String(x % 60).padStart(2, '0');
+    S.adding = false; S.addMore = false; S.tfOpen = true; S.tfHeute = true; S.tfDay = today();
+    F.tfTitel = ''; F.tfVon = hm(m); F.tfBis = m + 60 < 24 * 60 ? hm(m + 60) : ''; F.tfGanz = false; F.tfKlausur = false; F.tfGeb = null; F.tfErr = '';
+    focusSoon('tf-titel');
+  },
+  tfGeb: (d) => { F.tfGeb = F.tfGeb === d.g ? null : d.g; return 'keep'; },
+  tfClose: () => { S.tfOpen = false; S.tfHeute = false; },
   tfDay: (d) => { S.tfDay = d.d; return 'keep'; },
   tfSave: (d) => {
     const von = F.tfVon || ''; const bis = F.tfBis || '';
     F.tfErr = terminCheck(F.tfTitel, von, bis, F.tfGanz);
     if (F.tfErr) return 'keep';
     let ok = false;
-    undoable(F.tfKlausur ? 'Klausur eingetragen' : 'Termin eingetragen', () => { ok = addTerminOnce(d.d, F.tfTitel, von, bis, F.tfGanz, F.tfKlausur ? { art: 'klausur', gebiet: null } : null); });
-    if (ok) S.tfOpen = false;
+    undoable(F.tfKlausur ? 'Klausur eingetragen' : 'Termin eingetragen', () => { ok = addTerminOnce(d.d, F.tfTitel, von, bis, F.tfGanz, F.tfKlausur ? { art: 'klausur', gebiet: F.tfGeb || null } : null); });
+    if (ok) { S.tfOpen = false; S.tfHeute = false; }
   },
   goPlanNext: () => { S.wk = addDays(mondayOf(today()), 7); window.scrollTo(0, 0); },
   planShow: (d) => { S.planShow[d.w] = true; },
-  wLess: (d) => planWdhSet(d.w, Math.max(0, planWdhValue(d.w).val - 30)),
-  wMore: (d) => planWdhSet(d.w, Math.min(20 * 60, planWdhValue(d.w).val + 30)),
-  wReset: (d) => planWdhReset(d.w),
   vUp: (d) => vorhabenMove(d.w, d.id, -1),
   vDown: (d) => vorhabenMove(d.w, d.id, 1),
   vDel: (d) => vorhabenRemove(d.id, d.w),
@@ -4300,24 +4249,6 @@ document.addEventListener('change', (e) => {
 });
 document.addEventListener('keydown', (e) => {
   const el = e.target;
-  const tippt = el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
-  if (e.key === 'Escape' && S.keysOpen) { S.keysOpen = false; scheduleRender(); return; }
-  if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && String(e.key).toLowerCase() === 'z' && !tippt) {
-    if (toastState && toastState.snap) { e.preventDefault(); undoToast(); scheduleRender(); }
-    return;
-  }
-  if (!tippt && !e.metaKey && !e.ctrlKey && !e.altKey && dbState === 'ok') {
-    const k = String(e.key);
-    const go = (v) => { ACT.nav({ v: v }); };
-    let done = true;
-    if (k === '?') S.keysOpen = !S.keysOpen;
-    else if (k >= '1' && k <= '4') { S.keysOpen = false; go(VIEWS[Number(k) - 1].k); }
-    else if (k === 'n' || k === 'N') { S.keysOpen = false; go('heute'); ACT.startAdd(); }
-    else if (k === 't' || k === 'T') { if (timerDoc()) ACT.stopT(); else ACT.startT({ art: 'f' }); }
-    else if (k === '/') { S.keysOpen = false; go('themen'); focusSoon('th-q'); }
-    else done = false;
-    if (done) { e.preventDefault(); closeMenus(); scheduleRender(); return; }
-  }
   if (e.key === 'Enter' && el.dataset && el.dataset.enter) {
     e.preventDefault();
     if (el.dataset.in) F[el.dataset.in] = el.value;
@@ -4325,12 +4256,6 @@ document.addEventListener('keydown', (e) => {
     runAct(fake);
   }
   if (e.key === 'Enter' && el.dataset && el.dataset.ch) el.blur();
-  if (e.key === 'Escape') {
-    const open = document.querySelector('[data-a=menu][aria-expanded="true"], [data-a=wdhMenu][aria-expanded="true"]');
-    const sel = open ? (open.dataset.m ? '[data-a=menu][data-m="' + open.dataset.m + '"]' : '[data-a=wdhMenu]') : null;
-    closeMenus(); S.edit = null; S.wvon = null; S.editT = null; S.wAdd = null; S.wMenu = null; S.wRen = null; scheduleRender();
-    if (sel) setTimeout(() => { const el = document.querySelector(sel); if (el) el.focus(); }, 40);
-  }
 });
 setInterval(() => {
   const el = document.getElementById('timer-el');
@@ -4343,7 +4268,7 @@ window.addEventListener('resize', () => { const w = window.innerWidth >= 900; if
 document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleRender(); });
 // Zuletzt geöffnete Ansicht gilt, solange die App offen ist (auch nach Neuladen); nach dem Beenden startet „Heute“
 try { const v = sessionStorage.getItem('ls-view'); if (v && VIEW_FN[v]) S.view = v; } catch (e) { /* egal */ }
-window.__ls = { D: D, S: S, F: F, cfg: cfg, today: today, setSim: (d, m) => { setSim(d, m); scheduleRender(); }, progress: progress, pufferDate: pufferDate, capacity2: (T) => capacity(T, weekWdh(T).split, planFrom(T), true), srItems: srItems, wdhNeed: wdhNeed, weekWdh: weekWdh, splitWdh: splitWdh, allocRegel: allocRegel, fillWdh: fillWdh, srRate: srRate, wdhState: wdhState, poolOf: poolOf, carryOf: carryOf, vorhabenFor: vorhabenFor, capacity: capacity, termineAt: termineAt, routinenAt: routinenAt, pauseAt: pauseAt, erfasstAt: erfasstAt, dbState: () => dbState, moveBlock: moveBlock, clearPlanBlocks: (T) => { clearPlanBlocks(T); scheduleRender(); } };
+window.__ls = { D: D, S: S, F: F, cfg: cfg, today: today, setSim: (d, m) => { setSim(d, m); scheduleRender(); }, progress: progress, pufferDate: pufferDate, capacity2: (T) => capacity(T, wdhSplit(T), planFrom(T), true), srItems: srItems, wdhListe: wdhListe, wdhSplit: wdhSplit, wdhForecast: wdhForecast, wdhRichtwert: wdhRichtwert, wdhUeberhang: wdhUeberhang, allocRegel: allocRegel, fillWdh: fillWdh, srRate: srRate, wdhState: wdhState, poolOf: poolOf, carryOf: carryOf, vorhabenFor: vorhabenFor, capacity: capacity, termineAt: termineAt, routinenAt: routinenAt, pauseAt: pauseAt, erfasstAt: erfasstAt, dbState: () => dbState, moveBlock: moveBlock, clearPlanBlocks: (T) => { clearPlanBlocks(T); scheduleRender(); } };
 scheduleRender();
 initDb();
 if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch((e) => console.warn('Offline-Speicher', e));

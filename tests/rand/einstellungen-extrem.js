@@ -34,7 +34,7 @@ L.run(async () => {
   // Nur ein Abstand (5 Tage): „sicher“ bleibt auf Stufe 1 mit 5 Tagen
   let seed = JSON.parse(JSON.stringify(base)); delete seed.termine; seed.meta = { config: CFGS.einAbstand };
   let p = await L.open(seed, 'sim-2026-10-29-1000');
-  await L.click(p, '[data-a=wdhOpen]'); await L.click(p, '[data-a=rateW][data-r=sicher]');
+  await L.click(p, '[data-a=rateW][data-r=sicher]');
   L.expect('ein Abstand: sicher -> 5 Tage', (await L.store(p)).bloecke.y.sr, { stufe: 1, faellig: '2026-11-03', letzte: '2026-10-29', bewertung: 'sicher' });
   await p.context().close();
   // Ganze Woche Pause: alle Ansichten heil, Woche „ruht“
