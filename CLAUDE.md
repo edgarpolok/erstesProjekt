@@ -63,6 +63,7 @@ Playwright und Chromium sind in der Cloud-Umgebung vorinstalliert. Jede Testdate
 | `durchgaenge.js` | neuer Durchgang auf jeder Ebene, Stand und Zeitstrahl |
 | `gliederung.js` | Gliederung einfügen (Einrückung, Nummern, vier Ebenen, Vorhandenes weiterverwenden) |
 | `etappe-stoff.js` | Etappe mit Stoff: „X von Y bisher angelegten Themen“, Balken erst bei vollständigem Stoff |
+| `woche-kalender-ansicht.js` | Woche: Tage zugeklappt mit Terminen (Uhrzeit) und „Lernen: …“, nur heute offen, zwei Drittel Breite; Kalender: wöchentliche Termine als Punkte, Besonderes als Text mit „+N“, gleich hohe Tage |
 | `app-offline.js` | über einen eigenen Webserver: Neuladen, Service Worker offline, Updates sofort, Sichern/Laden, keine fremden Dienste |
 
 Unter `file://` hält Chromium localStorage/sessionStorage beim Neuladen nicht zuverlässig; alles, was das Neuladen überstehen muss, prüft deshalb `app-offline.js` über http.

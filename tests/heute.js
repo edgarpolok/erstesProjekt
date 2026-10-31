@@ -70,6 +70,7 @@ L.run(async () => {
   L.expect('Routine abgehakt', (await L.store(p)).tage['2026-11-03'].routinen.r3.erledigt, true);
   L.expect('Routinen an Tagen (Mo–Do)', await p.evaluate(() => ['2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05', '2026-11-06'].map((d) => window.__ls.routinenAt(d).map((r) => r.titel).join('+'))), ['10-Finger', 'Anki', '10-Finger', '', '10-Finger']);
   await L.go(p, 'woche');
+  await L.click(p, '.day[data-k="d-2026-11-04"] .lbl'); // kommende Tage starten zugeklappt
   L.ok('Woche: 10-Finger am Mittwoch', /Mi4\.11\.[^]*10-Finger/.test(await L.text(p)));
   await p.context().close();
   p = await L.open(seedTag, 'sim-2026-11-04-0900');
