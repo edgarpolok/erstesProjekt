@@ -31,7 +31,7 @@ L.run(async () => {
     const p = await L.open(seed, 'sim-2026-10-29-1000', w);
     const breite = (wo) => L.noHScroll(p, wo);
     await breite('Heute');
-    await L.click(p, '[data-a=wdhOpen]'); await L.click(p, '[data-a=poolOpen]'); await L.click(p, '[data-a=menu][data-m=bx1]');
+    await L.click(p, '[data-a=poolOpen]'); await L.click(p, '[data-a=menu][data-m=bx1]');
     await breite('Heute aufgeklappt');
     await L.go(p, 'woche'); await breite('Woche');
     await L.click(p, '[data-a=wkNext]'); await L.click(p, '[data-a=vMore]'); await breite('Planung');

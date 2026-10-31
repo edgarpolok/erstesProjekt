@@ -60,8 +60,8 @@ L.run(async () => {
   await L.go(p, 'woche');
   L.expect('Planungstag auch in der Pause', await p.locator('[data-a=goPlanNext]').count(), 1);
   await L.click(p, '[data-a=wkNext]');
-  const need = await p.evaluate(() => window.__ls.wdhNeed('2026-12-28'));
-  L.expect('KW 53: zwei fällige Wiederholungen (Neujahr, 2.1.)', need.list.map((x) => [x.d, x.ref]), [['2027-01-01', 'e:u2'], ['2027-01-02', 't:sat']]);
+  const vor = await p.evaluate(() => ['2027-01-01', '2027-01-02'].map((d) => window.__ls.wdhListe(d).map((x) => [d, x.ref])).flat());
+  L.expect('KW 53: zwei fällige Wiederholungen (Neujahr, 2.1.)', vor, [['2027-01-01', 'e:u2'], ['2027-01-02', 't:sat']]);
   await L.click(p, '[data-a=vAdd]'); await L.fill(p, '.vrow input.inp', 'Großes Vorhaben'); await p.press('.vrow input.inp', 'Tab'); await p.waitForTimeout(150);
   await L.click(p, '[data-a=vStd][data-h="12"]');
   await L.click(p, '[data-a=planClaude]'); await p.waitForTimeout(500);
@@ -73,7 +73,8 @@ L.run(async () => {
   const cap = await p.evaluate(() => window.__ls.capacity2('2026-12-28'));
   const proTag = {}; plan.forEach((b) => { proTag[b.tag] = (proTag[b.tag] || 0) + b.std; });
   L.ok('kein Tag über seiner Kapazität', Object.keys(proTag).every((d) => proTag[d] <= (cap[d] || 0) + 0.5 + 1e-9), { proTag, cap });
-  L.expect('Wiederholungszeit an den Fälligkeitstagen', [s.wochen['2026-12-28'].wdhVerteilung['2027-01-01'], s.wochen['2026-12-28'].wdhVerteilung['2027-01-02']], [15, 15]);
+  const wsp = await p.evaluate(() => window.__ls.wdhSplit('2026-12-28'));
+  L.expect('Wiederholungszeit an den Fälligkeitstagen', [wsp['2027-01-01'], wsp['2027-01-02']], [15, 15]);
   await p.context().close();
 
   // 13.1.2027: Statistik zählt die Wochen über den Jahreswechsel richtig

@@ -120,8 +120,7 @@ L.run(async () => {
     bloecke: { u1: { titel: 'Mitverschulden', thema: 'sat', status: 'erledigt', erledigtAm: '2026-10-20', woche: '2026-10-19', wiederholen: true } },
     tage: { '2026-10-28': { wdh: { liste: [{ ref: 't:sat', min: 15 }], min: 15, bew: { 't:sat': { r: 'sicher' } } } } } };
   p = await L.open(seed, 'sim-2026-11-04-1000', 1280);
-  await L.click(p, '[data-a=wdhOpen]');
-  L.has('Notiz steht in der Wiederholung', await L.text(p, '.wdh'), '§ 254 sitzt');
+  L.has('Notiz steht in der Wiederholung', await L.text(p, '.wrow'), '§ 254 sitzt');
   await L.click(p, '[data-a=rateW][data-r=teilweise]');
   await L.fill(p, '[data-in="wn_t_sat"]', 'Gehilfen nochmal'); await L.click(p, '[data-a=wNote]');
   L.expect('Notiz ergänzt mit Datum', (await L.store(p)).themen.sat.notiz, '§ 254 sitzt\n4.11.26: Gehilfen nochmal');

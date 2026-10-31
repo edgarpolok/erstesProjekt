@@ -25,7 +25,7 @@ const AKTIONEN = [
   { name: 'Block zurück in die Woche', schritte: async (p) => { await L.click(p, menu('bb1')); await L.click(p, '[data-a=backWeek][data-id=b1]'); } },
   { name: 'Termin fällt heute aus', schritte: async (p) => { await L.click(p, menu('tt1')); await L.click(p, '[data-a=cancelTermin]'); } },
   { name: 'Routine heute auslassen', schritte: async (p) => { await L.click(p, menu('rr1')); await L.click(p, '[data-a=skipR]'); } },
-  { name: 'Wiederholung heute auslassen', schritte: async (p) => { await L.click(p, '[data-a=wdhMenu]'); await L.click(p, '[data-a=dropWdh]'); } },
+  { name: 'Wiederholung später (zurück in „Noch offen“)', schritte: async (p) => { await L.click(p, '[data-a=menu][data-m="w2026-11-05~e.e1"]'); await L.click(p, '[data-a=laterW][data-ref="e:e1"]'); } },
   { name: 'Block in „Noch offen“ zurücklegen (Woche)', w: 1280, schritte: async (p) => { await L.go(p, 'woche'); await L.click(p, '[data-a=pushB][data-id=b1]'); } },
   { name: 'Pause löschen (Kalender)', w: 1280, schritte: async (p) => { await L.go(p, 'kalender'); await L.click(p, '[data-a=kEdit][data-id=pa]'); await L.click(p, '[data-a=kDel]'); } },
   { name: 'Routine entfernen (Einstellungen)', w: 1280, schritte: async (p) => { await L.go(p, 'einstellungen'); await L.click(p, '[data-a=esREdit][data-id=r1]'); await L.click(p, '[data-a=esRDel]'); } },
@@ -38,7 +38,7 @@ const AKTIONEN = [
   { name: 'Block abhaken', nochmal: '[data-a=tBlock][data-id=b1]', zurueck: (s) => s.bloecke.b1.status === 'offen' && !s.bloecke.b1.erledigtAm && !s.bloecke.b1.sr, schritte: async (p) => { await L.click(p, '[data-a=tBlock][data-id=b1]'); } },
   { name: 'Termin abhaken', nochmal: '[data-a=tTermin][data-id=t1]', zurueck: (s) => !s.tage['2026-11-05'].termine.t1.erledigt, schritte: async (p) => { await L.click(p, '[data-a=tTermin][data-id=t1]'); } },
   { name: 'Routine abhaken', nochmal: '[data-a=tRoutine][data-id=r1]', zurueck: (s) => !s.tage['2026-11-05'].routinen.r1.erledigt, schritte: async (p) => { await L.click(p, '[data-a=tRoutine][data-id=r1]'); } },
-  { name: 'Wiederholung bewerten', nochmal: '[data-a=rateW][data-r=sicher]', zurueck: (s, v) => L.same(s.bloecke.e1.sr, v.bloecke.e1.sr) && !s.tage['2026-11-05'].wdh.bew['e:e1'].r, schritte: async (p) => { await L.click(p, '[data-a=wdhOpen]'); await L.click(p, '[data-a=rateW][data-r=sicher]'); } },
+  { name: 'Wiederholung bewerten', nochmal: '[data-a=rateW][data-r=sicher]', zurueck: (s, v) => L.same(s.bloecke.e1.sr, v.bloecke.e1.sr) && !s.tage['2026-11-05'].wdh.bew['e:e1'].r, schritte: async (p) => { await L.click(p, '[data-a=rateW][data-r=sicher]'); } },
   { name: 'Stellschraube ändern', w: 1280, schritte: async (p) => { await L.go(p, 'einstellungen'); await L.click(p, '[data-a=esOpen][data-v=ober]'); await L.click(p, '[data-a=esStep][data-d="0.5"]'); } }
 ];
 

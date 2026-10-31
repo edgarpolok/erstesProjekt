@@ -1,8 +1,6 @@
-// Wiederholung: Abstände 1, 3, 7, 14, 30, 60, 90, 120 Tage ab der letzten Wiederholung; Verteilung über die Woche
-// nach Fälligkeit, Überfälliges über die restlichen Tage; Neues und seine Folgewiederholungen bekommen in geplanten Wochen Zeit dazu
+// Wiederholung: Abstände 1, 3, 7, 14, 30, 60, 90, 120 Tage ab der letzten Wiederholung; jedes fällige Thema als eigene Zeile im Tag,
+// bis zum Richtwert pro Tag (halber Tag: Hälfte, freier Tag: nichts), der Rest einzeln in „Noch offen“; Vorschau für die Woche; Zeit je Zeile
 const L = require('./lib');
-const WOCHE = ['2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05', '2026-11-06', '2026-11-07', '2026-11-08'];
-const leer = () => WOCHE.reduce((o, d) => { o[d] = 0; return o; }, {});
 const einheit = (titel, faellig, stufe) => ({ titel, woche: '2026-10-19', tag: '2026-10-20', status: 'erledigt', erledigtAm: '2026-10-20', wiederholen: true, sr: { stufe: stufe || 1, faellig, letzte: '2026-10-20', bewertung: 'sicher' } });
 
 L.run(async () => {
@@ -23,8 +21,7 @@ L.run(async () => {
   // 2) In der Oberfläche: überfällige Einheit (Stufe 2, fällig seit 25.10.) am 29.10. bewerten -> Abstand zählt ab dem 29.10.
   const vorher = { stufe: 2, faellig: '2026-10-25', letzte: '2026-10-20', bewertung: 'sicher' };
   p = await L.open({ bloecke: { e1: einheit('Rom I', '2026-10-25', 2) } }, 'sim-2026-10-29-1000');
-  await L.click(p, '[data-a=wdhOpen]');
-  L.has('fällige Einheit steht in der Wiederholung', await L.text(p, '.wdh'), 'Rom I');
+  L.has('fällige Einheit steht als Zeile im Plan', await L.text(p, '.wrow'), 'Rom I');
   const sr = async () => (await L.store(p)).bloecke.e1.sr;
   await L.click(p, '[data-a=rateW][data-r=sicher]');
   L.expect('sicher: Stufe 3, 7 Tage ab heute', await sr(), { stufe: 3, faellig: '2026-11-05', letzte: '2026-10-29', bewertung: 'sicher' });
@@ -38,56 +35,104 @@ L.run(async () => {
   // Daten ohne „letzte“/„bewertung“ (z. B. aus älteren Sicherungen): Zurücknehmen lässt die alte Bewertung stehen
   const alt = einheit('Alt', '2026-10-25', 2); alt.sr = { stufe: 2, faellig: '2026-10-25' };
   p = await L.open({ bloecke: { e1: alt } }, 'sim-2026-10-29-1000');
-  await L.click(p, '[data-a=wdhOpen]'); await L.click(p, '[data-a=rateW][data-r=nicht]'); await L.click(p, '[data-a=rateW][data-r=nicht]');
+  await L.click(p, '[data-a=rateW][data-r=nicht]'); await L.click(p, '[data-a=rateW][data-r=nicht]');
   const altSr = await sr();
   L.known('Zurücknehmen bei Daten ohne „letzte“ entfernt auch das Bewertungsdatum', !altSr.letzte && !altSr.bewertung, altSr);
   await p.context().close();
 
-  // 3) Ungeplante Woche: Zeit liegt erst ab dem Fälligkeitstag (fällig Fr), nichts davor
-  p = await L.open({ bloecke: { a: einheit('A', '2026-11-06', 2), b: einheit('B', '2026-11-06', 2) } }, 'sim-2026-11-02-0900');
-  let v = await p.evaluate(() => window.__ls.weekWdh('2026-11-02').split);
-  L.expect('vor dem Fälligkeitstag keine Wiederholungszeit', WOCHE.slice(0, 4).map((d) => v[d]), [0, 0, 0, 0]);
-  L.expect('am Fälligkeitstag 2 × 15 min', v['2026-11-06'], 30);
+  // 3) Richtwert 60 min am ganzen Tag: Ältestes zuerst in den Tag, der Rest einzeln in „Noch offen“
+  const fuenf = {}; ['a', 'b', 'c', 'd', 'e'].forEach((k, i) => { fuenf[k] = einheit('Einheit ' + k.toUpperCase(), '2026-10-2' + (5 + i), 1); });
+  p = await L.open({ bloecke: fuenf }, 'sim-2026-11-02-0900', 1280);
+  const zeilen = async () => p.$$eval('.wrow .title', (els) => els.map((e) => e.textContent));
+  L.expect('vier Zeilen à 15 min, älteste zuerst', await zeilen(), ['Einheit A', 'Einheit B', 'Einheit C', 'Einheit D']);
+  L.expect('Tagesliste gespeichert, Richtwert 60', (await L.store(p)).tage['2026-11-02'].wdh.min, 60);
+  await L.click(p, '[data-a=poolOpen]');
+  L.has('Rest steht in „Noch offen“', await L.text(p, '.pool'), 'Einheit E');
+  L.has('mit Fälligkeit', await L.text(p, '.pool'), 'fällig seit Do 29.10.');
+  await L.click(p, '[data-a=pullW][data-ref="e:e"]');
+  L.expect('„+ Heute“ holt die Einheit dazu', (await zeilen()).length, 5);
+  L.hasNot('danach nicht mehr in „Noch offen“', await L.text(p, '.pool'), 'Einheit E');
+  // Später: zurück in „Noch offen“, mit Rückgängig
+  await L.click(p, '[data-a=menu][data-m="w2026-11-02~e.a"]'); await L.click(p, '[data-a=laterW][data-ref="e:a"]');
+  L.ok('Später: Zeile weg', !(await zeilen()).includes('Einheit A'), await zeilen());
+  L.has('Später: steht in „Noch offen“', await L.text(p, '.pool'), 'Einheit A');
+  await L.click(p, '.toast [data-a=undo]');
+  L.ok('Rückgängig: wieder im Tag', (await zeilen()).includes('Einheit A'), await zeilen());
   await p.context().close();
 
-  // 4) Überfälliges verteilt sich über die restliche Woche, nicht alles auf heute
-  const due = {}; ['a', 'b', 'c', 'd'].forEach((k, i) => { due[k] = { titel: 'Einheit ' + k, woche: '2026-10-26', tag: '2026-10-2' + (6 + i), status: 'erledigt', erledigtAm: '2026-10-2' + (6 + i), wiederholen: true, sr: { stufe: 1, faellig: i < 3 ? '2026-11-03' : '2026-11-04' } }; });
-  p = await L.open({ bloecke: due }, 'sim-2026-11-04-0900', 1280);
-  await L.go(p, 'woche'); await L.click(p, '[data-a=planShow]'); await L.click(p, '[data-a=planFertig]');
-  v = (await L.store(p)).wochen['2026-11-02'].wdhVerteilung;
-  const sum = WOCHE.reduce((a, d) => a + v[d], 0);
-  L.expect('vergangene Tage bekommen nichts', [v['2026-11-02'], v['2026-11-03']], [0, 0]);
-  L.ok('mindestens 4 × 15 min verteilt', sum >= 60, v);
-  L.ok('heute höchstens ein Drittel (nicht alles auf heute)', v['2026-11-04'] <= sum / 3, v);
-  L.ok('verteilt auf mindestens 3 Tage ab heute', WOCHE.slice(2).filter((d) => v[d] > 0).length >= 3, v);
+  // 4) Halber Tag (Samstag) 30 min, freier Tag (Sonntag) nichts automatisch, aber holbar
+  p = await L.open({ bloecke: fuenf }, 'sim-2026-11-07-0900', 1280);
+  L.expect('Samstag (halber Tag): zwei Zeilen', (await zeilen()).length, 2);
+  await p.context().close();
+  p = await L.open({ bloecke: fuenf }, 'sim-2026-11-08-0900', 1280);
+  L.expect('Sonntag (frei): keine Zeile', (await zeilen()).length, 0);
+  await L.click(p, '[data-a=poolOpen]');
+  await L.click(p, '[data-a=pullW][data-ref="e:c"]');
+  L.expect('Sonntag: geholte Einheit steht im Tag', await zeilen(), ['Einheit C']);
   await p.context().close();
 
-  // 5) Neue Einheit in geplanter Woche: morgen bekommt 15 min dazu; Haken weg nimmt sie wieder heraus
-  p = await L.open({ wochen: { '2026-11-02': { status: 'fertig', wdhMin: 0, wdhVerteilung: leer() } } }, 'sim-2026-11-04-1800');
-  await L.click(p, '[data-a=startAdd]'); await L.fill(p, '#neu-eintrag', 'IPR Vorlesung 3'); await L.click(p, '[data-a=addDone]'); await L.click(p, '[data-a=doAdd]');
+  // 5) Richtwert in den Einstellungen: mehr Zeit füllt heute nach, Bewertetes bleibt
+  p = await L.open({ bloecke: fuenf }, 'sim-2026-11-02-0900', 1280);
+  await L.click(p, '[data-a=rateW][data-ref="e:a"][data-r=sicher]');
+  await L.go(p, 'einstellungen'); await L.click(p, '[data-a=esOpen][data-v=wdhtag]');
+  await L.click(p, '[data-a=esSet][data-k=wdhProTag][data-n="30"]');
+  L.expect('Richtwert gespeichert', await p.evaluate(() => window.__ls.cfg().wdhProTag), 30);
+  await L.go(p, 'heute');
+  L.expect('30 min: Bewertetes bleibt, dazu eine weitere', await zeilen(), ['Einheit A', 'Einheit B']);
+  await p.context().close();
+
+  // 6) Zeile zeigt Abstand (Ring) und Fälligkeit; nach der Bewertung die nächste Wiederholung
+  p = await L.open({ bloecke: { k: einheit('Kaufrecht', '2026-10-30', 5) } }, 'sim-2026-11-02-0900', 1280);
+  L.expect('Ring: 30-Tage-Wiederholung, Stufe 5 von 8', await p.getAttribute('.wrow .wring', 'aria-label'), '30-Tage-Wiederholung, Stufe 5 von 8');
+  L.expect('Zahl im Ring', await L.text(p, '.wrow .wring'), '30');
+  L.has('Fälligkeit', await L.text(p, '.wrow .meta'), 'Wiederholung · 30 min · fällig seit Fr 30.10.');
+  await L.click(p, '[data-a=rateW][data-r=sicher]');
+  L.has('nach „sicher“: nächste in 60 Tagen', await L.text(p, '.wrow .meta'), 'nächste Fr 1.1. (in 60 Tagen)');
+  L.ok('erledigt: Ring wird zum Haken', !!(await p.$('.wrow .wring.on')));
+  await p.context().close();
+
+  // 7) Zeit je Zeile: Timer und Zeit eintragen, zählt für den Tag
+  p = await L.open({ bloecke: { k: einheit('Kaufrecht', '2026-10-30', 5) } }, 'sim-2026-11-02-0900', 1280);
+  await L.click(p, '.wrow [data-a=startT]');
+  await L.sim(p, '2026-11-02', 9 * 60 + 25);
+  await L.click(p, '[data-a=stopT]');
   let s = await L.store(p);
-  L.expect('Neues: morgen 15 min dazu, Woche gesamt 15', [s.wochen['2026-11-02'].wdhVerteilung['2026-11-05'], s.wochen['2026-11-02'].wdhMin], [15, 15]);
-  const q = await L.open(s, 'sim-2026-11-05-0800');
-  L.has('morgen steht die Einheit in der Wiederholung', await L.text(q), 'IPR Vorlesung 3');
-  await q.context().close();
-  await L.click(p, '[data-a=tBlock]');
-  s = await L.store(p);
-  L.expect('Haken weg: Zeit wieder heraus', [s.wochen['2026-11-02'].wdhVerteilung['2026-11-05'], s.wochen['2026-11-02'].wdhMin], [0, 0]);
+  L.expect('Timer: 25 min bei der Zeile', s.tage['2026-11-02'].wdh.zeiten['e:k'], 25);
+  L.expect('zählt für den Tag', await p.evaluate(() => window.__ls.erfasstAt('2026-11-02')), 25);
+  await L.click(p, '.wrow [data-a=openT]'); await L.fill(p, '.wrow input[data-in=zeit]', '40'); await L.click(p, '.wrow [data-a=saveT]');
+  L.expect('Zeit ändern', (await L.store(p)).tage['2026-11-02'].wdh.zeiten['e:k'], 40);
   await p.context().close();
 
-  // 6) Folgewiederholung von Neuem: Mo gelernt, Di „sicher“ -> Fr (Abstand 3) bekommt Zeit; Zurücknehmen nimmt sie heraus
-  p = await L.open({ wochen: { '2026-11-02': { status: 'fertig', wdhMin: 0, wdhVerteilung: leer() } } }, 'sim-2026-11-02-1800');
-  await L.click(p, '[data-a=startAdd]'); await L.fill(p, '#neu-eintrag', 'Rom I neu'); await L.click(p, '[data-a=addDone]'); await L.click(p, '[data-a=doAdd]');
-  s = await L.store(p); await p.context().close();
-  p = await L.open(s, 'sim-2026-11-03-1000');
-  await L.click(p, '[data-a=wdhOpen]'); await L.click(p, '[data-a=rateW][data-r=sicher]');
+  // 8) Vorschau: Überhang kommt am nächsten Tag zuerst, Folgewiederholungen mit „sicher“ gerechnet
+  p = await L.open({ bloecke: fuenf }, 'sim-2026-11-02-0900', 1280);
+  const vor = await p.evaluate(() => ['2026-11-03', '2026-11-04', '2026-11-05'].map((d) => window.__ls.wdhListe(d).map((x) => x.titel + '/' + x.stufe)));
+  L.expect('Di: Überhang zuerst, dann die heutigen mit Abstand 3 erst am Do', vor[0], ['Einheit E/1']);
+  L.expect('Mi: nichts', vor[1], []);
+  L.expect('Do: die vier von heute, Stufe 2', vor[2], ['Einheit A/2', 'Einheit B/2', 'Einheit C/2', 'Einheit D/2']);
+  await L.go(p, 'woche');
+  L.has('Woche heute: Themen, Minuten, Überhang', await L.text(p, '[data-k="d-2026-11-02"]'), '4 Themen · 60 min · 1 weitere in „Noch offen“');
+  L.has('Woche Donnerstag: voraussichtlich', await L.text(p, '[data-k="d-2026-11-05"]'), '4 Themen · 60 min · voraussichtlich');
+  await L.click(p, '[data-a=wdhTag][data-d="2026-11-05"]');
+  L.has('aufgeklappt: Namen', await L.text(p, '[data-k="wl-2026-11-05"]'), 'Einheit A');
+  L.expect('aufgeklappt: Ring mit Abstand', await p.$$eval('[data-k="wl-2026-11-05"] .wring b', (els) => els.map((e) => e.textContent)), ['3', '3', '3', '3']);
+  await L.click(p, '[data-a=planShow]');
+  L.has('Planungskarte: Schätzung statt fester Wochenzeit', await L.text(p, '#planen'), 'Voraussichtlich etwa');
+  L.ok('kein Regler für die Wochenzeit mehr', !(await p.$('[data-a=wMore]')));
+  await p.context().close();
+
+  // 9) Neues: heute erledigte Lerneinheit steht morgen von selbst in der Wiederholung
+  p = await L.open({}, 'sim-2026-11-04-1800');
+  await L.click(p, '[data-a=startAdd]'); await L.fill(p, '#neu-eintrag', 'IPR Vorlesung 3'); await L.click(p, '[data-a=addDone]'); await L.click(p, '[data-a=doAdd]');
   s = await L.store(p);
-  L.expect('nach „sicher“ am Di: fällig Fr', Object.values(s.bloecke)[0].sr.faellig, '2026-11-06');
-  L.expect('Freitag bekommt 15 min', s.wochen['2026-11-02'].wdhVerteilung['2026-11-06'], 15);
-  await L.click(p, '[data-a=rateW][data-r=sicher]');
-  L.expect('Zurücknehmen: Freitag wieder 0', (await L.store(p)).wochen['2026-11-02'].wdhVerteilung['2026-11-06'], 0);
-  await L.click(p, '[data-a=rateW][data-r=sicher]');
-  s = await L.store(p); await p.context().close();
-  p = await L.open(s, 'sim-2026-11-06-0900');
-  L.has('Freitag: Einheit in der Wiederholung', await L.text(p), 'Rom I neu');
+  L.expect('Vorschau morgen', await p.evaluate(() => window.__ls.wdhListe('2026-11-05').map((x) => x.titel)), ['IPR Vorlesung 3']);
+  await p.context().close();
+  p = await L.open(s, 'sim-2026-11-05-0800');
+  L.has('morgen steht die Einheit als Zeile im Tag', await L.text(p, '.wrow'), 'IPR Vorlesung 3');
+  await p.context().close();
+
+  // 10) Wiederholungspause: keine Zeilen, nichts in „Noch offen“
+  p = await L.open({ bloecke: fuenf, pausen: { p1: { name: 'Urlaub', art: 'wdh', von: '2026-11-01', bis: '2026-11-03' } } }, 'sim-2026-11-02-0900', 1280);
+  L.expect('Pause: keine Zeile', (await zeilen()).length, 0);
+  L.expect('Pause: kein Überhang', await p.evaluate(() => window.__ls.wdhUeberhang('2026-11-02').length), 0);
+  await p.context().close();
 });
