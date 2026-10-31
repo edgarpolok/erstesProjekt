@@ -131,4 +131,47 @@ L.run(async () => {
   await L.click(p, '[data-a=klFDel][data-id=k1][data-i="1"]');
   L.expect('Fehlerzeile entfernt', (await L.store(p)).termine.k1.fehler.map((f) => f.text), ['Anspruchsgrundlage übersehen']);
   await p.context().close();
+
+  // 7) Spontan aus „Heute“: Uhrzeit ab jetzt, mit Rechtsgebiet
+  p = await L.open({ themen: THEMEN }, 'sim-2026-11-10-1012', 1280);
+  await L.click(p, '[data-a=startAdd]'); await L.click(p, '[data-a=addMore]');
+  await L.click(p, '[data-a=tfHeute]');
+  L.expect('Beginn ab jetzt vorbelegt', await p.inputValue('#tf-von'), '10:10');
+  L.hasNot('keine Tagesauswahl in Heute', await L.text(p, '[data-k=tform]'), 'Mi 11.');
+  await L.fill(p, '#tf-titel', 'Spontane Klausur'); await L.click(p, '[data-a=tGanz][data-k=tfKlausur]');
+  await L.click(p, '[data-a=tfGeb][data-g=sr]'); await L.click(p, '[data-a=tfSave]');
+  kl = await klausuren(p);
+  L.expect('spontane Klausur: Tag, Beginn, Gebiet', kl.map(([, t]) => [t.titel, t.datum, t.von, t.gebiet]), [['Spontane Klausur', '2026-11-10', '10:10', 'sr']]);
+  L.has('steht im Plan für heute', await L.text(p), 'Spontane Klausur');
+  await p.context().close();
+
+  // 8) Wöchentliche Klausur im Kalender
+  p = await L.open({ themen: THEMEN }, 'sim-2026-11-10-1000', 1280);
+  await L.go(p, 'kalender');
+  await L.click(p, '[data-a=kNew][data-kl="1"]');
+  await L.fill(p, '#k-name', 'Klausurenkurs'); await L.fill(p, '#k-datum', '2026-11-14');
+  await L.click(p, '[data-a=tGanz][data-k=kWdh]'); await L.click(p, '[data-a=kSave]');
+  kl = await klausuren(p);
+  L.expect('wöchentliche Klausur: Samstag, ab 14.11.', kl.map(([, t]) => [t.titel, t.wochentage, t.ab, t.datum || null]), [['Klausurenkurs', [5], '2026-11-14', null]]);
+  await p.context().close();
+
+  // 9) Statistik: jeder Termin einer wöchentlichen Klausur einzeln, Ausfall zählt nicht
+  const wk = { titel: 'Klausurenkurs', wochentage: [5], von: '09:00', bis: '14:00', ganztags: false, ab: '2026-10-17', endet: null, zustand: 'aktiv', art: 'klausur', gebiet: 'zr', ausfall: [{ von: '2026-10-24', bis: '2026-10-24' }], ergebnisse: { '2026-10-17': { ergebnis: { punkte: 8, ohne: false, am: '2026-10-20' } } } };
+  p = await L.open({ themen: THEMEN, termine: { kk: wk } }, 'sim-2026-11-10-1000', 1280);
+  await L.go(p, 'kalender'); await L.click(p, '[data-a=kTab][data-v=zahlen]');
+  const ids = await p.$$eval('[data-a=klOpen]', (els) => els.map((e) => e.dataset.id));
+  L.expect('Termine der Klausur einzeln, ohne Ausfall', ids, ['kk@2026-11-07', 'kk@2026-10-31', 'kk@2026-10-17']);
+  L.has('Punkte des ersten Termins', await L.text(p, '[aria-label=Klausuren]'), '8 P.');
+  await L.click(p, '[data-a=klOpen][data-id="kk@2026-11-07"]');
+  await L.fill(p, '#kl-punkte', '11'); await L.click(p, '[data-a=klSave][data-id="kk@2026-11-07"]');
+  s = await L.store(p);
+  L.expect('Punkte je Termin gespeichert', [s.termine.kk.ergebnisse['2026-11-07'].ergebnis.punkte, s.termine.kk.ergebnisse['2026-10-17'].ergebnis.punkte], [11, 8]);
+  L.has('Schnitt aus beiden Terminen', await L.text(p, '[data-k=kl-schnitt]'), 'Schnitt 9,5');
+  await L.click(p, '[data-a=klOpen][data-id="kk@2026-10-31"]');
+  await L.fill(p, '#kl-fehler', 'Aufbau'); await L.click(p, '[data-a=klFAdd][data-id="kk@2026-10-31"]');
+  await L.click(p, '[data-a=klWdh][data-id="kk@2026-10-31"][data-i="0"]');
+  s = await L.store(p);
+  const fb = s.termine.kk.ergebnisse['2026-10-31'].fehler[0].block;
+  L.ok('Fehler eines Termins kommt in die Wiederholung', !!fb && s.bloecke[fb] && s.bloecke[fb].titel === 'Klausurenkurs: Aufbau', fb);
+  await p.context().close();
 });

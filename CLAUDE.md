@@ -14,8 +14,8 @@ Persönlicher Lernplaner eines Jurastudenten als Web-App. Antworten und Texte in
 - Daten liegen in `localStorage` unter `lernsystem-daten-v1`, aufgeteilt in Sammlungen (`themen`, `bloecke`, `vorhaben`, `wochen`, `tage`, `termine`, `routinen`, `etappen`, `pausen`, `meta`, `module`). `put`/`patch`/`del` ändern den Stand `D` und speichern gebündelt.
 - Sichern und Laden: Einstellungen → „Daten auf diesem Gerät“, Format `{ format: 'lernsystem', version: 1, exportiert, daten }`.
 - `app/sw.js`: Offline-Speicher; die Seite selbst zuerst aus dem Netz, damit Updates sofort ankommen.
-- Erweiterungen im Datenmodell: wöchentliche Termine mit `ausfall: [{ von, bis }]`; Klausuren sind einmalige Termine mit `art: 'klausur'`, `gebiet`, `ergebnis: { punkte, ohne, am }`, `fehler: [{ text, block }]` (Fehler → Lerneinheit mit `quelle: 'klausur'` im Eingang); Themen haben neben `durchAm` (laufender Durchgang) `frueher: [Datum|null]` (vorige Durchgänge); Etappen haben `stoff: [Themen-Ids]` und `stoffKomplett`; `meta.config.sicherungTage` (Erinnerung ans Sichern, 0 = aus).
-- Tastenkürzel (`KEYS`, Übersicht mit „?“ und in den Einstellungen): N, 1–4, T, /, ⌘Z, ?, Esc – nur außerhalb von Eingabefeldern.
+- Erweiterungen im Datenmodell: wöchentliche Termine mit `ausfall: [{ von, bis }]`; Klausuren sind einmalige Termine mit `art: 'klausur'`, `gebiet`, `ergebnis: { punkte, ohne, am }`, `fehler: [{ text, block }]` (Fehler → Lerneinheit mit `quelle: 'klausur'` im Eingang); wöchentliche Klausuren sind wöchentliche Termine mit `art: 'klausur'`, Ergebnis und Fehler je Termin unter `ergebnisse: { datum: { ergebnis, fehler } }` (in der Statistik mit Id `termin@datum`); spontan eintragen unter Heute → Hinzufügen → Mehr; Themen haben neben `durchAm` (laufender Durchgang) `frueher: [Datum|null]` (vorige Durchgänge); Etappen haben `stoff: [Themen-Ids]` und `stoffKomplett`; `meta.config.sicherungTage` (Erinnerung ans Sichern, 0 = aus).
+- Keine Tastenkürzel (auf Wunsch des Nutzers entfernt: Zahlen störten bei Eingaben).
 - Keine Claude-Funktionen: Wochenverteilung (`allocRegel`) und Wocheneinschätzung laufen nach festen Regeln.
 
 ## Regeln aus dem Entwurf, die nicht kaputtgehen dürfen
@@ -57,9 +57,8 @@ Playwright und Chromium sind in der Cloud-Umgebung vorinstalliert. Jede Testdate
 | `rueckgaengig.js` | Rückgängig je Aktion (stellt den alten Stand genau her), nochmal tippen bei Abhaken/Bewerten, 5 Sekunden |
 | `kein-druck.js` | keine roten Markierungen außer dem gedämpften X, keine Serien, Statistik nur unter Kalender → „Statistik“ |
 | `sicherung-erinnerung.js` | Erinnerung ans Sichern in der Woche ab Planungstag, Abstand einstellbar |
-| `tastenkuerzel.js` | Kürzel, Übersicht mit „?“, keine Auslösung beim Tippen |
 | `termin-ausfall.js` | wöchentliche Termine fallen an einem Tag oder in einem Zeitraum aus |
-| `klausuren.js` | Klausur eintragen, Blöcke weichen aus, Punkte, Fehler → Wiederholung, Schnitt und Verlauf |
+| `klausuren.js` | Klausur eintragen (Kalender, Woche, spontan aus Heute, wöchentlich), Blöcke weichen aus, Punkte je Termin, Fehler → Wiederholung, Schnitt und Verlauf |
 | `durchgaenge.js` | neuer Durchgang auf jeder Ebene, Stand und Zeitstrahl |
 | `gliederung.js` | Gliederung einfügen (Einrückung, Nummern, vier Ebenen, Vorhandenes weiterverwenden) |
 | `etappe-stoff.js` | Etappe mit Stoff: „X von Y bisher angelegten Themen“, Balken erst bei vollständigem Stoff |
