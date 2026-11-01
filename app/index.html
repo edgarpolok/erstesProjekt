@@ -3437,7 +3437,7 @@ function thMerge(id, target) {
   return '';
 }
 // Löschen samt Unterthemen: eigene Lerneinheiten kommen zurück in den Eingang, Beispiel-Einträge verschwinden mit
-function thDeleteTree(ids, text, vorher, genau) {
+function thDeleteTree(ids, text, vorher, genau, srBehalten) {
   const all = new Set();
   ids.forEach((id) => { if (thema(id)) { all.add(id); if (!genau) thDesc(id).forEach((x) => all.add(x)); } });
   if (!all.size) return;
@@ -3449,7 +3449,7 @@ function thDeleteTree(ids, text, vorher, genau) {
       if (b.beispiel) { del('bloecke', k); return; }
       const part = {};
       if (all.has(b.wdhVon)) { part.wdhVon = null; part.thema = null; }
-      if (all.has(b.thema) && b.status === 'erledigt' && !b.wdhVon) { part.thema = null; part.sr = b.wiederholen !== false ? srWeiter(b) : null; }
+      if (all.has(b.thema) && b.status === 'erledigt' && !b.wdhVon) { part.thema = null; if (srBehalten) part.sr = b.wiederholen !== false ? srWeiter(b) : null; else { part.sr = null; part.wiederholen = false; } }
       else if (all.has(b.thema)) part.thema = null;
       patch('bloecke', k, part);
     });
@@ -3475,7 +3475,7 @@ function thDeleteBsp() {
   const keep = Object.keys(D.themen).filter((id) => !bsp.has(id) && bsp.has(thParent(id)));
   const lift = (id) => { let p = thParent(id); while (p && bsp.has(p)) p = thParent(p); return p; };
   const moves = keep.map((id) => [id, lift(id)]);
-  thDeleteTree(Array.from(bsp), 'Beispiel-Themen entfernt', () => moves.forEach((m) => patch('themen', m[0], { eltern: m[1] || null })), true);
+  thDeleteTree(Array.from(bsp), 'Beispiel-Themen entfernt', () => moves.forEach((m) => patch('themen', m[0], { eltern: m[1] || null })), true, true);
 }
 
 /* ---------- Darstellung ---------- */
