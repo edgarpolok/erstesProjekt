@@ -74,7 +74,7 @@ Gegenprobe nach größeren Testumbauten: einen kleinen Fehler in eine Kopie der 
 
 Persönliche Daten (Sicherungen, Umzugsdateien) gehören nie ins Repository; `.gitignore` schließt `*.json` aus, und `run-all.sh` meldet einen Fehler, wenn außer `app/*.json` eine JSON-Datei eingecheckt ist.
 
-Randfall-Tests liegen getrennt in `tests/rand/`, weil sie langsamer sind: `bash tests/rand/run-rand.sh`. Nach größeren Umbauten laufen lassen. Dateien: `zeitumstellung.js`, `jahreswechsel.js` (KW 53), `timer-grenzen.js` (Silvester, 12-h-Grenze, Löschen während der Timer läuft), `lange-namen.js`, `sonderzeichen.js` (HTML in Namen wird nie ausgeführt), `themen-baum.js` (vier Ebenen), `einstellungen-extrem.js`.
+Randfall-Tests liegen getrennt in `tests/rand/`, weil sie langsamer sind: `bash tests/rand/run-rand.sh`. Nach größeren Umbauten laufen lassen. Dateien: `zeitumstellung.js`, `jahreswechsel.js` (KW 53), `timer-grenzen.js` (Silvester, 12-h-Grenze, Löschen während der Timer läuft), `lange-namen.js`, `sonderzeichen.js` (HTML in Namen wird nie ausgeführt), `themen-baum.js` (vier Ebenen), `einstellungen-extrem.js`, `langzeit.js` (26 Monate Nutzung: Daten heil, Sichern/Laden, Speichergröße, Geschwindigkeit; dauert rund 5 Minuten, mit `MONATE=2` abkürzen).
 
 ## Zusammenarbeit
 
