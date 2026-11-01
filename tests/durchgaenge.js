@@ -21,6 +21,8 @@ async function oeffne(id) {
   return p;
 }
 
+// Unterthemen von id aufklappen (ab der zweiten Ebene sind sie anfangs zu)
+const auf = async (p, id) => { if (await p.locator('[data-a=thTog][data-id=' + id + '][aria-expanded=false]').count()) await L.click(p, '[data-a=thTog][data-id=' + id + ']'); };
 L.run(async () => {
   // 1) Neuen Durchgang für Schuldrecht AT beginnen: gilt für sat, u, v – nicht für kr und zr
   let p = await oeffne('sat');
@@ -65,7 +67,7 @@ L.run(async () => {
   // Verzug liegt unter dem zugeklappten Schuldrecht AT: erst aufklappen
   await L.click(p, '[data-a=thTog][data-id=sat]');
   await L.click(p, '[data-a=thSel][data-id=v]');
-  L.has('Verzug: 1. Durchgang nicht abgeschlossen', await L.text(p, '[data-k=th-frueher]'), '1. Durchgang nicht abgeschlossen');
+  L.has('Verzug: 1. Durchgang nicht durchgearbeitet', await L.text(p, '[data-k=th-frueher]'), '1. Durchgang nicht durchgearbeitet');
   await p.context().close();
 
   // 3) Oberste Ebene: gilt für alle Unterthemen; zweimal hintereinander → Durchgang 3
@@ -86,25 +88,23 @@ L.run(async () => {
   // 4) Stand: Zusammenfassung und Zeilen
   p = await L.open({ themen: baum() }, HASH, 1280);
   await L.go(p, 'themen');
-  await L.click(p, '[data-a=thTab][data-v=stand]');
+  await auf(p, 'sat');
   let sum = await L.text(p, '[aria-label="Stand Zivilrecht"]');
   L.hasNot('ohne Neubeginn kein Hinweis auf Durchgänge', sum, 'Durchgang');
   L.has('ohne Neubeginn: Zählung über Unterthemen', sum, '3 von 4 durchgearbeitet');
-  await L.click(p, '[data-a=thTab][data-v=baum]').catch(() => {});
   await L.click(p, '[data-a=thSel][data-id=sat]');
   await L.click(p, '[data-a=thNeuDurch][data-id=sat]');
-  await L.click(p, '[data-a=thTab][data-v=stand]');
+  await auf(p, 'sat');
   sum = await L.text(p, '[aria-label="Stand Zivilrecht"]');
   L.has('Zusammenfassung zeigt Durchgang 1–2', sum, 'Durchgang 1–2 ·');
   L.has('nur Kaufrecht zählt als durchgearbeitet', sum, 'von 4 durchgearbeitet');
   L.has('genau eines von vier', sum, '1 von 4');
-  L.has('Unmöglichkeit: 2. Durchgang offen', await L.text(p, '[data-k=st-u]'), '2. Durchgang offen');
+  L.has('Unmöglichkeit: 2. Durchgang offen', await L.text(p, '[data-k=tr-u]'), '2. Durchgang offen');
   // Schuldrecht AT jetzt durcharbeiten
-  await L.click(p, '[data-a=thTab][data-v=baum]').catch(() => {});
   await L.click(p, '[data-a=thSel][data-id=sat]');
   await L.click(p, '[data-a=thDurch][data-id=sat]');
-  await L.click(p, '[data-a=thTab][data-v=stand]');
-  L.has('Schuldrecht AT: durchgearbeitet im 2. Durchgang', await L.text(p, '[data-k=st-sat]'), 'durchgearbeitet 4.11. (2. Durchgang)');
+  await auf(p, 'sat');
+  L.has('Schuldrecht AT: durchgearbeitet im 2. Durchgang', await L.text(p, '[data-k=tr-sat]'), 'durchgearbeitet 4.11. (2. Durchgang)');
   L.has('Zusammenfassung zählt Schuldrecht AT mit', await L.text(p, '[aria-label="Stand Zivilrecht"]'), '2 von 4 durchgearbeitet');
   const nachSat = await L.store(p);
 
@@ -124,9 +124,9 @@ L.run(async () => {
   L.hasNot('altes Thema: kein „im … Durchgang“', await L.text(p, '[data-a=thDurch][data-id=sat]'), 'Durchgang');
   L.ok('altes Thema: keine Liste früherer Durchgänge', (await p.locator('[data-k=th-frueher]').count()) === 0);
   L.has('altes Thema: Schalter zeigt das Datum', await L.text(p, '[data-a=thDurch][data-id=sat]'), 'am 20. Oktober 2026');
-  await L.click(p, '[data-a=thTab][data-v=stand]');
+  await auf(p, 'sat');
   L.hasNot('alter Stand: kein Hinweis auf Durchgänge', await L.text(p, '[aria-label="Stand Zivilrecht"]'), 'Durchgang');
-  L.has('alter Stand: Zeile wie bisher', await L.text(p, '[data-k=st-u]'), 'durchgearbeitet 21.10.');
+  L.has('alter Stand: Zeile wie bisher', await L.text(p, '[data-k=tr-u]'), 'durchgearbeitet 21.10.');
   L.ok('alte Daten: Ansicht heil', !/konnte nicht angezeigt/.test(alt));
   await p.context().close();
 });

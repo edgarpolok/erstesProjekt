@@ -129,9 +129,10 @@ L.run(async () => {
   L.expect('Notiz im Thema geändert', (await L.store(p)).themen.sat.notiz, 'Neu geschrieben');
   await L.click(p, '[data-a=thDurch]');
   L.expect('durchgearbeitet am heutigen Tag', (await L.store(p)).themen.sat.durchAm, '2026-11-04');
-  await L.click(p, '[data-a=thTab][data-v=stand]');
   const stand = await L.text(p);
-  L.has('Stand: Zivilrecht 1 von 3 durchgearbeitet', stand, 'Zivilrecht1 von 3 durchgearbeitet');
+  L.hasNot('keine Reiter Baum/Stand mehr', stand, 'BaumStand');
+  L.ok('keine Reiter Baum/Stand mehr (Knöpfe)', (await p.locator('[data-a=thTab]').count()) === 0);
+  L.has('Stand: Zivilrecht 1 von 3 durchgearbeitet', await L.text(p, '[aria-label="Stand Zivilrecht"]'), '1 von 3 durchgearbeitet');
   L.has('Stand: 2× wiederholt (28.10. und heute)', stand, '2× wiederholt');
   L.has('Stand: nächster Termin nach „teilweise“ (Stufe 3 = 7 Tage)', stand, 'wieder Mi 11.11.');
   await L.noHScroll(p, 'Stand');
@@ -139,6 +140,5 @@ L.run(async () => {
   p = await L.open(seed, 'sim-2026-11-04-1000', 390);
   await L.go(p, 'themen');
   L.expect('Notiz-Symbol am Thema', await p.locator('[aria-label="hat eine Notiz"]').count(), 1);
-  await L.click(p, '[data-a=thTab][data-v=stand]');
   await L.noHScroll(p, 'Stand schmal');
 });
