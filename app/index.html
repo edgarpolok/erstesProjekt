@@ -3335,7 +3335,15 @@ function thAssign(bid, tid) {
 function thUnassign(bid) {
   const b = D.bloecke[bid];
   if (!b) return;
-  undoable('Zurück im Eingang', () => patch('bloecke', bid, { thema: null, sr: b.wiederholen !== false ? srNeu(b.erledigtAm || today()) : null }));
+  undoable('Zurück im Eingang', () => patch('bloecke', bid, { thema: null, sr: b.wiederholen !== false ? srWeiter(b) : null }));
+}
+// Einheit verlässt ihr Thema (Thema gelöscht oder zurück in den Eingang): die Wiederholung läuft weiter wie beim Thema
+// (gleiche Stufe, gleiche Fälligkeit); hatte das Thema keinen Stand, der eigene der Einheit, sonst neu ab heute
+function srWeiter(b) {
+  const t = thema(b.thema);
+  if (t && validSr(t.sr)) return clone(t.sr);
+  if (validSr(b.sr)) return clone(b.sr);
+  return srNeu(today());
 }
 function thZustand(id, z) {
   const t = thema(id);
@@ -3411,7 +3419,7 @@ function thDeleteTree(ids, text, vorher, genau) {
       if (b.beispiel) { del('bloecke', k); return; }
       const part = {};
       if (all.has(b.wdhVon)) { part.wdhVon = null; part.thema = null; }
-      if (all.has(b.thema) && b.status === 'erledigt' && !b.wdhVon) { part.thema = null; part.sr = b.wiederholen !== false ? srNeu(b.erledigtAm || today()) : null; }
+      if (all.has(b.thema) && b.status === 'erledigt' && !b.wdhVon) { part.thema = null; part.sr = b.wiederholen !== false ? srWeiter(b) : null; }
       else if (all.has(b.thema)) part.thema = null;
       patch('bloecke', k, part);
     });

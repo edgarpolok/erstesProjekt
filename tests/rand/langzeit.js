@@ -771,7 +771,7 @@ L.run(async () => {
   });
   console.log('BERICHT: langsamste Ansicht insgesamt: ' + maxMs.name + ' ' + maxMs.ms + ' ms; größter Rückstand der Wiederholung: ' + fin.maxUeber + ' Tage');
   console.log('BERICHT: simuliert ' + st.tage + ' Tage (' + st.aus + ' ohne App), ' + st.bloecke + ' Blöcke bearbeitet, ' + st.wdh + ' Wiederholungen bewertet, ' + st.spaeter + ' auf „später“, ' + st.geholt + ' aus „Noch offen“ geholt, ' + st.nachtrag + ' Nachträge, Rückgängig ' + st.undoOk + '/' + st.undo + ' geprüft, Themen umbenannt/verschoben/zusammengelegt/gelöscht ' + st.ren + '/' + st.mv + '/' + st.merge + '/' + st.del + ', Notizen ' + st.noteN);
-  console.log('BERICHT: Einheiten, die mit uraltem Fälligkeitsdatum (über 200 Tage) ins Wiederholen zurückkamen (Thema gelöscht): ' + fin.altRueck + ', ältestes ' + fin.altMax + ' Tage');
+  chk('Einheiten aus gelöschten Themen laufen weiter wie das Thema (kein uraltes Fälligkeitsdatum)', fin.altRueck === 0, fin.altRueck + ' Einheiten, älteste ' + fin.altMax + ' Tage überfällig');
   console.log('BERICHT: Verweise ohne Ziel (weich, von der App toleriert): Etappen-Stoff ' + weich.etappeStoff + ', Vorhaben-Wiederholung ' + weich.vorhabenWdh + ', Block-Gebiet ' + weich.gebiet + ', Termin-Gebiet ' + weich.terminGebiet + ', Rest-Verweis ' + weich.rest);
   console.log('BERICHT: Laufzeit ' + Math.round((Date.now() - t00) / 1000) + ' s (Tage ' + Math.round(gesamtZeit.tag / 1000) + ' s, wöchentliche Klicks ' + Math.round(gesamtZeit.woche / 1000) + ' s, Monatsprüfungen ' + Math.round(gesamtZeit.monat / 1000) + ' s)');
   const top = Object.keys(toasts).sort((a, b) => toasts[b] - toasts[a]).slice(0, 8).map((k) => k + ' ×' + toasts[k]);

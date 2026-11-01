@@ -79,6 +79,7 @@ L.run(async () => {
   s = await L.store(p);
   L.expect('Zivilrecht samt Unterthemen gelöscht', baum(s), ['sr<null']);
   L.expect('eigene Einheit zurück im Eingang, Beispiel-Einheit weg', Object.values(s.bloecke).map((x) => [x.titel, x.thema]), [['Meine Einheit', null]]);
+  L.expect('Wiederholung der Einheit läuft weiter wie beim gelöschten Thema', s.bloecke.b2.sr, { stufe: 1, faellig: '2026-10-30' });
   await L.click(p, '.toast [data-a=undo]');
   L.expect('Löschen rückgängig', baum(await L.store(p)), alle);
   await L.click(p, '[data-a=thBspAsk]'); await L.click(p, '[data-a=thDelBsp]');
