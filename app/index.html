@@ -519,6 +519,9 @@ select.inp { padding: 0 8px; }
 .trow .tname { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 8px 0 0; border: 0; background: transparent; text-align: left; }
 .trow .tname .nm { flex: 1 1 auto; min-width: 0; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
 .trow .tname .small { flex: 0 0 auto; }
+.trow .tname .tx { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; padding: 6px 0; }
+.trow .tname .tx .small { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0 4px; }
+.gblock + .gblock { border-top: 1px solid var(--line); padding-top: 4px; }
 @media (min-width: 900px) { .thback { display: none !important; } }
 /* ---------- Einstellungen ---------- */
 .srow { border-top: 1px solid var(--line); }
@@ -3106,11 +3109,11 @@ function viewZahlen() {
   abB.sort((a, b) => (a.d > b.d ? -1 : 1));
   const gefB = srItems().filter((it) => it.kind === 't' && abstand(num(it.sr.stufe, 1)) >= 60).map((it) => ({ k: 'stack', name: it.titel, d: it.sr.letzte || '' }));
   if (etB.length) groups.push({ id: 'e', title: 'Etappen · ' + etB.length, items: etB });
-  if (abB.length) groups.push({ id: 'a', title: 'Abgeschlossen · ' + abB.length, items: abB });
+  if (abB.length) groups.push({ id: 'a', title: 'Erledigt · ' + abB.length, items: abB });
   if (gefB.length) groups.push({ id: 'g', title: 'Gefestigt · ' + gefB.length, items: gefB });
   h += klausurenHtml();
   const BI = { flag: ICON.flag, check: ICON.check, stack: '<path d="M5 18h14M7 13.5h10M9 9h6M11 4.5h2"/>' };
-  h += '<section class="panel" aria-label="Abzeichen"><div class="h2row" style="margin:0"><h2>Abzeichen</h2><span class="small">alles, was abgeschlossen oder gefestigt ist</span></div>';
+  h += '<section class="panel" aria-label="Abzeichen"><div class="h2row" style="margin:0"><h2>Abzeichen</h2><span class="small">alles, was erledigt oder gefestigt ist</span></div>';
   if (groups.length) {
     groups.forEach((g) => {
       const all = !!K.showAll[g.id];
@@ -3120,7 +3123,7 @@ function viewZahlen() {
         (g.items.length > 6 ? '<button class="linkbtn" data-a="kAll" data-id="' + g.id + '">' + (all ? 'Weniger zeigen' : 'Alle ' + g.items.length + ' zeigen') + '</button>' : '') + '</div>';
     });
   } else {
-    h += '<div class="badges">' + [['Gefestigt', 'wenn ein Thema bei langen Abständen ankommt'], ['Abgeschlossen', 'wenn du ein Thema oder eine Routine abschließt'], ['Etappe', 'wenn eine Etappe vorbei ist']].map((m) => '<div class="badge"><span class="halo e"></span><b>' + m[0] + '</b><small>' + m[1] + '</small></div>').join('') + '</div>';
+    h += '<div class="badges">' + [['Gefestigt', 'wenn ein Thema bei langen Abständen ankommt'], ['Erledigt', 'wenn du ein Thema oder eine Routine als erledigt markierst'], ['Etappe', 'wenn eine Etappe vorbei ist']].map((m) => '<div class="badge"><span class="halo e"></span><b>' + m[0] + '</b><small>' + m[1] + '</small></div>').join('') + '</div>';
   }
   h += '</section></div>';
   return h;
@@ -3216,7 +3219,7 @@ Object.assign(EXTRA_ACT, {
 });
 
 /* ================= Ansicht: Themen ================= */
-const TH = { tab: 'baum', sel: null, open: {}, q: '', closedOpen: false, form: null, allE: false, allU: false, confirm: null };
+const TH = { nurOffen: (() => { try { return localStorage.getItem('lernsystem-nur-offen') === '1'; } catch (e) { return false; } })(), sel: null, open: {}, q: '', closedOpen: false, form: null, allE: false, allU: false, confirm: null };
 const MAX_TIEFE = 4; // bis zu vier Ebenen
 const descDate = (a, b) => String(b.erledigtAm || '').localeCompare(String(a.erledigtAm || '')) || num(b.erstellt, 0) - num(a.erstellt, 0);
 const thParent = (id) => (thema(id) && thema(thema(id).eltern) ? thema(id).eltern : null);
@@ -3367,7 +3370,7 @@ function thUnassign(bid) {
 function thZustand(id, z) {
   const t = thema(id);
   if (!t || (t.zustand || 'aktiv') === z) return;
-  undoable(t.name + ': ' + z, () => {
+  undoable(t.name + ': ' + zWort(z), () => {
     // Wieder aktiviert nach dem Abschluss: Wiederholung beginnt mit kurzem Abstand neu
     const restart = z === 'aktiv' && t.zustand === 'abgeschlossen';
     if (restart) thDesc(id).forEach((x) => { if (validSr(thema(x).sr)) patch('themen', x, { sr: srNeu(today()) }); });
@@ -3468,16 +3471,21 @@ function thDeleteBsp() {
 }
 
 /* ---------- Darstellung ---------- */
+// Filter „nur Offenes“: ein Thema bleibt sichtbar, solange es selbst oder etwas darunter noch nicht durchgearbeitet ist
+function hatOffenes(id) {
+  const kids = thKids(id).filter((k) => (D.themen[k].zustand || 'aktiv') !== 'abgeschlossen');
+  if (kids.some(hatOffenes)) return true;
+  return !(thParent(id) == null && kids.length) && !isDate(D.themen[id].durchAm);
+}
 function thRowHtml(id, depth) {
   const t = D.themen[id];
-  const kids = thKids(id).filter((k) => (D.themen[k].zustand || 'aktiv') !== 'abgeschlossen');
+  const kids = thKids(id).filter((k) => (D.themen[k].zustand || 'aktiv') !== 'abgeschlossen' && (!TH.nurOffen || hatOffenes(k)));
   const open = TH.open[id] != null ? TH.open[id] : depth < 1;
   const paused = effZustand(id) === 'pausiert';
-  const n = unitsOf(id).length;
-  const sub = paused ? 'pausiert' : (thNext(id) || (n ? n + (n === 1 ? ' Einheit' : ' Einheiten') : ''));
+  const sub = depth === 0 && thKids(id).length ? gebietSumme(id) : kurzStand(id);
   let h = '<div class="trow' + (TH.sel === id ? ' cur' : '') + '" data-k="tr-' + esc(id) + '" style="padding-left:' + depth * 18 + 'px">' +
     (kids.length ? '<button class="tog" aria-expanded="' + open + '" aria-label="Unterthemen von ' + esc(t.name) + (open ? ' zuklappen' : ' aufklappen') + '" data-a="thTog" data-id="' + esc(id) + '"><svg class="ico xs" viewBox="0 0 24 24" aria-hidden="true" style="transform:' + (open ? 'rotate(90deg)' : 'none') + '">' + ICON.right + '</svg></button>' : '<span style="flex:0 0 44px"></span>') +
-    '<button class="tname"' + (TH.sel === id ? ' aria-current="true"' : '') + ' data-a="thSel" data-id="' + esc(id) + '"' + (paused ? ' style="color:var(--quiet)"' : '') + '><span class="dot"' + gStyle(topOf(id)) + '></span><span class="nm">' + esc(t.name) + bsp(t) + (t.notiz && String(t.notiz).trim() ? ' <svg class="ico xs" viewBox="0 0 24 24" role="img" aria-label="hat eine Notiz" style="vertical-align:-2px;color:var(--quiet)">' + ICON.bubble + '</svg>' : '') + '</span>' + (sub ? '<span class="small">' + esc(sub) + '</span>' : '') + '</button></div>';
+    '<button class="tname"' + (TH.sel === id ? ' aria-current="true"' : '') + ' data-a="thSel" data-id="' + esc(id) + '"' + (paused ? ' style="color:var(--quiet)"' : '') + '><span class="dot"' + gStyle(topOf(id)) + '></span><span class="tx"><span class="nm">' + esc(t.name) + bsp(t) + (t.notiz && String(t.notiz).trim() ? ' <svg class="ico xs" viewBox="0 0 24 24" role="img" aria-label="hat eine Notiz" style="vertical-align:-2px;color:var(--quiet)">' + ICON.bubble + '</svg>' : '') + '</span>' + (sub ? '<span class="small">' + sub + '</span>' : '') + '</span></button></div>';
   if (open) h += kids.map((k) => thRowHtml(k, depth + 1)).join('');
   return h;
 }
@@ -3497,12 +3505,14 @@ function eingangHtml() {
   return h + '</section>';
 }
 function treeHtml() {
-  const act = thKids(null).filter((id) => (D.themen[id].zustand || 'aktiv') !== 'abgeschlossen');
+  const alleAkt = thKids(null).filter((id) => (D.themen[id].zustand || 'aktiv') !== 'abgeschlossen');
+  const act = TH.nurOffen ? alleAkt.filter(hatOffenes) : alleAkt;
   const closed = Object.keys(D.themen).filter((id) => D.themen[id].zustand === 'abgeschlossen' && !(thParent(id) && effZustand(thParent(id)) === 'abgeschlossen'))
     .sort((a, b) => String(D.themen[b].abgeschlossenAm || '').localeCompare(String(D.themen[a].abgeschlossenAm || '')));
-  let h = '<section class="panel" aria-label="Themenbaum"><h2>Themenbaum</h2>';
-  h += act.length ? '<div class="tree">' + act.map((id) => thRowHtml(id, 0)).join('') + '</div>'
-    : '<span class="small" style="font-size:14px">Der Baum startet leer. Lege ein Gebiet an, z. B. Zivilrecht, und darunter nur bei Bedarf Unterthemen, bis zu vier Ebenen.</span>';
+  let h = '<section class="panel" aria-label="Themenbaum"><div class="h2row" style="margin:0"><h2>Deine Themen</h2>' + (alleAkt.length ? '<button class="sel" style="min-height:36px" aria-pressed="' + TH.nurOffen + '" data-a="thNurOffen">nur Offenes</button>' : '') + '</div>';
+  if (TH.nurOffen && alleAkt.length && !act.length) h += '<span class="small" style="font-size:14px">Alles ist durchgearbeitet.</span>';
+  else h += act.length ? act.map((id) => '<div class="tree gblock" aria-label="Stand ' + esc(D.themen[id].name) + '">' + thRowHtml(id, 0) + '</div>').join('')
+    : '<span class="small" style="font-size:14px">Noch keine Themen. Lege ein Gebiet an, z. B. Zivilrecht, und darunter nur bei Bedarf Unterthemen, bis zu vier Ebenen.</span>';
   if (TH.form === 'top') {
     h += '<div class="form" style="background:var(--bg)" data-k="thnew"><label for="th-new">Neues Gebiet (oberste Ebene)</label><input id="th-new" class="inp" style="background:var(--card)" data-in="thNew" value="' + esc(fv('thNew')) + '" placeholder="z. B. Zivilrecht" data-enter="thNewSave" autocomplete="off">' +
       '<div class="formbtns"><button class="btn ghost" data-a="thNewCancel">Abbrechen</button><button class="btn" data-a="thNewSave">Anlegen</button></div></div>';
@@ -3512,7 +3522,7 @@ function treeHtml() {
   if (nb && TH.confirm === 'bsp') h += confirmBox('Alle ' + nb + ' Beispiel-Themen werden entfernt. Deine eigenen und umbenannten Themen bleiben, Unterthemen von dir rücken nach oben.', 'thDelBsp', null, 'Entfernen');
   else if (nb) h += '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding-top:6px;border-top:1px solid var(--line)"><span class="small">' + nb + ' Themen sind Platzhalter <span class="tag-bsp" style="margin-left:2px">Beispiel</span></span><button class="linkbtn" style="color:var(--quiet)" data-a="thBspAsk">entfernen</button></div>';
   if (closed.length) {
-    h += '<button class="more" aria-expanded="' + TH.closedOpen + '" data-a="thClosed">Abgeschlossen · ' + closed.length + '<svg class="ico xs" viewBox="0 0 24 24" aria-hidden="true" style="transform:' + (TH.closedOpen ? 'rotate(180deg)' : 'none') + '">' + ICON.down + '</svg></button>';
+    h += '<button class="more" aria-expanded="' + TH.closedOpen + '" data-a="thClosed">Erledigt · ' + closed.length + '<svg class="ico xs" viewBox="0 0 24 24" aria-hidden="true" style="transform:' + (TH.closedOpen ? 'rotate(180deg)' : 'none') + '">' + ICON.down + '</svg></button>';
     if (TH.closedOpen) {
       h += '<div class="tree">' + closed.map((id) => { const t = D.themen[id]; const p = thPath(id);
         return '<div class="trow' + (TH.sel === id ? ' cur' : '') + '" data-k="tc-' + esc(id) + '"><span style="flex:0 0 44px;display:flex;justify-content:center;color:var(--ok)">' + ico('check', 'xs') + '</span><button class="tname" data-a="thSel" data-id="' + esc(id) + '" style="color:var(--quiet)"><span class="nm">' + esc((p.length ? p.join(' › ') + ' › ' : '') + t.name) + '</span><span class="small">' + (isDate(t.abgeschlossenAm) ? esc(fmtDM(t.abgeschlossenAm) + t.abgeschlossenAm.slice(0, 4)) : '') + '</span></button></div>';
@@ -3529,7 +3539,7 @@ function searchHtml(q) {
   if (!th.length && !un.length) return h + '<span class="small" style="font-size:14px">Nichts gefunden zu „' + esc(q.trim()) + '“.</span></section>';
   if (th.length) {
     h += '<h3 class="small" style="font-weight:700">Themen · ' + th.length + '</h3><div class="tree">' + th.map((id) => { const p = thPath(id);
-      return '<div class="trow" data-k="sq-' + esc(id) + '"><button class="tname" style="padding-left:8px" data-a="thSel" data-id="' + esc(id) + '"><span class="dot"' + gStyle(topOf(id)) + '></span><span class="nm">' + esc(D.themen[id].name) + '</span><span class="small">' + esc(p.join(' › ') + (D.themen[id].zustand === 'abgeschlossen' ? (p.length ? ' · ' : '') + 'abgeschlossen' : '')) + '</span></button></div>';
+      return '<div class="trow" data-k="sq-' + esc(id) + '"><button class="tname" style="padding-left:8px" data-a="thSel" data-id="' + esc(id) + '"><span class="dot"' + gStyle(topOf(id)) + '></span><span class="nm">' + esc(D.themen[id].name) + '</span><span class="small">' + esc(p.join(' › ') + (D.themen[id].zustand === 'abgeschlossen' ? (p.length ? ' · ' : '') + 'erledigt' : '')) + '</span></button></div>';
     }).join('') + '</div>';
   }
   if (un.length) {
@@ -3570,8 +3580,8 @@ function thDetail(id) {
     '<button class="linkbtn thback" style="text-decoration:none;display:flex;align-items:center;gap:4px;margin:-8px 0 -4px -4px" data-a="thBack">' + ico('left', 'xs') + 'Alle Themen</button>' +
     '<span class="gname"' + gStyle(topOf(id)) + '><span class="dot"></span>' + esc(path.length ? path.join(' › ') : 'Gebiet') + '</span>' +
     '<h2 class="serif" style="font-size:24px;line-height:1.15">' + esc(t.name) + bsp(t) + '</h2>';
-  h += '<div class="chips" role="group" aria-label="Zustand">' + ['aktiv', 'pausiert', 'abgeschlossen'].map((x) => '<button class="sel" aria-pressed="' + (z === x) + '" data-a="thZ" data-id="' + esc(id) + '" data-v="' + x + '">' + x + '</button>').join('') + '</div>';
-  if (z === 'abgeschlossen') h += '<span class="small">' + (isDate(t.abgeschlossenAm) ? 'Abgeschlossen am ' + esc(fmtDMonY(t.abgeschlossenAm)) + '. ' : '') + 'Wieder aktiviert beginnt die Wiederholung mit kurzem Abstand neu.</span>';
+  h += '<div class="chips" role="group" aria-label="Zustand">' + ['aktiv', 'pausiert', 'abgeschlossen'].map((x) => '<button class="sel" aria-pressed="' + (z === x) + '" data-a="thZ" data-id="' + esc(id) + '" data-v="' + x + '">' + zWort(x) + '</button>').join('') + '</div>';
+  if (z === 'abgeschlossen') h += '<span class="small">' + (isDate(t.abgeschlossenAm) ? 'Erledigt am ' + esc(fmtDMonY(t.abgeschlossenAm)) + '. ' : '') + 'Wieder aktiviert beginnt die Wiederholung mit kurzem Abstand neu.</span>';
   else if (ez !== z) h += '<span class="small">Ruht mit dem übergeordneten Thema (' + ez + ').</span>';
   else if (z === 'pausiert') h += '<span class="small">Pausiert: kommt nicht in die Wiederholung, bis du es wieder aktivierst.</span>';
   const wOn = t.wiederholen !== false;
@@ -3623,21 +3633,29 @@ function thDetail(id) {
 }
 // Stand: pro Gebiet Abdeckung (durchgearbeitet, angefangen, offen) und Festigkeit (Wiederholungen, Stufe, nächster Termin)
 const stufeWort = (sr) => { const a = abstand(num(sr.stufe, 1)); return a <= 3 ? 'frisch' : (a <= 30 ? 'im Aufbau' : 'gefestigt'); };
-function standZeile(id, depth) {
+// Kurzer Stand einer Themenzeile: Abdeckung (durchgearbeitet, angefangen, offen) und Festigkeit
+function kurzStand(id) {
   const t = D.themen[id];
-  const n = unitsOf(id).length; const nW = wdhCount(id);
-  const zu = t.zustand === 'abgeschlossen';
-  const nr = durchNr(id);
-  const abd = isDate(t.durchAm) ? '<span style="display:inline-flex;align-items:center;gap:4px;color:var(--ok-text);font-weight:700">' + ico('check', 'xs') + 'durchgearbeitet ' + esc(fmtDM(t.durchAm)) + (nr > 1 ? ' (' + nr + '. Durchgang)' : '') + '</span>'
-    : nr > 1 ? '<span>' + nr + '. Durchgang offen</span>'
-    : (n ? '<span>angefangen · ' + n + (n === 1 ? ' Einheit' : ' Einheiten') + '</span>' : '<span style="color:var(--quiet)">noch nicht begonnen</span>');
+  if (effZustand(id) === 'pausiert') return 'pausiert';
+  const n = unitsOf(id).length; const nW = wdhCount(id); const nr = durchNr(id);
+  const teile = [];
+  if (isDate(t.durchAm)) teile.push('<span style="display:inline-flex;align-items:center;gap:3px;color:var(--ok-text);font-weight:700">' + ico('check', 'xs') + 'durchgearbeitet ' + esc(fmtDM(t.durchAm)) + (nr > 1 ? ' (' + nr + '. Durchgang)' : '') + '</span>');
+  else if (nr > 1) teile.push(nr + '. Durchgang offen');
+  else if (n) teile.push('angefangen · ' + n + (n === 1 ? ' Einheit' : ' Einheiten'));
+  else if (!thKids(id).length) teile.push('noch nicht begonnen');
   const sr = validSr(t.sr) && t.wiederholen !== false && hatEinheiten(id) ? t.sr : null;
-  const fest = (nW ? nW + '× wiederholt' : '') + (sr ? (nW ? ' · ' : '') + stufeWort(sr) + (effZustand(id) === 'aktiv' ? ' · ' + thNext(id) : ' · ruht') : '');
-  const note = String(t.notiz || '').split('\n').filter((x) => x.trim()).pop() || '';
-  return '<button class="trow" style="width:100%;border:0;background:transparent;text-align:left;padding:8px 6px 8px ' + (6 + depth * 16) + 'px;border-top:1px solid var(--line);border-radius:0;display:flex;flex-direction:column;align-items:stretch;gap:2px" data-a="thStandSel" data-id="' + esc(id) + '" data-k="st-' + esc(id) + '">' +
-    '<span style="display:flex;align-items:center;gap:8px;min-width:0"><span class="dot"' + gStyle(topOf(id)) + '></span><span style="font-size:15px;font-weight:600;overflow-wrap:anywhere;' + (zu ? 'color:var(--quiet)' : '') + '">' + esc(t.name) + '</span>' + (zu ? '<span class="tag-bsp">abgeschlossen</span>' : '') + '</span>' +
-    '<span class="small" style="display:flex;flex-wrap:wrap;gap:2px 12px;padding-left:16px">' + abd + (fest ? '<span>' + esc(fest) + '</span>' : '') + '</span>' +
-    (note ? '<span class="small" style="padding-left:16px;font-style:italic;overflow-wrap:anywhere">' + esc(note.length > 120 ? note.slice(0, 120) + ' …' : note) + '</span>' : '') + '</button>';
+  if (nW) teile.push(nW + '× wiederholt');
+  if (sr) teile.push(stufeWort(sr) + ' · ' + esc(thNext(id)));
+  return teile.join(' · ');
+}
+// Zusammenfassung eines Gebiets (Unterthemen; ein Gebiet ohne Unterthemen zählt selbst)
+function gebietSumme(g) {
+  const ids = [g].concat(thDesc(g).filter((id) => effZustand(id) !== 'abgeschlossen'));
+  const alle = ids.length > 1 ? ids.slice(1) : ids;
+  const durch = alle.filter((id) => isDate(D.themen[id].durchAm)).length;
+  const angef = alle.filter((id) => !isDate(D.themen[id].durchAm) && unitsOf(id).length).length;
+  const gef = ids.filter((id) => { const t = D.themen[id]; return validSr(t.sr) && hatEinheiten(id) && stufeWort(t.sr) === 'gefestigt'; }).length;
+  return esc((effZustand(g) === 'pausiert' ? 'pausiert · ' : '') + durchgangText(alle) + durch + ' von ' + alle.length + ' durchgearbeitet' + (angef ? ' · ' + angef + ' angefangen' : '') + (gef ? ' · ' + gef + ' gefestigt' : ''));
 }
 // Durchgänge: durchAm gilt für den laufenden Durchgang, frueher hält die Daten der vorigen (null = damals nicht durchgearbeitet)
 const durchNr = (id) => (Array.isArray(D.themen[id].frueher) ? D.themen[id].frueher.length : 0) + 1;
@@ -3645,22 +3663,7 @@ function durchgangText(ids) {
   const n = ids.map(durchNr); const a = Math.min.apply(null, n); const b = Math.max.apply(null, n);
   return b > 1 ? 'Durchgang ' + (a === b ? a : a + '–' + b) + ' · ' : '';
 }
-const frueherText = (t) => (Array.isArray(t.frueher) && t.frueher.length ? t.frueher.map((d, i) => (i + 1) + '. Durchgang ' + (isDate(d) ? fmtDMonY(d) : 'nicht abgeschlossen')).join(' · ') : '');
-function standHtml() {
-  const tops = thKids(null).filter((id) => (D.themen[id].zustand || 'aktiv') !== 'abgeschlossen');
-  if (!tops.length) return '<section class="panel"><h2>Stand</h2><span class="small" style="font-size:14px">Noch keine Themen. Lege sie unter „Baum“ an.</span></section>';
-  return tops.map((g) => {
-    const ids = [g].concat(thDesc(g));
-    const alle = ids.length > 1 ? ids.slice(1) : ids; // Unterthemen des Gebiets (ein Gebiet ohne Unterthemen zählt selbst)
-    const durch = alle.filter((id) => isDate(D.themen[id].durchAm)).length;
-    const angef = alle.filter((id) => !isDate(D.themen[id].durchAm) && unitsOf(id).length).length;
-    const gef = ids.filter((id) => { const t = D.themen[id]; return validSr(t.sr) && hatEinheiten(id) && stufeWort(t.sr) === 'gefestigt'; }).length;
-    const sum = durchgangText(alle) + durch + ' von ' + alle.length + ' durchgearbeitet' + (angef ? ' · ' + angef + ' angefangen' : '') + (gef ? ' · ' + gef + ' gefestigt' : '');
-    const rows = []; const walk = (id, depth) => { rows.push(standZeile(id, depth)); thKids(id).forEach((k) => walk(k, depth + 1)); };
-    if (thKids(g).length) thKids(g).forEach((k) => walk(k, 0)); else walk(g, 0); // das Gebiet steht schon als Überschrift
-    return '<section class="panel" aria-label="Stand ' + esc(D.themen[g].name) + '" style="gap:6px"><div style="display:flex;flex-direction:column;gap:2px"><h2 class="gname"' + gStyle(g) + ' style="font-size:16px;color:var(--ink)"><span class="dot"></span>' + esc(D.themen[g].name) + '</h2><span class="small">' + esc(sum) + '</span></div><div>' + rows.join('') + '</div></section>';
-  }).join('');
-}
+const frueherText = (t) => (Array.isArray(t.frueher) && t.frueher.length ? t.frueher.map((d, i) => (i + 1) + '. Durchgang ' + (isDate(d) ? fmtDMonY(d) : 'nicht durchgearbeitet')).join(' · ') : '');
 function viewThemen() {
   const t = today();
   const wide = window.innerWidth >= 900;
@@ -3668,15 +3671,10 @@ function viewThemen() {
   const suche = true; // die Suche ist immer eingeschaltet
   let h = '<header class="head"><div class="col"><span class="date">' + esc(fmtLong(t)) + '</span><h1>Themen</h1></div><button class="iconbtn gear" aria-label="Einstellungen" data-a="nav" data-v="einstellungen">' + ico('einst') + '</button></header>';
   if (!wide && TH.sel) return h + thDetail(TH.sel);
-  h += '<div class="tabs" role="tablist" aria-label="Ansicht"><button role="tab" aria-selected="' + (TH.tab !== 'stand') + '" data-a="thTab" data-v="baum">Baum</button><button role="tab" aria-selected="' + (TH.tab === 'stand') + '" data-a="thTab" data-v="stand">Stand</button></div>';
-  if (TH.tab === 'stand') {
-    const r2 = TH.sel ? thDetail(TH.sel) : (wide ? '<div class="placeholder"><b>Wo stehe ich?</b><span>Links siehst du pro Gebiet, was durchgearbeitet, angefangen oder noch offen ist, wie oft du wiederholt hast und wie fest es sitzt. Ein Thema antippen zeigt die Einzelheiten.</span></div>' : '');
-    return h + '<div class="cols"><div class="stack l">' + standHtml() + '</div>' + (r2 ? '<div class="stack l">' + r2 + '</div>' : '') + '</div>';
-  }
   let left = '';
   if (suche) left += '<div class="search"><label class="sr-only" for="th-q">Themen und Lerneinheiten durchsuchen</label><input id="th-q" class="inp" type="search" data-in="thQ" value="' + esc(TH.q) + '" placeholder="Suchen in Themen und Lerneinheiten" autocomplete="off"></div>';
   left += suche && TH.q.trim() ? searchHtml(TH.q) : eingangHtml() + treeHtml();
-  const right = TH.sel ? thDetail(TH.sel) : (wide ? '<div class="placeholder"><b>Thema wählen</b><span>Tippe links ein Thema an: Dort siehst du die nächste Wiederholung, die letzte Bewertung, und die Lerneinheiten, und du kannst es umbenennen, verschieben oder zusammenlegen.</span></div>' : '');
+  const right = TH.sel ? thDetail(TH.sel) : (wide ? '<div class="placeholder"><b>Thema wählen</b><span>Links siehst du pro Gebiet, was durchgearbeitet, angefangen oder noch offen ist und wie fest es sitzt. Tippe ein Thema an: Dort siehst du die nächste Wiederholung, die letzte Bewertung und die Lerneinheiten, und du kannst es umbenennen, verschieben oder zusammenlegen.</span></div>' : '');
   return h + '<div class="cols"><div class="stack l">' + left + '</div>' + (right ? '<div class="stack l">' + right + '</div>' : '') + '</div>';
 }
 Object.assign(EXTRA_ACT, {
@@ -3711,8 +3709,6 @@ Object.assign(EXTRA_ACT, {
     undoable(x.name + ': neuer Durchgang', () => ids.forEach((k) => { const t = D.themen[k]; patch('themen', k, { frueher: (Array.isArray(t.frueher) ? t.frueher : []).concat([isDate(t.durchAm) ? t.durchAm : null]), durchAm: null }); }));
   },
   thDurch: (d) => { const x = thema(d.id); if (!x) return; const on = !isDate(x.durchAm); undoable(on ? x.name + ' durchgearbeitet' : 'Markierung entfernt', () => patch('themen', d.id, { durchAm: on ? today() : null })); },
-  thTab: (d) => { TH.tab = d.v; },
-  thStandSel: (d) => { EXTRA_ACT.thSel(d); },
   wNote: (d) => { const key = 'wn_' + d.k; if (!String(F[key] || '').trim()) { toast('Schreib kurz, was du festhalten willst.', false); return 'keep'; } if (notizDazu(d.id, curDay(), F[key])) F[key] = ''; return 'keep'; },
   thFarbe: (d) => { undoable('Farbe geändert', () => patch('themen', d.id, { farbe: d.v })); },
   thMove: (d) => { const r = thMove(d.id, F.thMoveTo || ''); F.thMoveTo = ''; if (r) { toast(r, false); return 'keep'; } },
@@ -3732,13 +3728,16 @@ Object.assign(EXTRA_ACT, {
   thAssign: (d) => { const tid = F['zu_' + d.id]; if (!tid || !thema(tid)) { toast('Bitte erst ein Thema wählen.', false); return 'keep'; } thAssign(d.id, tid); F['zu_' + d.id] = ''; },
   thUn: (d) => thUnassign(d.id),
   thClosed: () => { TH.closedOpen = !TH.closedOpen; },
+  thNurOffen: () => { TH.nurOffen = !TH.nurOffen; try { localStorage.setItem('lernsystem-nur-offen', TH.nurOffen ? '1' : '0'); } catch (e) { /* nur Anzeige */ } },
   thAllE: () => { TH.allE = !TH.allE; },
   thAllU: () => { TH.allU = !TH.allU; }
 });
 
 /* ================= Ansicht: Einstellungen ================= */
 const ES = { importPending: null, open: null, rForm: null, rArt: 'tage', rTage: [], tForm: null, tTage: [] };
+const zWort = (z) => (z === 'abgeschlossen' ? 'erledigt' : z);
 const ZUST = ['aktiv', 'pausiert', 'abgeschlossen'];
+// Angezeigt wird „erledigt“; gespeichert bleibt 'abgeschlossen'
 const MODS = [
   { k: 'suche', name: 'Suche', text: 'Suchfeld in „Themen“ für Themen und Lerneinheiten', std: 'aktiv', gebaut: true },
   { k: 'anki', name: 'Anki-Export', text: 'Lerneinheiten als Karten exportieren', std: 'pausiert', gebaut: false },
@@ -3751,10 +3750,10 @@ function modZustand(k) {
 }
 function setCfg(part) { undoable('Gespeichert, gilt ab jetzt', () => patch('meta', 'config', part)); }
 function setZustand(col, id, z, name) {
-  undoable(name + ': ' + z, () => patch(col, id, { zustand: z, abgeschlossenAm: z === 'abgeschlossen' ? today() : null }));
+  undoable(name + ': ' + zWort(z), () => patch(col, id, { zustand: z, abgeschlossenAm: z === 'abgeschlossen' ? today() : null }));
 }
 function zChips(cur, act, id, label) {
-  return '<div class="chips" role="group" aria-label="' + esc(label) + '">' + ZUST.map((z) => '<button class="sel" aria-pressed="' + (cur === z) + '" data-a="' + act + '" data-id="' + esc(id) + '" data-v="' + z + '">' + z + '</button>').join('') + '</div>';
+  return '<div class="chips" role="group" aria-label="' + esc(label) + '">' + ZUST.map((z) => '<button class="sel" aria-pressed="' + (cur === z) + '" data-a="' + act + '" data-id="' + esc(id) + '" data-v="' + z + '">' + zWort(z) + '</button>').join('') + '</div>';
 }
 const hNum = (h) => String(h).replace('.', ',');
 function umfangText(arr) {
@@ -3808,7 +3807,7 @@ function routinenHtml() {
   h += ids.length ? '<div style="display:flex;flex-direction:column">' + ids.map((id) => {
     const r = D.routinen[id]; const z = r.zustand || 'aktiv';
     if (ES.rForm && ES.rForm.id === id) return '<div style="padding:8px 0;border-top:1px solid var(--line)">' + routineForm() + '</div>';
-    return '<div class="spanrow" style="flex-wrap:wrap" data-k="er-' + esc(id) + '"><span class="tx"><b' + (z !== 'aktiv' ? ' style="color:var(--quiet)"' : '') + '>' + esc(r.titel) + bsp(r) + '</b><span class="small">' + esc(haeufigkeitText(r) + (r.notiz ? ' · ' + r.notiz : '') + (z === 'abgeschlossen' && isDate(r.abgeschlossenAm) ? ' · abgeschlossen am ' + fmtDM(r.abgeschlossenAm) : '')) + '</span></span>' +
+    return '<div class="spanrow" style="flex-wrap:wrap" data-k="er-' + esc(id) + '"><span class="tx"><b' + (z !== 'aktiv' ? ' style="color:var(--quiet)"' : '') + '>' + esc(r.titel) + bsp(r) + '</b><span class="small">' + esc(haeufigkeitText(r) + (r.notiz ? ' · ' + r.notiz : '') + (z === 'abgeschlossen' && isDate(r.abgeschlossenAm) ? ' · erledigt am ' + fmtDM(r.abgeschlossenAm) : '')) + '</span></span>' +
       '<button class="linkbtn" style="align-self:center" aria-label="Routine ' + esc(r.titel) + ' ändern" data-a="esREdit" data-id="' + esc(id) + '">ändern</button><div style="flex:1 1 100%">' + zChips(z, 'esRZ', id, 'Zustand ' + r.titel) + '</div></div>';
   }).join('') + '</div>' : '<span class="small" style="font-size:14px">Noch keine Routinen.</span>';
   if (!ES.rForm) h += '<button class="addbtn" style="min-height:44px" data-a="esRNew">' + ico('plus', 'xs') + 'Routine</button>';

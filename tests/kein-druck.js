@@ -54,7 +54,6 @@ L.run(async () => {
     await L.click(p, '[data-a=kTab][data-v=zeit]'); await schau('Zeitstrahl');
     await L.click(p, '[data-a=kTab][data-v=zahlen]'); await schau('Statistik');
     await L.go(p, 'themen'); await schau('Themen');
-    await L.click(p, '[data-a=thTab][data-v=stand]'); await schau('Stand');
     await L.go(p, 'einstellungen'); await schau('Einstellungen');
 
     const xe = blicke.filter((b) => b[0] === 'Woche (Wochenwechsel)' || b[0] === 'Vorwoche').reduce((a, b) => a.concat(b[2]), []);
