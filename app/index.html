@@ -3219,7 +3219,7 @@ Object.assign(EXTRA_ACT, {
 });
 
 /* ================= Ansicht: Themen ================= */
-const TH = { sel: null, open: {}, q: '', closedOpen: false, form: null, allE: false, allU: false, confirm: null };
+const TH = { nurOffen: (() => { try { return localStorage.getItem('lernsystem-nur-offen') === '1'; } catch (e) { return false; } })(), sel: null, open: {}, q: '', closedOpen: false, form: null, allE: false, allU: false, confirm: null };
 const MAX_TIEFE = 4; // bis zu vier Ebenen
 const descDate = (a, b) => String(b.erledigtAm || '').localeCompare(String(a.erledigtAm || '')) || num(b.erstellt, 0) - num(a.erstellt, 0);
 const thParent = (id) => (thema(id) && thema(thema(id).eltern) ? thema(id).eltern : null);
@@ -3471,9 +3471,15 @@ function thDeleteBsp() {
 }
 
 /* ---------- Darstellung ---------- */
+// Filter „nur Offenes“: ein Thema bleibt sichtbar, solange es selbst oder etwas darunter noch nicht durchgearbeitet ist
+function hatOffenes(id) {
+  const kids = thKids(id).filter((k) => (D.themen[k].zustand || 'aktiv') !== 'abgeschlossen');
+  if (kids.some(hatOffenes)) return true;
+  return !(thParent(id) == null && kids.length) && !isDate(D.themen[id].durchAm);
+}
 function thRowHtml(id, depth) {
   const t = D.themen[id];
-  const kids = thKids(id).filter((k) => (D.themen[k].zustand || 'aktiv') !== 'abgeschlossen');
+  const kids = thKids(id).filter((k) => (D.themen[k].zustand || 'aktiv') !== 'abgeschlossen' && (!TH.nurOffen || hatOffenes(k)));
   const open = TH.open[id] != null ? TH.open[id] : depth < 1;
   const paused = effZustand(id) === 'pausiert';
   const sub = depth === 0 && thKids(id).length ? gebietSumme(id) : kurzStand(id);
@@ -3499,11 +3505,13 @@ function eingangHtml() {
   return h + '</section>';
 }
 function treeHtml() {
-  const act = thKids(null).filter((id) => (D.themen[id].zustand || 'aktiv') !== 'abgeschlossen');
+  const alleAkt = thKids(null).filter((id) => (D.themen[id].zustand || 'aktiv') !== 'abgeschlossen');
+  const act = TH.nurOffen ? alleAkt.filter(hatOffenes) : alleAkt;
   const closed = Object.keys(D.themen).filter((id) => D.themen[id].zustand === 'abgeschlossen' && !(thParent(id) && effZustand(thParent(id)) === 'abgeschlossen'))
     .sort((a, b) => String(D.themen[b].abgeschlossenAm || '').localeCompare(String(D.themen[a].abgeschlossenAm || '')));
-  let h = '<section class="panel" aria-label="Themenbaum"><h2>Deine Themen</h2>';
-  h += act.length ? act.map((id) => '<div class="tree gblock" aria-label="Stand ' + esc(D.themen[id].name) + '">' + thRowHtml(id, 0) + '</div>').join('')
+  let h = '<section class="panel" aria-label="Themenbaum"><div class="h2row" style="margin:0"><h2>Deine Themen</h2>' + (alleAkt.length ? '<button class="sel" style="min-height:36px" aria-pressed="' + TH.nurOffen + '" data-a="thNurOffen">nur Offenes</button>' : '') + '</div>';
+  if (TH.nurOffen && alleAkt.length && !act.length) h += '<span class="small" style="font-size:14px">Alles ist durchgearbeitet.</span>';
+  else h += act.length ? act.map((id) => '<div class="tree gblock" aria-label="Stand ' + esc(D.themen[id].name) + '">' + thRowHtml(id, 0) + '</div>').join('')
     : '<span class="small" style="font-size:14px">Noch keine Themen. Lege ein Gebiet an, z. B. Zivilrecht, und darunter nur bei Bedarf Unterthemen, bis zu vier Ebenen.</span>';
   if (TH.form === 'top') {
     h += '<div class="form" style="background:var(--bg)" data-k="thnew"><label for="th-new">Neues Gebiet (oberste Ebene)</label><input id="th-new" class="inp" style="background:var(--card)" data-in="thNew" value="' + esc(fv('thNew')) + '" placeholder="z. B. Zivilrecht" data-enter="thNewSave" autocomplete="off">' +
@@ -3720,6 +3728,7 @@ Object.assign(EXTRA_ACT, {
   thAssign: (d) => { const tid = F['zu_' + d.id]; if (!tid || !thema(tid)) { toast('Bitte erst ein Thema wählen.', false); return 'keep'; } thAssign(d.id, tid); F['zu_' + d.id] = ''; },
   thUn: (d) => thUnassign(d.id),
   thClosed: () => { TH.closedOpen = !TH.closedOpen; },
+  thNurOffen: () => { TH.nurOffen = !TH.nurOffen; try { localStorage.setItem('lernsystem-nur-offen', TH.nurOffen ? '1' : '0'); } catch (e) { /* nur Anzeige */ } },
   thAllE: () => { TH.allE = !TH.allE; },
   thAllU: () => { TH.allU = !TH.allU; }
 });

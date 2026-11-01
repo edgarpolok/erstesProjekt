@@ -141,4 +141,27 @@ L.run(async () => {
   await L.go(p, 'themen');
   L.expect('Notiz-Symbol am Thema', await p.locator('[aria-label="hat eine Notiz"]').count(), 1);
   await L.noHScroll(p, 'Stand schmal');
+
+  // 8) Filter „nur Offenes“: blendet Durchgearbeitetes aus, Wege zu offenen Unterthemen bleiben
+  p = await L.open({ themen: {
+    zr: { name: 'Zivilrecht', eltern: null, zustand: 'aktiv' },
+    sat: { name: 'Schuldrecht AT', eltern: 'zr', zustand: 'aktiv', durchAm: '2026-10-20' },
+    u: { name: 'Unmöglichkeit', eltern: 'sat', zustand: 'aktiv', durchAm: '2026-10-21' },
+    v: { name: 'Verzug', eltern: 'sat', zustand: 'aktiv' },
+    kr: { name: 'Kaufrecht', eltern: 'zr', zustand: 'aktiv', durchAm: '2026-10-22' },
+    st: { name: 'Strafrecht', eltern: null, zustand: 'aktiv' },
+    at: { name: 'Strafrecht AT', eltern: 'st', zustand: 'aktiv', durchAm: '2026-10-23' } } }, 'sim-2026-11-04-1000', 1280);
+  await L.go(p, 'themen');
+  await L.click(p, '[data-a=thTog][data-id=sat]');
+  L.expect('ohne Filter alle Zeilen', await p.locator('[data-k^=tr-]').count(), 7);
+  await L.click(p, '[data-a=thNurOffen]');
+  const zeilen = await p.$$eval('[data-k^=tr-]', (els) => els.map((e) => e.getAttribute('data-k')));
+  L.expect('nur Offenes: Weg zu Verzug bleibt, Durchgearbeitetes und Strafrecht weg', zeilen, ['tr-zr', 'tr-sat', 'tr-v']);
+  L.has('Zusammenfassung zählt weiter alles', await L.text(p, '[aria-label="Stand Zivilrecht"]'), '3 von 4 durchgearbeitet');
+  L.expect('Filter ändert keine Daten', Object.keys((await L.store(p)).themen).length, 7);
+  await L.click(p, '[data-a=thSel][data-id=v]'); await L.click(p, '[data-a=thDurch][data-id=v]');
+  L.has('alles durchgearbeitet: Hinweis', await L.text(p, '[aria-label=Themenbaum]'), 'Alles ist durchgearbeitet.');
+  await L.click(p, '[data-a=thNurOffen]');
+  L.expect('Filter aus: wieder alle Zeilen', await p.locator('[data-k^=tr-]').count(), 7);
+  await p.context().close();
 });
