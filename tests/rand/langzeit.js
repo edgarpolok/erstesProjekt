@@ -497,7 +497,7 @@ function browser(CFG) {
 
   function ansichtenZeit() {
     const res = {}; const t0all = performance.now();
-    const alt = { v: S.view, tab: K.tab, thTab: TH.tab, day: S.day, wk: S.wk };
+    const alt = { v: S.view, tab: K.tab, thOffen: TH.nurOffen, day: S.day, wk: S.wk };
     const misst = (name, fn) => {
       const z = [];
       for (let i = 0; i < 3; i++) { fn(); const t0 = performance.now(); doRender(); void document.body.offsetHeight; z.push(performance.now() - t0); }
@@ -510,10 +510,11 @@ function browser(CFG) {
     misst('Kalender', () => { S.view = 'kalender'; K.tab = 'kalender'; });
     misst('Zeitstrahl', () => { S.view = 'kalender'; K.tab = 'zeit'; });
     misst('Statistik', () => { S.view = 'kalender'; K.tab = 'zahlen'; });
-    misst('Themen Baum', () => { S.view = 'themen'; TH.tab = 'baum'; });
-    misst('Themen Stand', () => { S.view = 'themen'; TH.tab = 'stand'; });
+    // Baum und Stand sind seit dem Umbau eine Ansicht; zusätzlich der Filter „nur Offenes“
+    misst('Themen', () => { S.view = 'themen'; TH.nurOffen = false; });
+    misst('Themen nur Offenes', () => { S.view = 'themen'; TH.nurOffen = true; });
     misst('Einstellungen', () => { S.view = 'einstellungen'; });
-    S.view = alt.v; K.tab = alt.tab; TH.tab = alt.thTab; S.day = alt.day; S.wk = alt.wk; doRender();
+    S.view = alt.v; K.tab = alt.tab; TH.nurOffen = alt.thOffen; S.day = alt.day; S.wk = alt.wk; doRender();
     return res;
   }
 
@@ -624,8 +625,7 @@ async function ansichten(p, wo, n) {
   await klick('[data-a=kTab][data-v=zahlen]', 'Statistik');
   await klick('[data-a=kTab][data-v=kalender]', 'Kalender (zurück)');
   await klick('.side [data-v=themen]', 'Themen');
-  if (n % 3 !== 1) await klick('[data-a=thTab][data-v=stand]', 'Themen Stand');
-  await klick('[data-a=thTab][data-v=baum]', 'Themen Baum');
+  if (n % 3 !== 1) { await klick('[data-a=thNurOffen]', 'Themen nur Offenes'); await klick('[data-a=thNurOffen]', 'Themen alles'); }
   await klick('.side [data-v=einstellungen]', 'Einstellungen');
   await klick('.side [data-v=heute]', 'Heute (zurück)');
 }
@@ -742,10 +742,10 @@ L.run(async () => {
     S.day = null; TH.sel = null; TH.q = ''; S.wk = null;
     const ans = (n, v, f) => { S.view = v; f && f(); doRender(); out[n] = document.getElementById('main').textContent.replace(/\s+/g, ' '); };
     ans('Statistik', 'kalender', () => { K.tab = 'zahlen'; });
-    ans('Stand', 'themen', () => { TH.tab = 'stand'; });
+    ans('Themen', 'themen', () => { TH.nurOffen = false; });
     out.themen = Object.keys(D.themen).length; out.bloecke = Object.keys(D.bloecke).length; out.faellig = srItems().filter((it) => it.sr.faellig <= today()).length;
     out.klausuren = klausurenListe().map(klausurPunkte).filter((x) => x != null).join(',');
-    S.view = alt.v; K.tab = alt.tab; TH.tab = 'baum'; doRender();
+    S.view = alt.v; K.tab = alt.tab; doRender();
     return out;
   });
   await p.evaluate(() => SIM.setzeUhr(today(), 12 * 60));

@@ -75,7 +75,7 @@ L.run(async () => {
   p = await L.open({ bloecke: fuenf }, 'sim-2026-11-02-0900', 1280);
   await L.click(p, '[data-a=rateW][data-ref="e:a"][data-r=sicher]');
   await L.go(p, 'einstellungen'); await L.click(p, '[data-a=esOpen][data-v=wdhtag]');
-  await L.click(p, '[data-a=esSet][data-k=wdhProTag][data-n="30"]');
+  await L.fill(p, '#es-wdh', '30'); await L.click(p, '[data-a=esWdh]');
   L.expect('Richtwert gespeichert', await p.evaluate(() => window.__ls.cfg().wdhProTag), 30);
   await L.go(p, 'heute');
   L.expect('30 min: Bewertetes bleibt, dazu eine weitere', await zeilen(), ['Einheit A', 'Einheit B']);
