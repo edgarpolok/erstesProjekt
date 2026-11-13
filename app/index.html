@@ -340,6 +340,10 @@ select.inp { padding: 0 8px; }
 .mk.on svg { stroke: var(--ok-mark); }
 .mk.x { border: 0; }
 .mk.x svg { width: 12px; height: 12px; stroke: var(--x); stroke-width: 2.6; }
+.mk.aus { border-color: transparent; }
+.notiz { font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; display: flex; flex-direction: column; }
+.notiz .nzeile { white-space: pre-wrap; }
+.notiz .nliste { margin: 0; padding-left: 18px; }
 .it .tx { flex: 1 1 auto; min-width: 0; font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
 .it.done .tx { color: var(--quiet); }
 .it .tm { margin-right: 6px; font-size: 13px; font-variant-numeric: tabular-nums; color: var(--quiet); }
@@ -515,6 +519,8 @@ select.inp { padding: 0 8px; }
 .tree { display: flex; flex-direction: column; }
 .trow { display: flex; align-items: center; gap: 2px; border-radius: 10px; }
 .trow.cur { background: var(--soft); }
+.trow .tpf { flex: 0 0 36px; width: 36px; height: 44px; padding: 0; border: 0; border-radius: 10px; background: transparent; display: flex; align-items: center; justify-content: center; color: var(--ink); }
+.trow .tpf:disabled { color: var(--line); }
 .trow .tog { flex: 0 0 44px; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 10px; background: transparent; display: flex; align-items: center; justify-content: center; color: var(--quiet); }
 .trow .tname { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 8px 0 0; border: 0; background: transparent; text-align: left; }
 .trow .tname .nm { flex: 1 1 auto; min-width: 0; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
@@ -1314,8 +1320,19 @@ const zaehltImPuffer = (b) => !!(b.warImTag || b.mitgenommen || b.zurueckgelegt 
 // Zeit, die ein Block an früheren Tagen gesammelt hat, bevor er in einen neuen Tag geholt wurde
 const zeitFrueh = (b) => (isObj(b.zeitFrueher) ? Object.keys(b.zeitFrueher).reduce((a, d) => a + num(b.zeitFrueher[d], 0), 0) : 0);
 const zeitAmTag = (b) => Math.max(0, num(b.zeit, 0) - zeitFrueh(b));
+// Abgehakte Termine mit Uhrzeit zählen zur erfassten Zeit, außer der Termin ist auf „zählt nicht“ gestellt
+const terminZaehlt = (id) => !(D.termine[id] && D.termine[id].zeitZaehlt === false);
+function terminZeitAt(date) {
+  const st = tag(date).termine || {};
+  return termineAt(date).reduce((a, x) => a + ((st[x.id] || {}).erledigt && !(st[x.id] || {}).faelltAus && !x.ganztags && terminZaehlt(x.id) ? x.min : 0), 0);
+}
+function tZeitToggle(id) {
+  const x = D.termine[id]; if (!x) return;
+  const an = !terminZaehlt(id);
+  undoable(x.titel + (an ? ' zählt zur erfassten Zeit' : ' zählt nicht mehr zur erfassten Zeit'), () => patch('termine', id, { zeitZaehlt: an }));
+}
 function erfasstAt(date) {
-  let m = wdhState(date).zeit;
+  let m = wdhState(date).zeit + terminZeitAt(date);
   blocksAt(date).forEach((b) => { if (b.status === 'erledigt') m += zeitAmTag(b); });
   Object.keys(D.bloecke).forEach((k) => { const b = D.bloecke[k]; if (b.status === 'erledigt' && b.tag !== date && isObj(b.zeitFrueher)) m += num(b.zeitFrueher[date], 0); });
   return m;
@@ -1744,7 +1761,7 @@ function addBlock(f) {
   const id = uid('b');
   const data = {
     titel: titel, woche: mondayOf(t), tag: t, gebiet: f.g || inferGebiet(titel) || (f.wdhVon ? topOf(f.wdhVon) : null),
-    status: 'offen', quelle: 'frei', zusaetzlich: true, wdhVon: f.wdhVon || null, thema: f.wdhVon || null,
+    status: 'offen', quelle: 'frei', zusaetzlich: true, wdhVon: f.wdhVon || null, thema: f.wdhVon || f.thema || null,
     wiederholen: f.wdhVon ? false : cfg().wdhStandard, zeit: null, erstellt: nowMs()
   };
   if (markNach(t)) data.nachgetragen = true;
@@ -1802,6 +1819,18 @@ function carryKeep(id) {
   patch('bloecke', id, { woche: mondayOf(t), tag: null, mitgenommen: true, ausWoche: b.woche });
   if (!carryOf(mondayOf(t)).length) S.carryDone = mondayOf(t);
 }
+function carryVoraus(id, W) {
+  const b = D.bloecke[id];
+  if (!b || b.status !== 'offen') return;
+  if (timerRef() === 'b:' + id) stopTimer();
+  const list = vorhabenFor(W);
+  const std = typeof b.std === 'number' && b.std > 0 ? b.std : null;
+  undoable('„' + shortName(b.titel) + '“ kommt mit in die nächste Woche', () => {
+    const vid = uid('v');
+    put('vorhaben', vid, { name: b.titel, std: std, modus: null, gebiet: b.gebiet || null, wdhVon: b.wdhVon || null, thema: b.wdhVon ? null : (b.thema || null), ab: W, wochen: 1, ohne: [], reihenfolge: list.length ? num(list[list.length - 1].reihenfolge, list.length) + 1 : 1, ausBlock: id, erstellt: nowMs() });
+    patch('bloecke', id, { status: 'gestrichen', gestrichenAm: today(), weiterIn: W, weiterAls: vid });
+  });
+}
 function carryDrop(id) {
   if (timerRef() === 'b:' + id) stopTimer();
   undoable('Gestrichen', () => patch('bloecke', id, { status: 'gestrichen', gestrichenAm: today() }));
@@ -1855,7 +1884,7 @@ function planRows(T) {
   });
   return vorhabenFor(T).filter((v) => String(v.name || '').trim()).map((v) => ({
     id: v.id, titel: v.name.trim(), hours: Math.max(0, vStd(v) - (kept[v.id] || 0)), modus: v.modus || null,
-    gebiet: v.gebiet || inferGebiet(v.name), wdhVon: v.wdhVon || null, std: v.std, done: kept[v.id] || 0
+    gebiet: v.gebiet || inferGebiet(v.name), wdhVon: v.wdhVon || null, thema: v.thema && thema(v.thema) ? v.thema : null, std: v.std, done: kept[v.id] || 0
   })).filter((r) => r.hours > 0.01);
 }
 function finishWeekDoc(T, status, extra) {
@@ -1871,7 +1900,7 @@ function submitFertig(T) {
   planRows(T).forEach((r) => {
     // Schon begonnene Vorhaben: nur der Rest kommt auf die Wochenliste
     const std = r.done ? Math.round(r.hours * 4) / 4 : (r.std || null);
-    put('bloecke', uid('b'), { titel: r.titel, woche: T, tag: null, gebiet: r.gebiet || null, vorhaben: r.id, std: std, quelle: 'liste', wdhVon: r.wdhVon, thema: r.wdhVon, status: 'offen', reihe: ++reihe, erstellt: nowMs() + reihe });
+    put('bloecke', uid('b'), { titel: r.titel, woche: T, tag: null, gebiet: r.gebiet || null, vorhaben: r.id, std: std, quelle: 'liste', wdhVon: r.wdhVon, thema: r.wdhVon || r.thema || null, status: 'offen', reihe: ++reihe, erstellt: nowMs() + reihe });
   });
   finishWeekDoc(T, 'fertig', { verteilung: null });
   toast('Wochenliste steht', false);
@@ -1916,11 +1945,11 @@ async function submitClaude(T) {
   Object.keys(res.days).sort().forEach((d) => {
     res.days[d].forEach((x) => {
       const r = byId[x.id];
-      put('bloecke', uid('b'), { titel: x.titel || r.titel, woche: T, tag: d, gebiet: r.gebiet || null, vorhaben: r.id, std: Math.round(x.std * 4) / 4, quelle: 'claude', wdhVon: x.aufgreifen ? null : r.wdhVon, thema: x.aufgreifen ? null : r.wdhVon, status: 'offen', erstellt: nowMs() + (++n) });
+      put('bloecke', uid('b'), { titel: x.titel || r.titel, woche: T, tag: d, gebiet: r.gebiet || null, vorhaben: r.id, std: Math.round(x.std * 4) / 4, quelle: 'claude', wdhVon: x.aufgreifen ? null : r.wdhVon, thema: x.aufgreifen ? null : (r.wdhVon || r.thema || null), status: 'offen', erstellt: nowMs() + (++n) });
     });
   });
   res.over.forEach((r) => {
-    put('bloecke', uid('b'), { titel: r.titel, woche: T, tag: null, gebiet: r.gebiet || null, vorhaben: r.id, std: Math.round(r.hours * 4) / 4, quelle: 'claude', wdhVon: r.wdhVon, thema: r.wdhVon, status: 'offen', reihe: ++n, erstellt: nowMs() + n });
+    put('bloecke', uid('b'), { titel: r.titel, woche: T, tag: null, gebiet: r.gebiet || null, vorhaben: r.id, std: Math.round(r.hours * 4) / 4, quelle: 'claude', wdhVon: r.wdhVon, thema: r.wdhVon || r.thema || null, status: 'offen', reihe: ++n, erstellt: nowMs() + n });
   });
   finishWeekDoc(T, 'uebergeben', { verteilung: { quelle: quelle, offen: res.over.map((r) => r.titel), hinweis: res.hinweis || '' } });
   planBusy[T] = false;
@@ -1973,7 +2002,7 @@ function weekFacts(W) {
   let wdhTage = 0; let wdhDone = 0; let rDone = 0; let rAll = 0;
   weekDates(W).forEach((d) => {
     if (d > today()) return;
-    zeit += wdhState(d).zeit;
+    zeit += wdhState(d).zeit + terminZeitAt(d);
     if (wdhPlanned(d)) { wdhTage++; if (wdhState(d).done) wdhDone++; }
     routinenAt(d).forEach((r) => { rAll++; if (((tag(d).routinen || {})[r.id] || {}).erledigt) rDone++; });
   });
@@ -2022,7 +2051,7 @@ const bsp = (o) => (o && o.beispiel ? '<span class="tag-bsp">Beispiel</span>' : 
 
 function greeting() {
   const m = nowMin();
-  return m < 690 ? 'Guten Morgen' : (m < 1080 ? 'Guten Mittag' : 'Guten Abend');
+  return m < 690 ? 'Guten Morgen' : (m < 1020 ? 'Guten Mittag' : 'Guten Abend');
 }
 function heuteLine(t, ctx) {
   if (ctx.frei) return ctx.frei;
@@ -2100,12 +2129,13 @@ function rowTermin(t, x) {
     checkBtn(on, x.titel, 'tTermin', ' data-id="' + esc(x.id) + '"', k) +
     '<div class="body"><span class="clock"' + (x.ganztags ? ' style="align-self:flex-start;padding:1px 6px;border-radius:4px;background:var(--hl);color:var(--hl-text)"' : '') + '>' + esc(terminText(x)) + '</span><span class="title">' + esc(x.titel) + bsp(x) + (x.art === 'klausur' ? '<span class="tag-bsp">Klausur</span>' : '') + nachTag(on && st) + '</span></div>' +
     '<button class="dots" aria-label="Optionen: ' + esc(x.titel) + '" aria-expanded="' + (S.menu === k) + '" data-a="menu" data-m="' + k + '">' + DOTS_SVG + '</button></div>' +
-    (S.menu === k ? '<div class="actions"><button class="chipbtn" data-a="cancelTermin" data-id="' + esc(x.id) + '" data-t="' + esc(x.titel) + '">' + (t < today() ? 'Fiel aus' : 'Fällt heute aus') + '</button></div>' : '') +
+    (S.menu === k ? '<div class="actions"><button class="chipbtn" data-a="cancelTermin" data-id="' + esc(x.id) + '" data-t="' + esc(x.titel) + '">' + (t < today() ? 'Fiel aus' : 'Fällt heute aus') + '</button>' + (x.ganztags ? '' : '<button class="switch ink" role="switch" aria-checked="' + terminZaehlt(x.id) + '" data-a="tZeitZaehlt" data-id="' + esc(x.id) + '"><span class="tr"></span>zählt zur erfassten Zeit</button>') + '</div>' : '') +
     '</div>';
 }
 function blockMeta(b) {
   if (b.wdhVon && thema(b.wdhVon)) return 'Wiederholung von ' + themaLabel(b.wdhVon);
   const p = [];
+  if (b.thema && thema(b.thema) && thParent(b.thema)) p.push(thPath(b.thema).slice(1).concat([D.themen[b.thema].name]).join(' › '));
   if (b.std) p.push(fmtH(b.std * 60));
   if (b.quelle === 'claude') p.push('Vorschlag');
   if (b.quelle === 'liste') p.push('aus der Wochenliste');
@@ -2220,11 +2250,10 @@ function addForm() {
     return '<div class="addrow"><button class="addbtn" data-a="startAdd">' + ico('plus', 'xs') + 'Hinzufügen</button>' +
       '<button class="addbtn sq" aria-label="Timer ohne Block starten" data-a="startT" data-art="f" data-id="">' + '<svg class="ico xs" viewBox="0 0 24 24" aria-hidden="true" style="fill:currentColor">' + ICON.play + '</svg></button></div>';
   }
-  const g = S.addG === undefined ? null : S.addG;
   return '<div class="form" data-k="addform"><label for="neu-eintrag">' + (S.addDone ? 'Was hast du gemacht?' : 'Was nimmst du dir heute vor?') + '</label>' +
     '<input id="neu-eintrag" class="inp" data-in="addText" value="' + esc(fv('addText')) + '" placeholder="z. B. Fälle zu Rom I" data-enter="doAdd" autocomplete="off">' +
     (S.day ? '' : '<button class="switch ink" role="switch" aria-checked="' + S.addDone + '" data-a="addDone"><span class="tr"></span>Schon erledigt</button>') +
-    gebietChips(g, 'addG') +
+    '<label class="flabel" for="neu-thema">Thema (optional)</label>' + themaSuche('neu-thema', 'addThema') +
     '<button class="more" aria-expanded="' + S.addMore + '" data-a="addMore">' + (S.addMore ? 'Weniger' : 'Mehr: Wiederholung von …, Termin, Klausur') + '<svg class="ico xs" viewBox="0 0 24 24" aria-hidden="true" style="transform:' + (S.addMore ? 'rotate(180deg)' : 'none') + '">' + ICON.down + '</svg></button>' +
     (S.addMore ? '<div style="display:flex;flex-direction:column;gap:6px"><label class="flabel" for="neu-wdh">Wiederholung von</label>' + themaSuche('neu-wdh', 'addWdh') +
       '<span class="small">Abgehakt fragt der Eintrag nach der Bewertung, und das Thema bekommt seinen nächsten Termin.</span>' +
@@ -2369,7 +2398,7 @@ function dayItems(d, W) {
   return items;
 }
 function itemHtml(it) {
-  const mk = '<span class="mk' + (it.done ? ' on' : '') + (it.x ? ' x' : '') + '"' + (it.x ? ' role="img" aria-label="liegen geblieben"' : '') + '>' + (it.x ? '<svg viewBox="0 0 24 24" aria-hidden="true">' + ICON.x + '</svg>' : CHECK_SVG) + '</span>';
+  const mk = '<span class="mk' + (it.done ? ' on' : '') + (it.x ? ' x' : '') + (it.muted && !it.done ? ' aus' : '') + '"' + (it.x ? ' role="img" aria-label="liegen geblieben"' : '') + '>' + (it.x ? '<svg viewBox="0 0 24 24" aria-hidden="true">' + ICON.x + '</svg>' : CHECK_SVG) + '</span>';
   const dot = it.gebiet && thema(it.gebiet) ? '<span class="idot"' + gStyle(it.gebiet) + '></span>' : '';
   let push = '';
   if (it.edit && it.k === 'b') push = '<button class="dots" aria-label="' + esc('Optionen: ' + it.title) + '" aria-expanded="' + (S.wMenu === it.id) + '" data-a="wMenu" data-id="' + esc(it.id) + '">' + DOTS_SVG + '</button>';
@@ -2467,6 +2496,17 @@ function carryHtml(W) {
     list.map((b) => '<div class="carry" data-k="cy-' + esc(b.id) + '"><div style="display:flex;align-items:center;gap:10px;min-width:0"><span class="mk x" role="img" aria-label="liegen geblieben"><svg viewBox="0 0 24 24" aria-hidden="true">' + ICON.x + '</svg></span>' +
       '<span style="display:flex;flex-direction:column;gap:2px;min-width:0">' + gLine(b.gebiet) + '<span style="font-size:15px;font-weight:600;overflow-wrap:anywhere">' + esc(b.titel) + bsp(b) + '</span><span class="small">aus KW ' + kwOf(b.woche) + (b.std ? ' · ' + fmtH(b.std * 60) : '') + (b.tag ? ', offen seit ' + WDL[wdOf(b.tag)] : '') + '</span></span></div>' +
       '<div class="two"><button class="btn" data-a="carryKeep" data-id="' + esc(b.id) + '">mitnehmen</button><button class="btn line" data-a="carryDrop" data-id="' + esc(b.id) + '">streichen</button></div></div>').join('') + '</section>';
+}
+// Beim Planen der nächsten Woche: Offenes aus dieser Woche schon jetzt mitnehmen (wird zum Vorhaben und mit verteilt)
+function carryVorausHtml(W) {
+  const t = today();
+  const list = carryOf(W);
+  if (!list.length) return '';
+  return '<section class="panel" data-k="carry-voraus"><h2>Aus dieser Woche noch offen</h2><p class="small" style="font-size:14px">Was du mitnimmst, steht bei den Vorhaben und wird beim Verteilen mit eingeplant wie alles andere. Den Rest entscheidest du wie gewohnt am Montag.</p>' +
+    list.map((b) => '<div class="carry" data-k="cv-' + esc(b.id) + '"><div style="display:flex;align-items:center;gap:10px;min-width:0">' +
+      '<span style="display:flex;flex-direction:column;gap:2px;min-width:0">' + gLine(b.gebiet) + '<span style="font-size:15px;font-weight:600;overflow-wrap:anywhere">' + esc(b.titel) + bsp(b) + '</span><span class="small">' +
+      esc((b.woche < mondayOf(t) ? 'aus KW ' + kwOf(b.woche) : (b.tag && b.tag >= t ? 'noch für ' + (b.tag === t ? 'heute' : WDL[wdOf(b.tag)]) + ' geplant' : 'noch offen')) + (b.std ? ' · ' + fmtH(b.std * 60) : '')) + '</span></span></div>' +
+      '<div class="two"><button class="btn" data-a="carryVoraus" data-id="' + esc(b.id) + '" data-w="' + W + '">mitnehmen</button><button class="btn line" data-a="carryDrop" data-id="' + esc(b.id) + '">streichen</button></div></div>').join('') + '</section>';
 }
 function zeitFelder(pre, kVon, kBis, kGanz, bg) {
   const st = bg ? ' style="background:var(--card)"' : '';
@@ -2620,6 +2660,7 @@ function viewWoche() {
   if (isCur && wdOf(t) >= cfg().planungstag) h += sicherungHinweis(t);
   const left = []; const right = [];
   if (isCur) left.push(carryHtml(W));
+  else if (W === addDays(cur, 7) && !isPast && !allPause && !(wk.status === 'fertig' || wk.status === 'uebergeben')) left.push(carryVorausHtml(W));
   if (isCur && !allPause) left.push(progressHtml(W));
   if (allPause) left.push('<div class="infobox"><span style="font-size:15px;font-weight:700">Diese Woche ruht alles</span><span class="small" style="font-size:14px">Kein Tagesvorschlag, keine Wiederholung, keine Planung. Danach geht es leichter weiter.</span></div>');
   else if (!isCur && !isPast && !(wk.status)) left.push('<div class="infobox"><span style="font-size:15px;font-weight:700">Vorschau</span><span class="small" style="font-size:14px">Termine, Wiederholung' + (cfg().pufferTag >= 0 ? ', Routinen und Puffer' : ' und Routinen') + ' stehen schon drin. Die Vorhaben kommen nach dem Planen dazu.</span></div>');
@@ -2685,7 +2726,7 @@ function weekStats(W) {
     const g = b.gebiet || (b.thema ? topOf(b.thema) : null) || '';
     per[g] = (per[g] || 0) + 1;
   });
-  weekDates(W).forEach((d) => { zeit += wdhState(d).zeit; });
+  weekDates(W).forEach((d) => { zeit += wdhState(d).zeit + terminZeitAt(d); });
   Object.keys(D.bloecke).forEach((id) => { const b = D.bloecke[id]; if (b.status === 'erledigt' && isObj(b.zeitFrueher)) Object.keys(b.zeitFrueher).forEach((d) => { if (d >= W && d <= end) zeit += num(b.zeitFrueher[d], 0); }); });
   const freiTage = weekDates(W).filter((d) => pauseAt(d).frei).length;
   const pz = weekDates(W).map((d) => pauseAt(d).frei).find(Boolean) || null;
@@ -2725,7 +2766,7 @@ function kalWeek(W, lanes, spans, runStart) {
     const frei = pz.frei || capH(d) <= 0;
     const puf = isPufferDay(d) && !frei;
     const first = dmy(d).d === 1 || (W === K.firstW && k === 0);
-    const terms = termineAt(d);
+    const terms = termineAt(d).filter((x) => !((tag(d).termine || {})[x.id] || {}).faelltAus);
     const cls = 'cell' + (d < t ? ' before' : '') + (frei ? ' frei' : '') + (puf && d !== t ? ' puffer' : '') + (d === t ? ' today' : '');
     const tap = d >= t;
     const bes = terms.filter((x) => x.einmalig || x.ganztags); const reg = terms.filter((x) => !(x.einmalig || x.ganztags));
@@ -3485,6 +3526,19 @@ function hatOffenes(id) {
   if (kids.some(hatOffenes)) return true;
   return !(thParent(id) == null && kids.length) && !isDate(D.themen[id].durchAm);
 }
+// Reihenfolge innerhalb einer Ebene: Pfeile am gewählten Thema
+function thPfeile(id) {
+  const sib = thKids(thParent(id)); const i = sib.indexOf(id);
+  const b = (dir, dis, label, ic) => '<button class="tpf" aria-label="' + esc(t0 + ' ' + label) + '"' + (dis ? ' disabled' : '') + ' data-a="thOrder" data-id="' + esc(id) + '" data-dir="' + dir + '"><svg class="ico xs" viewBox="0 0 24 24" aria-hidden="true">' + ICON[ic] + '</svg></button>';
+  const t0 = D.themen[id].name;
+  return b(-1, i <= 0, 'nach oben', 'up') + b(1, i >= sib.length - 1, 'nach unten', 'down');
+}
+function thOrder(id, dir) {
+  const sib = thKids(thParent(id)); const i = sib.indexOf(id); const j = i + dir;
+  if (i < 0 || j < 0 || j >= sib.length) return;
+  const l = sib.slice(); l[i] = sib[j]; l[j] = id;
+  undoable('„' + shortName(D.themen[id].name) + '“ ' + (dir < 0 ? 'nach oben' : 'nach unten') + ' verschoben', () => l.forEach((k, n) => { if (num(D.themen[k].reihenfolge, -1) !== n + 1) patch('themen', k, { reihenfolge: n + 1 }); }));
+}
 function thRowHtml(id, depth) {
   const t = D.themen[id];
   const kids = thKids(id).filter((k) => (D.themen[k].zustand || 'aktiv') !== 'abgeschlossen' && (!TH.nurOffen || hatOffenes(k)));
@@ -3493,7 +3547,7 @@ function thRowHtml(id, depth) {
   const sub = depth === 0 && thKids(id).length ? gebietSumme(id) : kurzStand(id);
   let h = '<div class="trow' + (TH.sel === id ? ' cur' : '') + '" data-k="tr-' + esc(id) + '" style="padding-left:' + depth * 18 + 'px">' +
     (kids.length ? '<button class="tog" aria-expanded="' + open + '" aria-label="Unterthemen von ' + esc(t.name) + (open ? ' zuklappen' : ' aufklappen') + '" data-a="thTog" data-id="' + esc(id) + '"><svg class="ico xs" viewBox="0 0 24 24" aria-hidden="true" style="transform:' + (open ? 'rotate(90deg)' : 'none') + '">' + ICON.right + '</svg></button>' : '<span style="flex:0 0 44px"></span>') +
-    '<button class="tname"' + (TH.sel === id ? ' aria-current="true"' : '') + ' data-a="thSel" data-id="' + esc(id) + '"' + (paused ? ' style="color:var(--quiet)"' : '') + '><span class="dot"' + gStyle(topOf(id)) + '></span><span class="tx"><span class="nm">' + esc(t.name) + bsp(t) + (t.notiz && String(t.notiz).trim() ? ' <svg class="ico xs" viewBox="0 0 24 24" role="img" aria-label="hat eine Notiz" style="vertical-align:-2px;color:var(--quiet)">' + ICON.bubble + '</svg>' : '') + '</span>' + (sub ? '<span class="small">' + sub + '</span>' : '') + '</span></button></div>';
+    '<button class="tname"' + (TH.sel === id ? ' aria-current="true"' : '') + ' data-a="thSel" data-id="' + esc(id) + '"' + (paused ? ' style="color:var(--quiet)"' : '') + '><span class="dot"' + gStyle(topOf(id)) + '></span><span class="tx"><span class="nm">' + esc(t.name) + bsp(t) + (t.notiz && String(t.notiz).trim() ? ' <svg class="ico xs" viewBox="0 0 24 24" role="img" aria-label="hat eine Notiz" style="vertical-align:-2px;color:var(--quiet)">' + ICON.bubble + '</svg>' : '') + '</span>' + (sub ? '<span class="small">' + sub + '</span>' : '') + '</span></button>' + (TH.sel === id ? thPfeile(id) : '') + '</div>';
   if (open) h += kids.map((k) => thRowHtml(k, depth + 1)).join('');
   return h;
 }
@@ -3505,8 +3559,8 @@ function eingangHtml() {
   h += '<span class="small">Bis zur Zuordnung wird jede Einheit einzeln wiederholt.' + (opts.length ? '' : ' Lege zuerst unten ein Thema an.') + '</span><div class="softbox">';
   (TH.allE ? list : list.slice(0, 6)).forEach((b) => {
     h += '<div class="pitem" style="flex-wrap:wrap" data-k="ei-' + esc(b.id) + '"><div class="body">' + gLine(b.gebiet) + '<span class="t">' + esc(b.titel) + bsp(b) + '</span><span class="small">' + esc((isDate(b.erledigtAm) ? fmtShort(b.erledigtAm) : '') + (validSr(b.sr) ? ' · ' + (b.sr.faellig <= today() ? 'jetzt fällig' : 'wieder ' + relDay(b.sr.faellig)) : '')) + '</span></div>' +
-      (opts.length ? '<div style="display:flex;gap:6px;flex:1 1 100%;min-width:0"><label class="sr-only" for="zu-' + esc(b.id) + '">Thema für ' + esc(b.titel) + '</label>' + thSelect('zu-' + b.id, 'zu_' + b.id, opts, 'Thema wählen …') +
-        '<button class="pull" data-a="thAssign" data-id="' + esc(b.id) + '">Zuordnen</button></div>' : '') + '</div>';
+      (opts.length ? '<div style="display:flex;gap:6px;flex:1 1 100%;min-width:0"><label class="sr-only" for="zu-' + esc(b.id) + '">Thema für ' + esc(b.titel) + '</label>' + themaSuche('zu-' + b.id, 'zu_' + b.id) +
+        '<button class="pull" style="align-self:flex-end" data-a="thAssign" data-id="' + esc(b.id) + '">Zuordnen</button></div>' : '') + '</div>';
   });
   h += '</div>';
   if (list.length > 6) h += '<button class="linkbtn" data-a="thAllE">' + (TH.allE ? 'Weniger zeigen' : 'Alle ' + list.length + ' zeigen') + '</button>';
@@ -3563,9 +3617,21 @@ function wdhCount(id) {
   Object.keys(D.tage).forEach((d) => { const b = ((D.tage[d].wdh || {}).bew || {})[ref]; if (b && b.r) n++; });
   return n;
 }
+// Zeilen mit „- “, „• “ oder „* “ am Anfang erscheinen als Aufzählungspunkte
+function notizText(notiz) {
+  const zeilen = String(notiz || '').replace(/\s+$/, '').split('\n');
+  let h = ''; let liste = false;
+  zeilen.forEach((z) => {
+    const m = /^\s*[-•*]\s+(.*)$/.exec(z);
+    if (m) { if (!liste) { h += '<ul class="nliste">'; liste = true; } h += '<li>' + esc(m[1]) + '</li>'; return; }
+    if (liste) { h += '</ul>'; liste = false; }
+    h += '<span class="nzeile">' + (z.trim() ? esc(z) : '&nbsp;') + '</span>';
+  });
+  return h + (liste ? '</ul>' : '');
+}
 function notizHtml(notiz) {
   if (!notiz) return '';
-  return '<div class="infobox" style="padding:8px 12px;gap:2px"><span class="small" style="font-weight:700">Notiz</span><span style="font-size:14px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere">' + esc(notiz) + '</span></div>';
+  return '<div class="infobox" style="padding:8px 12px;gap:2px"><span class="small" style="font-weight:700">Notiz</span><div class="notiz">' + notizText(notiz) + '</div></div>';
 }
 function notizDazu(themaId, date, text) {
   const t = thema(themaId); text = String(text || '').trim();
@@ -3610,7 +3676,7 @@ function thDetail(id) {
     '<button class="linkbtn" style="align-self:flex-start" data-a="thNeuDurch" data-id="' + esc(id) + '">neuen Durchgang beginnen' + (thDesc(id).length ? ' (mit allen Unterthemen)' : '') + '</button>' +
     '<span class="small">' + (nW ? nW + '× wiederholt' : 'Noch nicht wiederholt') + '</span>';
   // Notiz
-  h += '<label for="th-notiz" style="font-size:14px;font-weight:700;margin-top:4px">Notiz</label><textarea id="th-notiz" class="inp" style="min-height:96px;padding:10px 12px;line-height:1.45;resize:vertical" data-ch="thNotiz" data-id="' + esc(id) + '" placeholder="Was gut klappt, wo es hakt, worauf du beim nächsten Mal achten willst">' + esc(t.notiz || '') + '</textarea>' +
+  h += '<label for="th-notiz" style="font-size:14px;font-weight:700;margin-top:4px">Notiz</label><textarea id="th-notiz" class="inp" style="min-height:96px;padding:10px 12px;line-height:1.45;resize:vertical" data-ch="thNotiz" data-id="' + esc(id) + '" placeholder="Was gut klappt, wo es hakt, worauf du beim nächsten Mal achten willst">' + esc(t.notiz || '') + '</textarea><span class="small">Mit „- “ am Zeilenanfang wird eine Aufzählung.</span>' +
     '<span class="small">Wird beim Verlassen des Feldes gespeichert und erscheint in der Wiederholung, wenn das Thema wieder dran ist.</span>';
   // Lerneinheiten
   h += '<h3 style="font-size:14px;font-weight:700;margin-top:4px">Lerneinheiten · ' + units.length + '</h3>';
@@ -3733,7 +3799,9 @@ Object.assign(EXTRA_ACT, {
   thConfirmNo: () => { TH.confirm = null; },
   thDel: (d) => { TH.confirm = null; thDelete(d.id); },
   thDelBsp: () => { TH.confirm = null; thDeleteBsp(); },
-  thAssign: (d) => { const tid = F['zu_' + d.id]; if (!tid || !thema(tid)) { toast('Bitte erst ein Thema wählen.', false); return 'keep'; } thAssign(d.id, tid); F['zu_' + d.id] = ''; },
+  carryVoraus: (d) => { carryVoraus(d.id, d.w); return 'keep'; },
+  thOrder: (d) => { thOrder(d.id, Number(d.dir)); return 'keep'; },
+  thAssign: (d) => { const tid = F['zu_' + d.id]; if (!tid || !thema(tid)) { toast('Bitte erst ein Thema wählen.', false); return 'keep'; } thAssign(d.id, tid); F['zu_' + d.id] = ''; F['zu_' + d.id + 'Q'] = ''; },
   thUn: (d) => thUnassign(d.id),
   thClosed: () => { TH.closedOpen = !TH.closedOpen; },
   thNurOffen: () => { TH.nurOffen = !TH.nurOffen; try { localStorage.setItem('lernsystem-nur-offen', TH.nurOffen ? '1' : '0'); } catch (e) { /* nur Anzeige */ } },
@@ -3868,6 +3936,7 @@ function terminFormE() {
       '<button class="btn line" style="align-self:flex-start" data-a="esTAusAdd">Ausfall eintragen</button>';
     if (F.tAusErr) h += '<span class="err" role="status">' + esc(F.tAusErr) + '</span>';
   }
+  if (f.id && D.termine[f.id]) h += '<button class="switch ink" style="align-self:flex-start" role="switch" aria-checked="' + terminZaehlt(f.id) + '" data-a="esTZeit" data-id="' + esc(f.id) + '"><span class="tr"></span>zählt zur erfassten Zeit, wenn abgehakt</button>';
   if (F.tErr) h += '<span class="err" role="status">' + esc(F.tErr) + '</span>';
   return h + '<div class="formbtns">' + (f.id ? '<button class="btn ghost" style="margin-right:auto;text-decoration:underline" data-a="esTDel">Entfernen</button>' : '') + '<button class="btn ghost" data-a="esTCancel">Abbrechen</button><button class="btn" data-a="esTSave">' + (f.id ? 'Speichern' : 'Eintragen') + '</button></div></div>';
 }
@@ -3961,6 +4030,7 @@ Object.assign(EXTRA_CHANGE, {
     el.value = '';
   }
 });
+const APP_STAND = '2026-11-13'; // bei jeder Veröffentlichung anpassen
 function viewEinstellungen() {
   const t = today();
   const h = '<header class="head"><div class="col"><span class="date">' + esc(fmtLong(t)) + '</span><h1>Einstellungen</h1><p class="line">Selten gebraucht. Im Tagesablauf tauchen diese Werte nie auf.</p></div></header>';
@@ -3968,7 +4038,8 @@ function viewEinstellungen() {
   const design = '<section class="panel" aria-label="Darstellung"><h2>Darstellung</h2><div class="seg3" role="group" aria-label="Hell oder dunkel">' +
     [['auto', 'Automatisch'], ['hell', 'Hell'], ['dunkel', 'Dunkel']].map((x) => '<button aria-pressed="' + (dv === x[0]) + '" data-a="esDesign" data-v="' + x[0] + '">' + x[1] + '</button>').join('') + '</div>' +
     '<span class="small">„Automatisch“ folgt der Einstellung deines Macs.</span></section>';
-  return h + '<div class="cols"><div class="stack l">' + design + stellschrauben() + datenHtml() + '</div><div class="stack l">' + routinenHtml() + termineHtml() + '</div></div>';
+  return h + '<div class="cols"><div class="stack l">' + design + stellschrauben() + datenHtml() + '</div><div class="stack l">' + routinenHtml() + termineHtml() + '</div></div>' +
+    '<p class="small" style="margin-top:24px;opacity:.6">Stand der App: ' + esc(fmtDM(APP_STAND) + APP_STAND.slice(0, 4)) + '</p>';
 }
 function nextOrder(col) { const ids = Object.keys(D[col]); return ids.length ? Math.max(...ids.map((i) => num(D[col][i].reihenfolge, 0))) + 1 : 1; }
 Object.assign(EXTRA_ACT, {
@@ -4076,6 +4147,7 @@ Object.assign(EXTRA_ACT, {
     else undoable('Termin eingetragen', () => put('termine', uid('t'), Object.assign({ zustand: 'aktiv', erstellt: nowMs() }, data)));
     ES.tForm = null;
   },
+  esTZeit: (d) => { tZeitToggle(d.id); return 'keep'; },
   esTDel: () => { const f = ES.tForm; if (!f || !f.id) return; undoable('Termin entfernt', () => del('termine', f.id)); ES.tForm = null; },
   esTZ: (d) => { const x = D.termine[d.id]; if (x && (x.zustand || 'aktiv') !== d.v) setZustand('termine', d.id, d.v, x.titel); return 'keep'; },
   /* Module und Vorschläge */
@@ -4166,6 +4238,7 @@ const ACT = {
   tBlock: (d) => { const b = D.bloecke[d.id] || {}; const on = b.status !== 'erledigt'; if (on && !guardAdd(b.tag || curDay())) return 'keep'; setBlockDone(d.id, on); },
   tRoutine: (d) => { const day = curDay(); const st = ((tag(day).routinen || {})[d.id]) || {}; if (!st.erledigt && !st.heuteNicht && !guardAdd(day)) return 'keep'; toggleRoutine(day, d.id); },
   cancelTermin: (d) => cancelTermin(curDay(), d.id, d.t),
+  tZeitZaehlt: (d) => { tZeitToggle(d.id); return 'keep'; },
   restoreTermin: (d) => restoreTermin(curDay(), d.id),
   skipR: (d) => skipRoutine(curDay(), d.id, d.t),
   editDay: (d) => { S.day = d.d; S.view = 'heute'; S.korrAsk = null; closeMenus(); S.adding = false; window.scrollTo(0, 0); },
@@ -4218,7 +4291,7 @@ const ACT = {
   poolOpen: () => { const t = today(); const cur = S.poolOpen == null ? isPufferDay(t) : S.poolOpen; S.poolOpen = !cur; },
   pull: (d) => pullToday(d.id),
   pullW: (d) => wdhHolen(d.ref),
-  startAdd: () => { if (S.day && !guardAdd(S.day)) return 'keep'; S.adding = true; S.addDone = !!S.day; S.addMore = false; S.addG = undefined; F.addText = ''; F.addWdh = ''; F.addWdhQ = ''; focusSoon('neu-eintrag'); },
+  startAdd: () => { if (S.day && !guardAdd(S.day)) return 'keep'; S.adding = true; S.addDone = !!S.day; S.addMore = false; S.addG = undefined; F.addText = ''; F.addWdh = ''; F.addWdhQ = ''; F.addThema = ''; F.addThemaQ = ''; focusSoon('neu-eintrag'); },
   cancelAdd: () => { S.adding = false; },
   addDone: () => { S.addDone = !S.addDone; return 'keep'; },
   addMore: () => { S.addMore = !S.addMore; return 'keep'; },
@@ -4226,7 +4299,8 @@ const ACT = {
   doAdd: () => {
     if (!String(F.addText || '').trim()) { toast('Schreib kurz, was du dir vornimmst.', false); focusSoon('neu-eintrag'); return 'keep'; }
     if (S.day && !guardAdd(S.day)) return 'keep';
-    addBlock({ text: F.addText, g: S.addG === undefined ? null : S.addG, done: S.day ? true : S.addDone, wdhVon: S.addMore ? (F.addWdh || null) : null, date: S.day || null });
+    const th = thema(F.addThema) ? F.addThema : null;
+    addBlock({ text: F.addText, g: th ? topOf(th) : (S.addG === undefined ? null : S.addG), thema: th && thParent(th) ? th : null, done: S.day ? true : S.addDone, wdhVon: S.addMore ? (F.addWdh || null) : null, date: S.day || null });
     S.adding = false; F.addText = '';
   },
   undo: () => undoToast(),
@@ -4325,6 +4399,19 @@ document.addEventListener('keydown', (e) => {
     const fake = { dataset: Object.assign({}, el.dataset, { a: el.dataset.enter }), getAttribute: () => null };
     runAct(fake);
   }
+  if (e.key === 'Enter' && el.tagName === 'TEXTAREA') {
+    // Zeilenwechsel bleibt im Feld; eine Aufzählung („- …“) geht in der neuen Zeile weiter
+    if (e.shiftKey || e.isComposing) return;
+    const v = el.value; const a = el.selectionStart; const b = el.selectionEnd;
+    const zeile = v.slice(v.lastIndexOf('\n', a - 1) + 1, a);
+    const m = /^(\s*)([-•*])\s+(.*)$/.exec(zeile);
+    if (!m) return;
+    e.preventDefault();
+    if (!m[3].trim()) { const s0 = a - zeile.length; el.value = v.slice(0, s0) + v.slice(b); el.selectionStart = el.selectionEnd = s0; return; }
+    const ein = '\n' + m[1] + m[2] + ' ';
+    el.value = v.slice(0, a) + ein + v.slice(b); el.selectionStart = el.selectionEnd = a + ein.length;
+    return;
+  }
   if (e.key === 'Enter' && el.dataset && el.dataset.ch) el.blur();
 });
 setInterval(() => {
@@ -4338,7 +4425,7 @@ window.addEventListener('resize', () => { const w = window.innerWidth >= 900; if
 document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleRender(); });
 // Zuletzt geöffnete Ansicht gilt, solange die App offen ist (auch nach Neuladen); nach dem Beenden startet „Heute“
 try { const v = sessionStorage.getItem('ls-view'); if (v && VIEW_FN[v]) S.view = v; } catch (e) { /* egal */ }
-window.__ls = { D: D, S: S, F: F, cfg: cfg, today: today, setSim: (d, m) => { setSim(d, m); scheduleRender(); }, progress: progress, pufferDate: pufferDate, capacity2: (T) => capacity(T, wdhSplit(T), planFrom(T), true), srItems: srItems, wdhListe: wdhListe, wdhSplit: wdhSplit, wdhForecast: wdhForecast, wdhRichtwert: wdhRichtwert, wdhUeberhang: wdhUeberhang, allocRegel: allocRegel, fillWdh: fillWdh, srRate: srRate, wdhState: wdhState, poolOf: poolOf, carryOf: carryOf, vorhabenFor: vorhabenFor, capacity: capacity, termineAt: termineAt, routinenAt: routinenAt, pauseAt: pauseAt, erfasstAt: erfasstAt, dbState: () => dbState, moveBlock: moveBlock, clearPlanBlocks: (T) => { clearPlanBlocks(T); scheduleRender(); } };
+window.__ls = { D: D, S: S, F: F, cfg: cfg, today: today, setSim: (d, m) => { setSim(d, m); scheduleRender(); }, progress: progress, pufferDate: pufferDate, capacity2: (T) => capacity(T, wdhSplit(T), planFrom(T), true), srItems: srItems, wdhListe: wdhListe, wdhSplit: wdhSplit, wdhForecast: wdhForecast, wdhRichtwert: wdhRichtwert, wdhUeberhang: wdhUeberhang, allocRegel: allocRegel, fillWdh: fillWdh, srRate: srRate, wdhState: wdhState, poolOf: poolOf, carryOf: carryOf, vorhabenFor: vorhabenFor, capacity: capacity, termineAt: termineAt, routinenAt: routinenAt, pauseAt: pauseAt, erfasstAt: erfasstAt, notizHtml: notizHtml, dbState: () => dbState, moveBlock: moveBlock, clearPlanBlocks: (T) => { clearPlanBlocks(T); scheduleRender(); } };
 scheduleRender();
 initDb();
 if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch((e) => console.warn('Offline-Speicher', e));
