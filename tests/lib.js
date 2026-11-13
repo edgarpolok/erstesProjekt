@@ -34,7 +34,7 @@ async function open(seed, hash, opt) {
   const p = await ctx.newPage();
   p.tag = (hash || '') + '@' + o.w;
   p.on('pageerror', (e) => fail(p.tag + ' Skriptfehler in der App', e.message));
-  p.on('console', (m) => { if ((m.type() === 'error' || m.type() === 'warning') && !/ERR_FAILED|fonts\.g|net::ERR/.test(m.text())) fail(p.tag + ' Konsole (' + m.type() + ')', m.text()); });
+  p.on('console', (m) => { if ((m.type() === 'error' || m.type() === 'warning') && !/ERR_FAILED|fonts\.g|net::ERR/.test(m.text()) && !/^https:\/\/api\.github\.com\//.test((m.location() || {}).url || '')) fail(p.tag + ' Konsole (' + m.type() + ')', m.text()); });
   await p.route('**/fonts.googleapis.com/**', (r) => r.abort());
   await p.route('**/fonts.gstatic.com/**', (r) => r.abort());
   if (seed !== null) await p.addInitScript('window.__seed = ' + JSON.stringify(seed || {}));
@@ -70,6 +70,44 @@ const shot = (p, n) => { fs.mkdirSync(OUT, { recursive: true }); return p.screen
 const addDays = (d, n) => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
 const ids = (s, col, f) => Object.keys(s[col]).filter((k) => f(s[col][k], k));
 
+// Schein-Ablage für den Abgleich: spielt die GitHub-API für eine Datei nach, gemeinsam für mehrere Browser-Kontexte („Mac“, „iPhone“).
+// const A = L.ablage(); await A.an(p) hängt eine Seite an. A.inhalt() = Inhalt der Datei (oder null), A.setze(obj) schreibt sie von außen,
+// A.offline.add(p) trennt eine Seite vom Netz (delete = wieder da), A.vorPut = async () => {…} läuft einmal vor dem nächsten Schreiben
+// (für gleichzeitiges Schreiben), A.anfragen = [{ m, pfad, seite, status }], A.token = gültiger Schlüssel, A.gross = true liefert die Datei wie über 1 MB (ohne Inhalt).
+function ablage() {
+  const A = { datei: null, anfragen: [], token: 'test-schluessel', repo: 'edgarpolok/lernplan-daten', vorPut: null, offline: new Set(), gross: false, n: 0 };
+  const b64 = (t) => Buffer.from(t, 'utf8').toString('base64').replace(/(.{60})/g, '$1\n');
+  A.inhalt = () => (A.datei ? JSON.parse(A.datei.text) : null);
+  A.setze = (obj) => { A.datei = { sha: 'sha' + (++A.n), text: typeof obj === 'string' ? obj : JSON.stringify(obj) }; };
+  A.an = (p) => p.route('https://api.github.com/**', async (route) => {
+    const rq = route.request(); const pfad = new URL(rq.url()).pathname; const h = rq.headers();
+    const eintrag = { m: rq.method(), pfad: pfad, seite: p.tag, status: 0 }; A.anfragen.push(eintrag);
+    if (A.offline.has(p)) return route.abort('internetdisconnected');
+    const antwort = (status, body, extra) => { eintrag.status = status; return route.fulfill({ status: status, headers: Object.assign({ 'access-control-allow-origin': '*', 'access-control-expose-headers': 'ETag', 'content-type': 'application/json' }, extra || {}), body: body == null ? '' : JSON.stringify(body) }); };
+    if (h.authorization !== 'Bearer ' + A.token) return antwort(401, { message: 'Bad credentials' });
+    const basis = '/repos/' + A.repo;
+    if (pfad === basis) return antwort(200, { full_name: A.repo });
+    if (pfad.indexOf(basis + '/git/blobs/') === 0) return A.datei && pfad.endsWith('/' + A.datei.sha) ? antwort(200, { sha: A.datei.sha, encoding: 'base64', content: b64(A.datei.text) }) : antwort(404, { message: 'Not Found' });
+    if (pfad !== basis + '/contents/lernplan.json') return antwort(404, { message: 'Not Found' });
+    if (rq.method() === 'GET') {
+      if (!A.datei) return antwort(404, { message: 'Not Found' });
+      const etag = '"' + A.datei.sha + '"';
+      if (h['if-none-match'] === etag) return antwort(304, null, { etag: etag });
+      return antwort(200, { sha: A.datei.sha, size: A.datei.text.length, encoding: A.gross ? 'none' : 'base64', content: A.gross ? '' : b64(A.datei.text) }, { etag: etag });
+    }
+    if (rq.method() === 'PUT') {
+      if (A.vorPut) { const f = A.vorPut; A.vorPut = null; await f(); }
+      const body = JSON.parse(rq.postData() || '{}');
+      if ((A.datei ? A.datei.sha : undefined) !== body.sha) return antwort(A.datei && !body.sha ? 422 : 409, { message: 'sha passt nicht' });
+      const neu = !A.datei;
+      A.datei = { sha: 'sha' + (++A.n), text: Buffer.from(body.content, 'base64').toString('utf8') };
+      return antwort(neu ? 201 : 200, { content: { sha: A.datei.sha } });
+    }
+    return antwort(405, { message: 'nicht erlaubt' });
+  });
+  return A;
+}
+
 async function run(fn) {
   const name = path.basename(process.argv[1]);
   try {
@@ -86,4 +124,4 @@ async function run(fn) {
 }
 process.on('unhandledRejection', (e) => { fail('unbehandelter Fehler im Test', e && e.message ? e.message.split('\n')[0] : String(e)); process.exitCode = 1; });
 
-module.exports = { APP, run, same: gleich, diff, open, click, fill, go, store, text, toast, sim, noHScroll, shot, viewOk, expect, ok, has, hasNot, known, fail, addDays, ids, get browser() { return browser; } };
+module.exports = { APP, run, ablage, same: gleich, diff, open, click, fill, go, store, text, toast, sim, noHScroll, shot, viewOk, expect, ok, has, hasNot, known, fail, addDays, ids, get browser() { return browser; } };

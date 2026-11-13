@@ -755,7 +755,9 @@ function failSave(e) {
 }
 function put(col, id, data) {
   rec(col, id);
+  const vor = D[col][id];
   D[col] = Object.assign({}, D[col], { [id]: clone(data) });
+  syncTouch(col, id, vor, D[col][id]);
   if (dbh) dbh.doc(col + '/' + id).set(clone(data)).catch(failSave);
   scheduleRender();
 }
@@ -764,6 +766,7 @@ function patch(col, id, part) {
   const cur = D[col][id];
   const next = deepMerge(cur, part);
   D[col] = Object.assign({}, D[col], { [id]: next });
+  syncTouch(col, id, cur, next);
   if (dbh) {
     const ref = dbh.doc(col + '/' + id);
     (cur ? ref.update(clone(part)) : ref.set(clone(next))).catch((e) => {
@@ -775,8 +778,10 @@ function patch(col, id, part) {
 function del(col, id) {
   rec(col, id);
   const m = Object.assign({}, D[col]);
+  const vor = m[id];
   delete m[id];
   D[col] = m;
+  syncTouch(col, id, vor, null);
   if (dbh) dbh.doc(col + '/' + id).delete().catch(failSave);
   scheduleRender();
 }
@@ -814,6 +819,7 @@ function persistNow() {
   const out = {};
   COLS.forEach((col) => { out[col] = D[col]; });
   try { localStorage.setItem(STORE_KEY, JSON.stringify(out)); } catch (e) { failSave(e); }
+  if (sync.an) syncSave();
 }
 function schedulePersist() { if (persistQueued) return; persistQueued = true; setTimeout(persistNow, 0); }
 const localRef = { set: () => { schedulePersist(); return Promise.resolve(); }, update: () => { schedulePersist(); return Promise.resolve(); }, delete: () => { schedulePersist(); return Promise.resolve(); } };
@@ -823,16 +829,267 @@ async function initDb() {
     COLS.forEach((col) => { D[col] = s[col]; });
     dbh = { doc: () => localRef };
     dbState = 'ok';
+    if (sync.an) syncRun();
   } catch (e) { console.warn('Speicher', e); dbState = 'fehlt'; }
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* egal */ }
   scheduleRender();
 }
 // Ein zweites Fenster der App hat gespeichert: neu einlesen
 window.addEventListener('storage', (e) => {
+  if (e.key === SYNC_KEY) { sync = syncLoad(); scheduleRender(); return; }
   if (e.key !== STORE_KEY) return;
   try { const s = readStore(); COLS.forEach((col) => { D[col] = s[col]; }); scheduleRender(); } catch (err) { /* egal */ }
 });
 window.addEventListener('pagehide', () => { if (persistQueued) persistNow(); });
+
+/* ================= Abgleich zwischen Geräten (GitHub-Ablage; standardmäßig aus, ohne Einrichtung keine Netzanfrage) ================= */
+// Eigener Speicher-Schlüssel: Schlüssel (Token), Einstellungen und Änderungszeitpunkte stehen nie in den Daten und nie in der Sicherung.
+// Ablage: eine Datei { format: 'lernsystem-abgleich', version: 1, daten, z: { Eintrag: Zeitpunkt }, weg: { Eintrag: Zeitpunkt gelöscht } }.
+// Ein „Eintrag“ ist 'sammlung/id'; bei Tagen und meta/config feiner 'sammlung/id/feld'.
+const SYNC_KEY = 'lernsystem-abgleich-v1';
+const SYNC_REPO = 'edgarpolok/lernplan-daten';
+const SYNC_DATEI = 'lernplan.json';
+const SYNC_API = 'https://api.github.com';
+const SYNC_T = Object.assign({ nach: 4000, takt: 60000, puls: 5000, grab: 60 * 86400000 }, window.__abgleichT || {}); // ms: nach einer Änderung, regelmäßig, Prüftakt, Grabsteine
+function syncLoad() {
+  let s = {};
+  try { s = JSON.parse(localStorage.getItem(SYNC_KEY) || '{}'); } catch (e) { /* dann aus */ }
+  if (!isObj(s)) s = {};
+  return {
+    an: s.an === true && typeof s.token === 'string' && !!s.token, repo: typeof s.repo === 'string' && s.repo ? s.repo : SYNC_REPO, token: typeof s.token === 'string' ? s.token : '',
+    sha: s.sha || null, etag: s.etag || null, zuletzt: num(s.zuletzt, 0), status: s.status || '', offen: s.offen === true, erst: s.erst || null,
+    z: isObj(s.z) ? s.z : {}, weg: isObj(s.weg) ? s.weg : {}
+  };
+}
+let sync = syncLoad();
+function syncSave() { try { localStorage.setItem(SYNC_KEY, JSON.stringify(sync)); } catch (e) { console.warn('Abgleich merken', e); } }
+const syncFein = (col, id) => col === 'tage' || (col === 'meta' && id === 'config');
+function syncFlat(daten) {
+  const out = {};
+  COLS.forEach((col) => {
+    const m = daten[col] || {};
+    Object.keys(m).forEach((id) => {
+      if (syncFein(col, id)) Object.keys(m[id]).forEach((f) => { out[col + '/' + id + '/' + f] = m[id][f]; });
+      else out[col + '/' + id] = m[id];
+    });
+  });
+  return out;
+}
+function syncUnflat(flat) {
+  const out = {};
+  COLS.forEach((col) => { out[col] = {}; });
+  Object.keys(flat).forEach((k) => {
+    const p = k.split('/');
+    if (!out[p[0]] || !p[1]) return;
+    if (p.length > 2) { (out[p[0]][p[1]] = out[p[0]][p[1]] || {})[p.slice(2).join('/')] = flat[k]; } else out[p[0]][p[1]] = flat[k];
+  });
+  return out;
+}
+/* ---- Jede Änderung bekommt ihren Zeitpunkt (nur wenn der Abgleich an ist) ---- */
+let syncZaehler = 0;
+let syncTimer = null;
+let syncAuto = false; // was die App von selbst einträgt (Tagesliste füllen, Wocheneinschätzung), verliert gegen jede Änderung von Hand
+function autoPatch(col, id, part) { syncAuto = true; try { patch(col, id, part); } finally { syncAuto = false; } }
+function syncMark(k, da) {
+  const t = Math.max(syncAuto ? 1 : Date.now(), num(sync.z[k], 0) + 1, num(sync.weg[k], 0) + 1); // immer später als das, was dieses Gerät schon kennt
+  if (da) { sync.z[k] = t; delete sync.weg[k]; } else { sync.weg[k] = t; delete sync.z[k]; }
+}
+function syncTouch(col, id, vor, nach) {
+  if (!sync.an) return;
+  if (syncFein(col, id)) {
+    const a = vor || {}; const b = nach || {};
+    Object.keys(Object.assign({}, a, b)).forEach((f) => {
+      const k = col + '/' + id + '/' + f;
+      if (!(f in b)) syncMark(k, false); else if (!(f in a) || JSON.stringify(a[f]) !== JSON.stringify(b[f])) syncMark(k, true);
+    });
+  } else syncMark(col + '/' + id, !!nach);
+  syncZaehler++;
+  sync.offen = true;
+  syncSpaeter();
+}
+function syncSpaeter() { clearTimeout(syncTimer); syncTimer = setTimeout(() => { syncRun(); }, SYNC_T.nach); }
+/* ---- Zusammenführen Eintrag für Eintrag: es gewinnt die neuere Änderung, auch wenn sie ein Löschen ist ---- */
+function syncMerge(L, R, jetzt) {
+  const flat = {}; const z = {}; const weg = {};
+  let lokalNeu = false; let fernNeu = false;
+  Object.keys(Object.assign({}, L.flat, R.flat, L.weg, R.weg)).forEach((k) => {
+    const lDa = k in L.flat; const rDa = k in R.flat;
+    const lt = lDa ? num(L.z[k], 0) : (k in L.weg ? num(L.weg[k], 0) : -1); // −1: dieses Gerät weiß nichts von dem Eintrag
+    const rt = rDa ? num(R.z[k], 0) : (k in R.weg ? num(R.weg[k], 0) : -1);
+    let fern;
+    if (lt !== rt) fern = rt > lt;
+    else if (lDa !== rDa) fern = lDa; // gleicher Zeitpunkt: gelöscht gilt
+    else if (!lDa) fern = false;
+    else { const a = JSON.stringify(L.flat[k]); const b = JSON.stringify(R.flat[k]); if (a === b) { flat[k] = L.flat[k]; if (lt > 0) z[k] = lt; return; } fern = b > a; }
+    const X = fern ? R : L; const da = fern ? rDa : lDa; const t = fern ? rt : lt;
+    if (da) { flat[k] = X.flat[k]; if (t > 0) z[k] = t; } else if (jetzt - t < SYNC_T.grab) weg[k] = t; // alte Grabsteine aufräumen
+    if (fern) { if (da || lDa) lokalNeu = true; } else if (da || rDa || k in weg) fernNeu = true;
+  });
+  return { flat: flat, z: z, weg: weg, lokalNeu: lokalNeu, fernNeu: fernNeu };
+}
+/* ---- GitHub: eine Datei über die Contents-API ---- */
+function syncB64(text) {
+  const b = new TextEncoder().encode(text); let s = '';
+  for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+function syncB64Text(b64) {
+  const s = atob(String(b64 || '').replace(/\s+/g, '')); const b = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) b[i] = s.charCodeAt(i);
+  return new TextDecoder().decode(b);
+}
+function syncFehler(art, status) { const e = new Error('Abgleich: ' + art + (status ? ' ' + status : '')); e.art = art; return e; }
+async function syncAnfrage(pfad, opt) {
+  const o = opt || {};
+  const headers = { Accept: 'application/vnd.github+json', Authorization: 'Bearer ' + sync.token };
+  if (o.etag) headers['If-None-Match'] = o.etag;
+  if (o.body) headers['Content-Type'] = 'application/json';
+  const ab = new AbortController();
+  const uhr = setTimeout(() => ab.abort(), 25000); // hängt das Netz, gilt das wie „kein Netz“
+  try { return await fetch(SYNC_API + '/repos/' + sync.repo + pfad, { method: o.method || 'GET', headers: headers, body: o.body, cache: 'no-store', signal: ab.signal }); } catch (e) { throw syncFehler('offline'); } finally { clearTimeout(uhr); }
+}
+const syncPfad = () => '/contents/' + SYNC_DATEI;
+// 401/403/404 heißt: Schlüssel oder Repository passen nicht; ein 403 wegen zu vieler Anfragen ist nur vorübergehend
+const syncKeinZugang = (res, mit404) => (res.status === 401 || (res.status === 404 && mit404) || (res.status === 403 && !res.headers.get('retry-after') && res.headers.get('x-ratelimit-remaining') !== '0'));
+async function syncHolen(etag) {
+  const res = await syncAnfrage(syncPfad(), { etag: etag });
+  if (res.status === 304) return { gleich: true };
+  if (res.status === 404) return { sha: null, etag: null, text: '' };
+  if (syncKeinZugang(res, false)) throw syncFehler('zugang', res.status);
+  if (!res.ok) throw syncFehler('fehler', res.status);
+  const j = await res.json();
+  let text = '';
+  if (j.encoding === 'base64' && j.content) text = syncB64Text(j.content);
+  else if (j.size > 0) { // Dateien über 1 MB liefert die Contents-API ohne Inhalt
+    const r2 = await syncAnfrage('/git/blobs/' + j.sha);
+    if (!r2.ok) throw syncFehler('fehler', r2.status);
+    text = syncB64Text((await r2.json()).content);
+  }
+  return { sha: j.sha, etag: res.headers.get('ETag'), text: text };
+}
+function syncLesen(text) {
+  const R = { flat: {}, z: {}, weg: {} };
+  if (!String(text || '').trim()) return R;
+  let j;
+  try { j = JSON.parse(text); } catch (e) { throw syncFehler('fehler', 'Datei'); }
+  if (!j || j.format !== 'lernsystem-abgleich' || !isObj(j.daten)) throw syncFehler('fehler', 'Datei');
+  const daten = {};
+  COLS.forEach((col) => {
+    const src = isObj(j.daten[col]) ? j.daten[col] : {};
+    daten[col] = {};
+    Object.keys(src).forEach((id) => { if (cleanId(id) && isObj(src[id])) daten[col][id] = src[id]; });
+  });
+  R.flat = syncFlat(daten);
+  if (isObj(j.z)) R.z = j.z;
+  if (isObj(j.weg)) R.weg = j.weg;
+  return R;
+}
+const syncVoll = (flat) => Object.keys(flat).some((k) => /^(themen|bloecke|vorhaben|termine|routinen|etappen|pausen)\//.test(k)); // von Hand Angelegtes; Tageslisten füllt die App selbst
+const syncLokal = () => ({ flat: syncFlat(D), z: sync.z, weg: sync.weg });
+function syncAnwenden(M) {
+  const neu = syncUnflat(M.flat);
+  COLS.forEach((col) => { D[col] = neu[col]; });
+  scheduleRender();
+}
+async function syncEinmal() {
+  for (let i = 0; i < 5; i++) {
+    if (i) await new Promise((r) => setTimeout(r, 300 * i));
+    const ant = await syncHolen(sync.erst ? null : sync.etag);
+    if (!sync.an) return;
+    if (ant.gleich) {
+      if (!sync.offen) return; // Ablage unverändert, hier nichts Neues
+    } else {
+      const R = syncLesen(ant.text);
+      const jetzt = Date.now();
+      let L = syncLokal();
+      if (sync.erst === 'fern') L = { flat: {}, z: {}, weg: {} }; // erstes Einschalten: der Stand der Ablage gilt
+      if (sync.erst === 'lokal') { // erstes Einschalten: der Stand dieses Geräts gilt, alles andere in der Ablage wird gelöscht
+        let t = jetzt;
+        Object.keys(R.z).concat(Object.keys(R.weg)).forEach((k) => { t = Math.max(t, num(R.z[k], 0) + 1, num(R.weg[k], 0) + 1); });
+        L = { flat: L.flat, z: {}, weg: {} };
+        Object.keys(L.flat).forEach((k) => { L.z[k] = t; });
+        Object.keys(R.flat).forEach((k) => { if (!(k in L.flat)) L.weg[k] = t; });
+      }
+      const M = syncMerge(L, R, jetzt);
+      if (M.lokalNeu || sync.erst === 'fern') syncAnwenden(M);
+      sync.z = M.z; sync.weg = M.weg; sync.sha = ant.sha; sync.etag = ant.etag; sync.offen = M.fernNeu; sync.erst = null;
+      persistNow();
+      if (!M.fernNeu) return;
+    }
+    // Hochladen; der sha sichert gegen gleichzeitiges Schreiben des anderen Geräts
+    const stand = syncZaehler;
+    const daten = {};
+    COLS.forEach((col) => { daten[col] = D[col]; });
+    const body = { message: 'Abgleich', content: syncB64(JSON.stringify({ format: 'lernsystem-abgleich', version: 1, daten: daten, z: sync.z, weg: sync.weg })) };
+    if (sync.sha) body.sha = sync.sha;
+    const res = await syncAnfrage(syncPfad(), { method: 'PUT', body: JSON.stringify(body) });
+    if (res.status === 409 || res.status === 422) { sync.etag = null; continue; } // das andere Gerät war schneller: neu holen, zusammenführen, nochmal
+    if (syncKeinZugang(res, true)) throw syncFehler('zugang', res.status);
+    if (!res.ok) throw syncFehler('fehler', res.status);
+    const j = await res.json();
+    sync.sha = (j.content && j.content.sha) || null; sync.etag = null;
+    if (syncZaehler === stand) sync.offen = false;
+    return;
+  }
+  throw syncFehler('fehler', 'Konflikt');
+}
+let syncLaeuft = null;
+let syncVersuch = 0;
+let syncGelaufen = false; // seit dem Öffnen mindestens ein Versuch beendet
+function syncRun() {
+  if (!sync.an || !sync.token) return Promise.resolve();
+  if (syncLaeuft) return syncLaeuft;
+  clearTimeout(syncTimer);
+  syncVersuch = Date.now();
+  syncLaeuft = syncEinmal().then(() => { sync.status = 'ok'; sync.zuletzt = Date.now(); }, (e) => { sync.status = (e && e.art) || 'fehler'; if (!e || !e.art) console.warn('Abgleich', e); }).then(() => {
+    syncLaeuft = null; syncGelaufen = true;
+    if (sync.an) { syncSave(); if (sync.offen && sync.status === 'ok') syncSpaeter(); }
+    scheduleRender();
+  });
+  scheduleRender();
+  return syncLaeuft;
+}
+// Sofort und vollständig: wartet einen laufenden Abgleich ab und gleicht dann noch einmal ab
+async function syncJetzt() { if (syncLaeuft) await syncLaeuft; await syncRun(); }
+/* ---- Einschalten und Ausschalten ---- */
+function syncAus() {
+  clearTimeout(syncTimer);
+  sync = Object.assign(sync, { an: false, sha: null, etag: null, zuletzt: 0, status: '', offen: false, erst: null, z: {}, weg: {} });
+  syncSave();
+}
+async function syncErst(modus) {
+  sync.an = true; sync.erst = modus || null; sync.z = {}; sync.weg = {}; sync.sha = null; sync.etag = null;
+  await syncRun();
+  if (sync.status !== 'ok') { const st = sync.status; syncAus(); return st; }
+  return 'ok';
+}
+// Prüft Zugang und Ablage. Ergebnis: 'ok' (läuft), 'frage' (beide Seiten haben Daten), sonst 'offline' | 'zugang' | 'fehler'
+async function syncEinschalten(repo, token) {
+  sync.repo = repo; sync.token = token; sync.an = false;
+  syncSave();
+  try {
+    const res = await syncAnfrage('');
+    if (syncKeinZugang(res, true)) return 'zugang';
+    if (!res.ok) return 'fehler';
+    const R = syncLesen((await syncHolen(null)).text);
+    if (syncVoll(R.flat) && syncVoll(syncFlat(D))) return 'frage';
+  } catch (e) { return (e && e.art) || 'fehler'; }
+  return syncErst(null);
+}
+function syncZeile() {
+  if (sync.status === 'offline') return 'Kein Netz – wird später abgeglichen';
+  if (sync.status === 'zugang') return 'Der Zugang klappt nicht – prüf Schlüssel und Repository';
+  if (sync.status === 'fehler') return 'Der Abgleich klappt gerade nicht – wird später wiederholt';
+  if (!sync.zuletzt) return 'Abgleich läuft …';
+  const m = berlin(sync.zuletzt).min;
+  return 'Abgeglichen um ' + String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+}
+/* ---- Wann: beim Öffnen (initDb), im Vordergrund, nach Änderungen (syncTouch), regelmäßig, sobald wieder Netz da ist ---- */
+const syncAnlass = () => { if (sync.an && !document.hidden) syncRun(); };
+document.addEventListener('visibilitychange', () => { if (sync.an && (!document.hidden || sync.offen)) syncRun(); });
+window.addEventListener('focus', syncAnlass);
+window.addEventListener('online', syncAnlass);
+(function syncPuls() { setTimeout(() => { if (sync.an && !document.hidden && Date.now() - syncVersuch >= SYNC_T.takt) syncRun(); syncPuls(); }, SYNC_T.puls); })();
 
 /* ================= Darstellung: HTML → DOM abgleichen ================= */
 const keyOf = (n) => (n.nodeType === 1 ? n.getAttribute('data-k') : null);
@@ -1510,6 +1767,7 @@ function ensureToday() {
   const rw = wdhRichtwert(t);
   const w = tag(t).wdh || {};
   if (Array.isArray(w.liste) && num(w.min, -1) === rw) return;
+  if (sync.an && !syncGelaufen) return; // erst den Stand des anderen Geräts abwarten (kommt gleich nach dem Öffnen)
   if (!Array.isArray(w.liste) && rw <= 0) return;
   const key = 'd' + t + ':' + rw;
   if (ensureBusy[key]) return;
@@ -1518,7 +1776,7 @@ function ensureToday() {
   const keep = (Array.isArray(w.liste) ? w.liste : []).filter((x) => x && (x.geholt || (bew[x.ref] && bew[x.ref].r)));
   const used = keep.reduce((a, x) => a + num(x.min, 0), 0);
   const more = rw - used > 0 ? fillWdh(t, rw - used, keep.map((x) => x.ref)) : [];
-  patch('tage', t, { wdh: { min: rw, liste: keep.concat(more) } });
+  autoPatch('tage', t, { wdh: { min: rw, liste: keep.concat(more) } });
 }
 
 /* ---------- Vergangene Tage: Kulanzfenster bis 23:59 des Folgetags, danach nur noch nach unten korrigieren ---------- */
@@ -2023,7 +2281,7 @@ async function maybeEinschaetzung(W) {
   if (today() < addDays(W, cfg().planungstag) || weekDates(W).every((d) => pauseAt(d).frei)) return;
   if (num(wk.einschaetzungStart, 0) > nowMs() - 120000) return;
   einBusy[W] = true;
-  patch('wochen', W, { einschaetzungStart: nowMs() });
+  autoPatch('wochen', W, { einschaetzungStart: nowMs() });
   const f = weekFacts(W);
   let text = ''; let quelle = 'regel';
   try {
@@ -2035,7 +2293,7 @@ async function maybeEinschaetzung(W) {
     }
   } catch (e) { console.warn('Einschätzung durch Claude nicht möglich', e); }
   if (!text) text = einschaetzungRegel(f);
-  patch('wochen', W, { einschaetzung: { text: text, am: today(), quelle: quelle } });
+  autoPatch('wochen', W, { einschaetzung: { text: text, am: today(), quelle: quelle } });
   einBusy[W] = false;
 }
 
@@ -3961,7 +4219,7 @@ function datenHtml() {
   const s = D.meta.sicherung;
   const n = (col) => Object.keys(D[col]).length;
   let h = '<section class="panel" aria-label="Daten auf diesem Gerät"><h2>Daten auf diesem Gerät</h2>' +
-    '<span class="small" style="font-size:14px">Alles liegt nur auf diesem Mac, in diesem Browser. Sichere es ab und zu als Datei, etwa in iCloud Drive. Mit der Datei kannst du auch umziehen.</span>' +
+    '<span class="small" style="font-size:14px">' + (sync.an ? 'Alles liegt auf diesem Gerät und über den Abgleich auch in deiner Ablage. Eine Sicherung als Datei ab und zu schadet trotzdem nicht.' : 'Alles liegt nur auf diesem Mac, in diesem Browser. Sichere es ab und zu als Datei, etwa in iCloud Drive. Mit der Datei kannst du auch umziehen.') + '</span>' +
     '<span class="small">' + (s && isDate(s.am) ? 'Zuletzt gesichert: ' + esc(fmtDMonY(s.am)) : 'Noch nicht gesichert') + ' · ' + anz(n('themen'), 'Thema', 'Themen') + ' · ' + anz(n('bloecke'), 'Eintrag', 'Einträge') + ' · ' + anz(n('termine'), 'Termin', 'Termine') + '</span>';
   if (ES.importPending) {
     const p = ES.importPending;
@@ -4030,6 +4288,55 @@ Object.assign(EXTRA_CHANGE, {
     el.value = '';
   }
 });
+// Abgleich zwischen Geräten: standardmäßig aus; der Schlüssel bleibt auf diesem Gerät (eigener Speicher-Schlüssel, nie in der Sicherung)
+function abgleichHtml() {
+  let h = '<section class="panel" aria-label="Abgleich zwischen Geräten" data-k="abgleich"><h2>Abgleich zwischen Geräten</h2>';
+  if (sync.an && !ES.abgWartet) {
+    h += '<span class="small" style="font-size:14px">' + esc('Dieses Gerät hält sich mit deiner Ablage ' + sync.repo + ' auf demselben Stand: beim Öffnen, kurz nach jeder Änderung und etwa jede Minute.') + '</span>' +
+      '<span class="small" id="abg-zeile" role="status">' + esc(syncZeile()) + '</span>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn line" data-a="abgJetzt">Jetzt abgleichen</button><button class="btn ghost" data-a="abgAus">Ausschalten</button></div>';
+  } else if (ES.abgFrage) {
+    h += '<div class="infobox" role="alertdialog" aria-label="Welcher Stand soll gelten?"><span style="font-size:15px;font-weight:700">Welcher Stand soll gelten?</span><span class="small" style="font-size:14px">' +
+      'Auf diesem Gerät und in der Ablage liegen schon Daten. Einer der beiden Stände ersetzt den anderen. Empfehlung: der Stand vom Mac. Auf dem Mac wählst du also „Stand dieses Geräts“, auf dem iPhone „Stand aus der Ablage“. Im Zweifel vorher „Daten sichern“.</span>' +
+      '<div class="formbtns"><button class="btn ghost" data-a="abgNo">Abbrechen</button><button class="btn line" data-a="abgLokal">Stand dieses Geräts</button><button class="btn line" data-a="abgFern">Stand aus der Ablage</button></div></div>';
+  } else if (ES.abgForm) {
+    h += '<label class="flabel" for="abg-repo">Repository (Name/Ablage)</label><input id="abg-repo" class="inp" style="width:100%" type="text" autocapitalize="off" autocorrect="off" spellcheck="false" data-in="abgRepo" value="' + esc(F.abgRepo || '') + '">' +
+      '<label class="flabel" for="abg-token">Schlüssel (Token)</label><input id="abg-token" class="inp" style="width:100%" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-in="abgToken" placeholder="' + (sync.token ? 'gespeichert – leer lassen, um ihn zu behalten' : 'github_pat_…') + '" value="' + esc(F.abgToken || '') + '">' +
+      '<span class="small">Der Schlüssel bleibt auf diesem Gerät und steht nie in der Sicherung.</span>' +
+      '<div class="formbtns">' + (sync.token && !ES.abgWartet ? '<button class="btn ghost" data-a="abgVergiss" style="margin-right:auto">Schlüssel entfernen</button>' : '') + '<button class="btn ghost" data-a="abgNo">Abbrechen</button><button class="btn" data-a="abgEin" aria-disabled="' + !!ES.abgWartet + '">' + (ES.abgWartet ? 'Prüfe …' : 'Einschalten') + '</button></div>';
+  } else if (ES.abgWartet) {
+    h += '<span class="small" role="status">Abgleich läuft …</span>';
+  } else {
+    h += '<span class="small" style="font-size:14px">Aus. Eingeschaltet halten sich Mac und iPhone über ein privates GitHub-Repository auf demselben Stand.</span>' +
+      '<div><button class="btn line" data-a="abgOpen">Einrichten</button></div>';
+  }
+  return h + '</section>';
+}
+function abgErgebnis(r) {
+  ES.abgWartet = false;
+  if (r === 'ok') { ES.abgForm = false; ES.abgFrage = false; F.abgToken = ''; toast('Abgleich eingeschaltet', false); }
+  else if (r === 'frage') { ES.abgFrage = true; ES.abgForm = false; }
+  else toast(r === 'offline' ? 'Kein Netz. Versuch es später noch einmal.' : r === 'zugang' ? 'Das hat nicht geklappt. Prüf Repository und Schlüssel.' : 'Das hat gerade nicht geklappt. Versuch es später noch einmal.', false);
+  scheduleRender();
+}
+Object.assign(EXTRA_ACT, {
+  abgOpen: () => { ES.abgForm = true; ES.abgFrage = false; F.abgRepo = sync.repo; F.abgToken = ''; },
+  abgNo: () => { ES.abgForm = false; ES.abgFrage = false; F.abgToken = ''; },
+  abgEin: () => {
+    const repo = String(F.abgRepo || '').trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$|\/$/g, '');
+    const token = String(F.abgToken || '').trim() || sync.token;
+    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) { toast('Bitte das Repository als „Name/Ablage“ eintragen.', false); return 'keep'; }
+    if (!token) { toast('Bitte den Schlüssel eintragen.', false); return 'keep'; }
+    ES.abgWartet = true;
+    syncEinschalten(repo, token).then(abgErgebnis);
+    return 'keep';
+  },
+  abgFern: () => { ES.abgFrage = false; ES.abgWartet = true; syncErst('fern').then(abgErgebnis); },
+  abgLokal: () => { ES.abgFrage = false; ES.abgWartet = true; syncErst('lokal').then(abgErgebnis); },
+  abgJetzt: () => { syncJetzt(); return 'keep'; },
+  abgAus: () => { syncAus(); toast('Abgleich ausgeschaltet. Die Daten bleiben auf diesem Gerät.', false); },
+  abgVergiss: () => { syncAus(); try { localStorage.removeItem(SYNC_KEY); } catch (e) { /* egal */ } sync = syncLoad(); F.abgToken = ''; toast('Schlüssel von diesem Gerät entfernt', false); return 'keep'; }
+});
 const APP_STAND = '2026-11-13'; // bei jeder Veröffentlichung anpassen
 function viewEinstellungen() {
   const t = today();
@@ -4038,7 +4345,7 @@ function viewEinstellungen() {
   const design = '<section class="panel" aria-label="Darstellung"><h2>Darstellung</h2><div class="seg3" role="group" aria-label="Hell oder dunkel">' +
     [['auto', 'Automatisch'], ['hell', 'Hell'], ['dunkel', 'Dunkel']].map((x) => '<button aria-pressed="' + (dv === x[0]) + '" data-a="esDesign" data-v="' + x[0] + '">' + x[1] + '</button>').join('') + '</div>' +
     '<span class="small">„Automatisch“ folgt der Einstellung deines Macs.</span></section>';
-  return h + '<div class="cols"><div class="stack l">' + design + stellschrauben() + datenHtml() + '</div><div class="stack l">' + routinenHtml() + termineHtml() + '</div></div>' +
+  return h + '<div class="cols"><div class="stack l">' + design + stellschrauben() + datenHtml() + abgleichHtml() + '</div><div class="stack l">' + routinenHtml() + termineHtml() + '</div></div>' +
     '<p class="small" style="margin-top:24px;opacity:.6">Stand der App: ' + esc(fmtDM(APP_STAND) + APP_STAND.slice(0, 4)) + '</p>';
 }
 function nextOrder(col) { const ids = Object.keys(D[col]); return ids.length ? Math.max(...ids.map((i) => num(D[col][i].reihenfolge, 0))) + 1 : 1; }
@@ -4425,7 +4732,7 @@ window.addEventListener('resize', () => { const w = window.innerWidth >= 900; if
 document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleRender(); });
 // Zuletzt geöffnete Ansicht gilt, solange die App offen ist (auch nach Neuladen); nach dem Beenden startet „Heute“
 try { const v = sessionStorage.getItem('ls-view'); if (v && VIEW_FN[v]) S.view = v; } catch (e) { /* egal */ }
-window.__ls = { D: D, S: S, F: F, cfg: cfg, today: today, setSim: (d, m) => { setSim(d, m); scheduleRender(); }, progress: progress, pufferDate: pufferDate, capacity2: (T) => capacity(T, wdhSplit(T), planFrom(T), true), srItems: srItems, wdhListe: wdhListe, wdhSplit: wdhSplit, wdhForecast: wdhForecast, wdhRichtwert: wdhRichtwert, wdhUeberhang: wdhUeberhang, allocRegel: allocRegel, fillWdh: fillWdh, srRate: srRate, wdhState: wdhState, poolOf: poolOf, carryOf: carryOf, vorhabenFor: vorhabenFor, capacity: capacity, termineAt: termineAt, routinenAt: routinenAt, pauseAt: pauseAt, erfasstAt: erfasstAt, notizHtml: notizHtml, dbState: () => dbState, moveBlock: moveBlock, clearPlanBlocks: (T) => { clearPlanBlocks(T); scheduleRender(); } };
+window.__ls = { abgleich: { jetzt: syncJetzt, stand: () => clone(Object.assign({}, sync, { token: sync.token ? '(gesetzt)' : '' })), T: SYNC_T, merge: syncMerge }, D: D, S: S, F: F, cfg: cfg, today: today, setSim: (d, m) => { setSim(d, m); scheduleRender(); }, progress: progress, pufferDate: pufferDate, capacity2: (T) => capacity(T, wdhSplit(T), planFrom(T), true), srItems: srItems, wdhListe: wdhListe, wdhSplit: wdhSplit, wdhForecast: wdhForecast, wdhRichtwert: wdhRichtwert, wdhUeberhang: wdhUeberhang, allocRegel: allocRegel, fillWdh: fillWdh, srRate: srRate, wdhState: wdhState, poolOf: poolOf, carryOf: carryOf, vorhabenFor: vorhabenFor, capacity: capacity, termineAt: termineAt, routinenAt: routinenAt, pauseAt: pauseAt, erfasstAt: erfasstAt, notizHtml: notizHtml, dbState: () => dbState, moveBlock: moveBlock, clearPlanBlocks: (T) => { clearPlanBlocks(T); scheduleRender(); } };
 scheduleRender();
 initDb();
 if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch((e) => console.warn('Offline-Speicher', e));
