@@ -1,5 +1,5 @@
 // Offline-Speicher: die Seite selbst zuerst aus dem Netz (damit Updates sofort ankommen), sonst aus dem Speicher
-const CACHE = 'lernsystem-v1';
+const CACHE = 'lernsystem-v2';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {
