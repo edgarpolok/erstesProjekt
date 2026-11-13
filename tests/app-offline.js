@@ -25,9 +25,9 @@ L.run(async () => {
   const ctx = await L.browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true, timezoneId: 'Europe/Berlin', locale: 'de-DE' });
   const p = await ctx.newPage();
   p.on('pageerror', (e) => L.fail('Skriptfehler in der App', e.message));
-  p.on('console', (m) => { if (m.type() === 'error' && !/fonts|net::ERR/.test(m.text())) L.fail('Konsole', m.text()); });
+  p.on('console', (m) => { if (m.type() === 'error' && !/fonts|net::ERR/.test(m.text()) && !/^https:\/\/api\.github\.com\//.test((m.location() || {}).url || '')) L.fail('Konsole', m.text()); }); // 404 der leeren Ablage ist kein App-Fehler
   await p.route('**/fonts.googleapis.com/**', (r) => r.abort());
-  const fremd = new Set(); // Keine Claude-Funktionen, keine Synchronisierung: nur eigene Dateien und Schriften
+  const fremd = new Set(); // Keine Claude-Funktionen; ohne eingeschalteten Abgleich nur eigene Dateien und Schriften (der Abgleich selbst: unten)
   p.on('request', (r) => { const h = new URL(r.url()).hostname; if (!/^(localhost|127\.0\.0\.1|fonts\.googleapis\.com|fonts\.gstatic\.com)$/.test(h) && !/^(blob|data):/.test(r.url())) fremd.add(h); });
   const c = async (s) => { await p.click(s, { timeout: 4000 }); await p.waitForTimeout(250); };
   const main = () => p.textContent('#main');
@@ -96,7 +96,35 @@ L.run(async () => {
     L.has('nach Laden und Neuladen sichtbar', await q.textContent('#main'), 'Erster echter Eintrag');
     await ctx2.close();
     fs.rmSync(datei); fs.rmSync(kaputt);
-    L.expect('keine Anfragen an fremde Dienste', Array.from(fremd), []);
+    L.expect('keine Anfragen an fremde Dienste (Abgleich aus)', Array.from(fremd), []);
+
+    // Abgleich zwischen Geräten: einschalten, ändern, abgleichen, neu laden (bleibt an, fragt beim Öffnen von selbst an);
+    // einziger fremder Host ist api.github.com; der Service Worker speichert keine API-Antwort; Export ohne Schlüssel
+    const A = L.ablage(); p.tag = 'mac'; await A.an(p);
+    fremd.clear();
+    await c('.side [data-v=einstellungen]');
+    await c('[data-a=abgOpen]'); await p.fill('#abg-token', A.token); await c('[data-a=abgEin]'); await p.waitForTimeout(600);
+    L.expect('Abgleich eingeschaltet', await p.evaluate(() => window.__ls.abgleich.stand().an), true);
+    await c('.side [data-v=heute]');
+    await c('[data-a=startAdd]'); await p.fill('#neu-eintrag', 'Eintrag mit Ablage'); await c('[data-a=addDone]'); await c('[data-a=doAdd]');
+    await p.evaluate(() => window.__ls.abgleich.jetzt()); await p.waitForTimeout(150);
+    L.ok('Ablage enthält den neuen Eintrag', Object.values(A.inhalt().daten.bloecke).some((b) => b.titel === 'Eintrag mit Ablage'), Object.keys(A.inhalt().daten.bloecke));
+    const nVorher = A.anfragen.length;
+    await laden();
+    L.expect('Abgleich bleibt nach Neuladen an', await p.evaluate(() => window.__ls.abgleich.stand().an), true);
+    L.ok('beim Öffnen fragt die App von selbst an', A.anfragen.length > nVorher, A.anfragen.length + ' / ' + nVorher);
+    L.has('Eintrag nach Neuladen sichtbar', await main(), 'Eintrag mit Ablage');
+    L.expect('fremde Hosts mit Abgleich: genau api.github.com', Array.from(fremd), ['api.github.com']);
+    const urls = await p.evaluate(async () => { const out = []; for (const k of await caches.keys()) { const ca = await caches.open(k); for (const r of await ca.keys()) out.push(r.url); } return out; });
+    L.ok('Service Worker hat etwas gespeichert (Gegenprobe)', urls.length > 0, urls);
+    L.expect('Service Worker speichert keine API-Antwort', urls.filter((u) => /api\.github\.com/.test(u)), []);
+    await c('.side [data-v=einstellungen]');
+    const [dl2] = await Promise.all([p.waitForEvent('download'), p.click('[data-a=esExport]')]);
+    const datei2 = path.join(__dirname, 'out', 'test-sicherung-abgleich.json'); await dl2.saveAs(datei2);
+    const roh2 = fs.readFileSync(datei2, 'utf8'); fs.rmSync(datei2);
+    L.hasNot('Export ohne Schlüssel', roh2, A.token);
+    L.hasNot('Export ohne das Wort „abgleich“', roh2.toLowerCase(), 'abgleich');
+    L.expect('Export hat genau die bekannten Sammlungen', Object.keys(JSON.parse(roh2).daten).sort(), ['bloecke', 'etappen', 'meta', 'module', 'pausen', 'routinen', 'tage', 'termine', 'themen', 'vorhaben', 'wochen']);
   } finally {
     server.close();
   }
