@@ -108,6 +108,44 @@ L.run(async () => {
   L.expect('Zeit ändern rückgängig gemacht', await ev(p, () => window.__ls.D.bloecke.u.zeit), 9);
   await p.context().close();
 
+  // 10) Statistik und Zeitstrahl: Zeit nach Gebiet, Stoff auf einen Blick, bei nur einem Gebiet eine Ebene tiefer
+  const bl = (id, tag, thema, zeit) => ({ [id]: { titel: 'Block ' + id, woche: L.addDays(tag, -((new Date(tag + 'T12:00:00Z').getUTCDay() + 6) % 7)), tag: tag, status: 'erledigt', erledigtAm: tag, thema: thema, gebiet: 'zr', zeit: zeit, wiederholen: false, quelle: 'frei', erstellt: 1 } });
+  p = await L.open({
+    themen: { zr: { name: 'Zivilrecht' }, at: { name: 'Allgemeiner Teil', eltern: 'zr', reihenfolge: 1, durchAm: '2026-11-03' }, sr: { name: 'Schuldrecht', eltern: 'zr', reihenfolge: 2 } },
+    termine: { v: { titel: 'Vorlesung', wochentage: [1], von: '10:00', bis: '12:00', zustand: 'aktiv' } },
+    tage: { '2026-11-03': { termine: { v: { erledigt: true, min: 120 } } } },
+    bloecke: Object.assign({}, bl('a', '2026-11-03', 'at', 90), bl('b', '2026-11-04', 'sr', 60), bl('c', '2026-11-10', 'sr', 120), bl('d', '2026-11-11', 'at', 30))
+  }, 'sim-2026-11-18-1000', 1280);
+  const zg = await ev(p, () => window.__ls.test.zeitGruppen('2026-11-02', '2026-11-15', null));
+  L.expect('Zeit je Woche und Gebiet (Termine eigens)', zg, { '2026-11-02': { zr: 150, '#t': 120 }, '2026-11-09': { zr: 150 } });
+  L.expect('Summe wie die Tageswerte', await ev(p, () => ['2026-11-03', '2026-11-04', '2026-11-10', '2026-11-11'].reduce((a, d) => a + window.__ls.erfasstAt(d), 0)), 420);
+  await L.go(p, 'kalender'); await L.click(p, '[data-a=kTab][data-v=zeit]');
+  L.expect('nur ein Gebiet: Zeitstrahl zeigt dessen Teile', [await p.locator('[data-k=zs-at]').count(), await p.locator('[data-k=zs-sr]').count(), await p.locator('[data-k=zs-zr]').count()], [1, 1, 0]);
+  await L.click(p, '[data-a=kTiefer][data-id=""]');
+  L.expect('„Alle Gebiete“ zeigt wieder das Gebiet', [await p.locator('[data-k=zs-at]').count(), await p.locator('[data-k=zs-zr]').count()], [0, 1]);
+  await L.click(p, '[data-a=kTab][data-v=zahlen]'); await L.click(p, '[data-a=kPeriod][data-v=gesamt]');
+  L.expect('Grafik der Wochenzeit vorhanden', await p.locator('svg[data-k=zeit-wochen]').count(), 1);
+  L.has('Stoff auf einen Blick zählt je Gebiet', await L.text(p, '[aria-label="Stoff auf einen Blick"]'), '1 von 2 durchgearbeitet');
+  await L.click(p, '[data-a=kTiefer][data-id=zr]');
+  L.has('eine Ebene tiefer: Verteilung nach Teilen', await L.text(p, '[aria-label="Verteilung auf die Gebiete"]'), 'Schuldrecht');
+  await L.noHScroll(p, 'Statistik');
+  await p.context().close();
+  p = await L.open({ themen: { zr: { name: 'Zivilrecht' } } }, 'sim-2026-11-18-1000', 390);
+  await L.go(p, 'kalender'); await L.click(p, '[data-a=kTab][data-v=zeit]'); await L.noHScroll(p, 'Zeitstrahl 390');
+  await L.click(p, '[data-a=kTab][data-v=zahlen]'); await L.noHScroll(p, 'Statistik 390');
+  await p.context().close();
+
+  // 11) Klappt der Zugang zur Ablage nicht mehr, steht das auch in Heute (nicht nur in den Einstellungen)
+  const A = L.ablage();
+  p = await L.open({ themen: { zr: { name: 'Zivilrecht' } } }, 'sim-2026-11-18-1000');
+  await A.an(p);
+  L.hasNot('ohne Abgleich kein Hinweis', await L.text(p), 'Abgleich klappt gerade nicht');
+  await ev(p, () => { localStorage.setItem('lernsystem-abgleich-v1', JSON.stringify({ an: true, token: 'abgelaufen', repo: 'edgarpolok/lernplan-daten' })); window.dispatchEvent(new StorageEvent('storage', { key: 'lernsystem-abgleich-v1' })); });
+  await ev(p, () => window.__ls.abgleich.jetzt()); await p.waitForTimeout(200);
+  L.expect('Zugang abgelehnt', await ev(p, () => window.__ls.abgleich.stand().status), 'zugang');
+  L.has('Hinweis in Heute', await L.text(p), 'Der Abgleich klappt gerade nicht');
+  await p.context().close();
+
   // 9) Freier Tag mit Offenem: der Text behauptet nicht „nichts offen“
   p = await L.open({ bloecke: { o: { titel: 'Offener Block', woche: W, tag: null, status: 'offen', quelle: 'liste', zurueckgelegt: true, erstellt: 1 } } }, 'sim-2026-11-22-1000');
   L.hasNot('Sonntag mit Offenem: kein „nichts offen“', await L.text(p), 'nichts offen');
