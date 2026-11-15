@@ -136,7 +136,7 @@ L.run(async () => {
   L.ok('keine Reiter Baum/Stand mehr (Knöpfe)', (await p.locator('[data-a=thTab]').count()) === 0);
   L.has('Stand: Zivilrecht 1 von 3 durchgearbeitet', await L.text(p, '[aria-label="Stand Zivilrecht"]'), '1 von 3 durchgearbeitet');
   L.has('Stand: 2× wiederholt (28.10. und heute)', stand, '2× wiederholt');
-  L.has('Stand: nächster Termin nach „teilweise“ (Stufe 3 = 7 Tage)', stand, 'wieder Mi 11.11.');
+  L.has('Stand: nächster Termin nach „teilweise“ (eine Stufe zurück: Stufe 2 = 3 Tage)', stand, 'wieder Samstag');
   await L.noHScroll(p, 'Stand');
   await p.context().close();
   p = await L.open(seed, 'sim-2026-11-04-1000', 390);

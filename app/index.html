@@ -694,9 +694,12 @@ function fmtDays(h, dativ) {
   return (whole ? String(whole) : '') + (half ? '½' : '') + (r <= 1 ? ' Tag' : (dativ ? ' Tagen' : ' Tage'));
 }
 function parseDur(v) {
-  v = String(v || '').trim().replace(/\s*h$/i, '');
+  v = String(v || '').trim();
+  const std = /\s*(h|std\.?|stunden?)$/i.test(v); // mit „h“ dahinter sind es immer Stunden
+  const mn = /\s*(min\.?|minuten?)$/i.test(v);
+  v = v.replace(/\s*(h|std\.?|stunden?|min\.?|minuten?)$/i, '');
   if (/^\d{1,2}:\d{1,2}$/.test(v)) { const [h, m] = v.split(':').map(Number); return m < 60 ? h * 60 + m : null; }
-  if (/^\d+([.,]\d+)?$/.test(v)) { const x = parseFloat(v.replace(',', '.')); return x <= 12 && /[.,]/.test(v) ? Math.round(x * 60) : Math.round(x); }
+  if (/^\d+([.,]\d+)?$/.test(v)) { const x = parseFloat(v.replace(',', '.')); return std || (!mn && x <= 12 && /[.,]/.test(v)) ? Math.round(x * 60) : Math.round(x); }
   return null;
 }
 const timeToMin = (t) => { if (!t || !/^\d{1,2}:\d{2}$/.test(t)) return null; const [h, m] = t.split(':').map(Number); return h * 60 + m; };
@@ -724,7 +727,7 @@ const EXTRA_CHANGE = {
   vStdFrei: (el) => {
     const v = D.vorhaben[el.dataset.id]; if (!v) return; const raw = String(el.value || '').trim().replace(',', '.');
     const n = raw === '' ? null : Number(raw);
-    if (n !== null && !(isFinite(n) && n > 0 && n <= 60)) { toast('Bitte Stunden von 0,5 bis 60 eintragen.', false); return; }
+    if (n !== null && !(isFinite(n) && n >= 0.25 && n <= 60)) { toast('Bitte Stunden von 0,25 bis 60 eintragen.', false); return; }
     const h = n === null ? null : Math.max(0.25, Math.round(n * 4) / 4);
     if (h !== (typeof v.std === 'number' ? v.std : null)) vorhabenSet(el.dataset.id, { std: h });
   }
@@ -753,7 +756,13 @@ function failSave(e) {
   console.warn('Speichern fehlgeschlagen', e);
   toast('Speichern hat nicht geklappt. Prüf die Verbindung und versuch es noch einmal.', false);
 }
+// Ein „Rückgängig“ würde den ganzen Eintrag zurückschreiben: wird er danach noch einmal geändert, verfällt es
+function undoVerfaellt(col, id) {
+  if (recording || syncAuto || !toastState || !toastState.snap || !((col + '/' + id) in toastState.snap)) return;
+  clearTimeout(toastTimer); toastState = null;
+}
 function put(col, id, data) {
+  undoVerfaellt(col, id);
   rec(col, id);
   const vor = D[col][id];
   D[col] = Object.assign({}, D[col], { [id]: clone(data) });
@@ -762,6 +771,7 @@ function put(col, id, data) {
   scheduleRender();
 }
 function patch(col, id, part) {
+  undoVerfaellt(col, id);
   rec(col, id);
   const cur = D[col][id];
   const next = deepMerge(cur, part);
@@ -776,6 +786,7 @@ function patch(col, id, part) {
   scheduleRender();
 }
 function del(col, id) {
+  undoVerfaellt(col, id);
   rec(col, id);
   const m = Object.assign({}, D[col]);
   const vor = m[id];
@@ -1322,7 +1333,7 @@ function minFor(stufe) {
 const srNeu = (date) => ({ stufe: 1, faellig: addDays(date, abstand(1)), letzte: null, bewertung: null });
 function srRate(sr, r, date) {
   const st = num(sr && sr.stufe, 1);
-  const next = r === 'sicher' ? Math.min(st + 1, maxStufe()) : (r === 'teilweise' ? st : 1);
+  const next = r === 'sicher' ? Math.min(st + 1, maxStufe()) : (r === 'teilweise' ? Math.max(1, Math.min(st, maxStufe()) - 1) : 1);
   return { stufe: next, faellig: addDays(date, abstand(next)), letzte: date, bewertung: r };
 }
 const validSr = (sr) => sr && isDate(sr.faellig);
@@ -1394,9 +1405,12 @@ function termineAt(date) {
   const wd = wdOf(date);
   const pz = pauseAt(date);
   const out = [];
+  const stTag = (D.tage[date] || {}).termine || {};
   Object.keys(D.termine).forEach((id) => {
     const t = D.termine[id];
-    if (!t || t.zustand === 'abgeschlossen' || t.zustand === 'pausiert') return;
+    if (!t) return;
+    // Beendet oder pausiert gilt nicht rückwirkend: was an einem Tag abgehakt wurde, bleibt dort stehen
+    if ((t.zustand === 'abgeschlossen' || t.zustand === 'pausiert') && !(stTag[id] && stTag[id].erledigt)) return;
     let hit = false;
     if (isDate(t.datum)) hit = t.datum === date;
     else {
@@ -1581,18 +1595,36 @@ const zeitAmTag = (b) => Math.max(0, num(b.zeit, 0) - zeitFrueh(b));
 const terminZaehlt = (id) => !(D.termine[id] && D.termine[id].zeitZaehlt === false);
 function terminZeitAt(date) {
   const st = tag(date).termine || {};
-  return termineAt(date).reduce((a, x) => a + ((st[x.id] || {}).erledigt && !(st[x.id] || {}).faelltAus && !x.ganztags && terminZaehlt(x.id) ? x.min : 0), 0);
+  // Es zählt die Dauer, die der Termin beim Abhaken hatte (ältere Einträge ohne festgehaltene Dauer: die heutige)
+  return termineAt(date).reduce((a, x) => { const s = st[x.id] || {}; return a + (s.erledigt && !s.faelltAus && terminZaehlt(x.id) ? (typeof s.min === 'number' ? s.min : (x.ganztags ? 0 : x.min)) : 0); }, 0);
 }
 function tZeitToggle(id) {
   const x = D.termine[id]; if (!x) return;
   const an = !terminZaehlt(id);
   undoable(x.titel + (an ? ' zählt zur erfassten Zeit' : ' zählt nicht mehr zur erfassten Zeit'), () => patch('termine', id, { zeitZaehlt: an }));
 }
+// Zeit der Blöcke je Tag: was am Tag des Blocks erfasst wurde, plus früher Erfasstes am jeweiligen alten Tag.
+// Zählt auch, wenn der Block (noch) nicht abgehakt ist; einmal gerechnet, solange sich die Blöcke nicht ändern.
+let bzCache = null;
+function blockZeiten() {
+  if (bzCache && bzCache.ref === D.bloecke) return bzCache.res;
+  const res = {};
+  Object.keys(D.bloecke).forEach((k) => {
+    const b = D.bloecke[k];
+    if (isDate(b.tag)) { const z = zeitAmTag(b); if (z) res[b.tag] = (res[b.tag] || 0) + z; }
+    if (isObj(b.zeitFrueher)) Object.keys(b.zeitFrueher).forEach((d) => { const z = num(b.zeitFrueher[d], 0); if (z) res[d] = (res[d] || 0) + z; });
+  });
+  bzCache = { ref: D.bloecke, res: res };
+  return res;
+}
+// Beim Wegnehmen von einem Tag bleibt die dort erfasste Zeit bei diesem Tag
+function zeitBleibt(b) {
+  const offen = b ? num(b.zeit, 0) - zeitFrueh(b) : 0;
+  if (!b || !isDate(b.tag) || offen <= 0) return {};
+  return { zeitFrueher: Object.assign({}, isObj(b.zeitFrueher) ? b.zeitFrueher : {}, { [b.tag]: num((b.zeitFrueher || {})[b.tag], 0) + offen }) };
+}
 function erfasstAt(date) {
-  let m = wdhState(date).zeit + terminZeitAt(date);
-  blocksAt(date).forEach((b) => { if (b.status === 'erledigt') m += zeitAmTag(b); });
-  Object.keys(D.bloecke).forEach((k) => { const b = D.bloecke[k]; if (b.status === 'erledigt' && b.tag !== date && isObj(b.zeitFrueher)) m += num(b.zeitFrueher[date], 0); });
-  return m;
+  return wdhState(date).zeit + terminZeitAt(date) + num(blockZeiten()[date], 0);
 }
 
 /* ---------- Fortschritt der laufenden Woche ---------- */
@@ -1648,7 +1680,7 @@ const vStd = (v) => (typeof v.std === 'number' && v.std > 0 ? v.std : EST_H);
 // Blöcke, die beim erneuten Planen stehen bleiben (erledigt, heute begonnen, frei hinzugefügt, mitgenommen)
 function keptBlocks(d) {
   const t = today();
-  return blocksAt(d).filter((b) => !(b.status === 'offen' && (b.quelle === 'liste' || b.quelle === 'claude') && !b.mitgenommen && !b.restVon && !b.fest && b.tag !== t));
+  return blocksAt(d).filter((b) => !(b.status === 'offen' && (b.quelle === 'liste' || b.quelle === 'claude') && !b.mitgenommen && !b.restVon && !b.fest && !num(b.zeit, 0) && b.tag !== t));
 }
 const blockH = (b) => (typeof b.std === 'number' && b.std > 0 ? b.std : (b.zeit ? num(b.zeit, 0) / 60 : 0));
 // Erste Woche nach einer freien Pause (mind. 3 Tage in der Vorwoche) plant Claude bewusst leichter
@@ -1796,7 +1828,8 @@ let popId = null;
 function pop(id) { popId = id; setTimeout(() => { if (popId === id) { popId = null; scheduleRender(); } }, 400); }
 function ensureThemaSr(themaId, date) {
   const t = thema(themaId);
-  if (t && !validSr(t.sr)) { patch('themen', themaId, { sr: srNeu(date) }); return true; }
+  // Noch nie bewertet und keine erledigte Einheit mehr (Haken zurückgenommen, Block gelöscht): die Wiederholung beginnt neu
+  if (t && (!validSr(t.sr) || (!t.sr.letzte && !hatEinheiten(themaId)))) { patch('themen', themaId, { sr: srNeu(date) }); return true; }
   return false;
 }
 function setBlockDone(id, done) {
@@ -1849,13 +1882,15 @@ function syncRest(id, announce) {
   }
 }
 // Pro Thema und Tag zählt eine Bewertung: Ausgangspunkt ist immer der Stand vor der ersten Bewertung des Tages
+const spaeterBewertet = (it, date) => !!(it && it.sr && isDate(it.sr.letzte) && it.sr.letzte > date);
+const SPAETER_TEXT = 'Dieses Thema wurde seitdem schon wieder bewertet.';
 function rateRef(date, ref, r) {
   const it = srByRef(ref);
   if (!it) return;
   const e = ((tag(date).wdh || {}).bew || {})[ref];
   const vorher = e && e.r ? (e.vorher || null) : clone(it.sr || null);
   if (!r) {
-    if (e && e.r) writeSr(ref, vorher);
+    if (e && e.r && !spaeterBewertet(it, date)) writeSr(ref, vorher);
     patch('tage', date, { wdh: { bew: { [ref]: { r: null, vorher: null } } } });
     Object.keys(D.bloecke).forEach((id) => { const b = D.bloecke[id]; if (b.wdhVon && 't:' + b.wdhVon === ref && isObj(b.bewertung) && (b.bewertung.datum || b.erledigtAm) === date) patch('bloecke', id, { bewertung: null }); });
     return;
@@ -1875,6 +1910,7 @@ function rateBlock(id, r) {
   const date = b.erledigtAm || today();
   const cur = ((tag(date).wdh || {}).bew || {})['t:' + b.wdhVon];
   if (!(cur && cur.r === r) && !guardAdd(date)) return;
+  if (spaeterBewertet(srByRef('t:' + b.wdhVon), date)) { toast(SPAETER_TEXT, false); return; }
   const e = ((tag(date).wdh || {}).bew || {})['t:' + b.wdhVon];
   if (e && e.r === r) {
     rateRef(date, 't:' + b.wdhVon, null);
@@ -1896,7 +1932,8 @@ function toggleWiederholen(id) {
 }
 function toggleTermin(date, tid) {
   const st = ((tag(date).termine || {})[tid]) || {};
-  patch('tage', date, { termine: { [tid]: !st.erledigt ? { erledigt: true, nachgetragen: markNach(date) || !!st.nachgetragen } : { erledigt: false } } });
+  const x = termineAt(date).find((y) => y.id === tid);
+  patch('tage', date, { termine: { [tid]: !st.erledigt ? { erledigt: true, min: x && !x.ganztags ? x.min : 0, nachgetragen: markNach(date) || !!st.nachgetragen } : { erledigt: false, min: null } } });
   if (!st.erledigt) pop('t' + tid);
 }
 function toggleRoutine(date, rid) {
@@ -1910,11 +1947,9 @@ function rateWdh(date, ref, r) {
   const it = srByRef(ref);
   if (!it) return;
   const off = cur && cur.r === r;
-  if (!off) {
-    if (!guardAdd(date)) return;
-    // Eine spätere Bewertung nicht überschreiben
-    if (!(cur && cur.r) && it.sr && isDate(it.sr.letzte) && it.sr.letzte > date) { toast('Dieses Thema wurde seitdem schon wieder bewertet.', false); return; }
-  }
+  if (!off && !guardAdd(date)) return;
+  // Eine spätere Bewertung nicht überschreiben: weder durch Bewerten noch durch Zurücknehmen oder Ändern
+  if (spaeterBewertet(it, date)) { toast(SPAETER_TEXT, false); return; }
   rateRef(date, ref, off ? null : r);
   if (!off && markNach(date)) patch('tage', date, { wdh: { bew: { [ref]: { nachgetragen: true } } } });
   if (!off) pop('w' + wKey(date, ref));
@@ -1967,7 +2002,7 @@ function backToWeek(id) {
   const b = D.bloecke[id];
   if (!b) return;
   if (timerRef() === 'b:' + id) stopTimer();
-  undoable('In die Woche zurückgelegt', () => patch('bloecke', id, { tag: null, zurueckgelegt: true }));
+  undoable('In die Woche zurückgelegt', () => patch('bloecke', id, Object.assign({ tag: null, zurueckgelegt: true }, zeitBleibt(b))));
 }
 function deleteBlock(id) {
   const b = D.bloecke[id];
@@ -1997,20 +2032,18 @@ function setWdhVon(id, themaId) {
 function pullToday(id) {
   const t = today();
   const b = D.bloecke[id];
-  const part = { tag: t, woche: mondayOf(t), warImTag: true };
   // Schon erfasste Zeit bleibt beim alten Tag (z. B. Timer bis nach Mitternacht)
-  const offen = b ? num(b.zeit, 0) - zeitFrueh(b) : 0;
-  if (b && isDate(b.tag) && b.tag < t && offen > 0) part.zeitFrueher = Object.assign({}, isObj(b.zeitFrueher) ? b.zeitFrueher : {}, { [b.tag]: num((b.zeitFrueher || {})[b.tag], 0) + offen });
+  const part = Object.assign({ tag: t, woche: mondayOf(t), warImTag: true }, b && b.tag !== t ? zeitBleibt(b) : {});
   patch('bloecke', id, part);
 }
 // Von Hand auf einen Tag gelegt: bleibt dort, auch beim Verteilen und wenn ein Termin dazukommt
 function moveBlock(id, d) {
   if (!D.bloecke[id] || !isDate(d)) return;
-  undoable('Liegt jetzt am ' + WDL[wdOf(d)], () => patch('bloecke', id, { tag: d, fest: true, zurueckgelegt: false }));
+  undoable('Liegt jetzt am ' + WDL[wdOf(d)], () => patch('bloecke', id, Object.assign({ tag: d, fest: true, zurueckgelegt: false }, D.bloecke[id].tag !== d ? zeitBleibt(D.bloecke[id]) : {})));
 }
 function pushToPool(id) {
   if (timerRef() === 'b:' + id) stopTimer();
-  undoable('In „Noch offen“ zurückgelegt', () => patch('bloecke', id, { tag: null, zurueckgelegt: true }));
+  undoable('In „Noch offen“ zurückgelegt', () => patch('bloecke', id, Object.assign({ tag: null, zurueckgelegt: true }, zeitBleibt(D.bloecke[id]))));
 }
 function addBlock(f) {
   const t = f.date || today();
@@ -2035,7 +2068,16 @@ function wdhNachtragen(date) {
 function wZeit(id) { const p = wParse(id); const st = wdhState(p.date); return p.ref ? num(st.zeiten[p.ref], 0) : st.zeitAlt; }
 function setZeit(ref, min) {
   const [k, id] = ref.split(':');
-  if (k === 'b') { patch('bloecke', id, { zeit: min || null }); syncRest(id, true); }
+  if (k === 'b') {
+    const b = D.bloecke[id]; const part = { zeit: min || null };
+    let ueber = b ? zeitFrueh(b) - num(min, 0) : 0;
+    if (ueber > 0) { // weniger als an früheren Tagen erfasst: dort abziehen, beim jüngsten Tag zuerst
+      const zf = Object.assign({}, b.zeitFrueher);
+      Object.keys(zf).sort().reverse().forEach((d) => { const ab = Math.min(ueber, num(zf[d], 0)); zf[d] = num(zf[d], 0) - ab; ueber -= ab; });
+      part.zeitFrueher = zf;
+    }
+    patch('bloecke', id, part); syncRest(id, true);
+  }
   else if (k === 'w') { const p = wParse(id); if (p.ref) patch('tage', p.date, { wdh: { zeiten: { [p.ref]: min || null } } }); else patch('tage', id, { wdh: { zeit: min || null } }); }
 }
 
@@ -2074,7 +2116,7 @@ function carryKeep(id) {
   const t = today();
   const b = D.bloecke[id];
   if (!b) return;
-  patch('bloecke', id, { woche: mondayOf(t), tag: null, mitgenommen: true, ausWoche: b.woche });
+  patch('bloecke', id, Object.assign({ woche: mondayOf(t), tag: null, mitgenommen: true, ausWoche: b.woche }, zeitBleibt(b)));
   if (!carryOf(mondayOf(t)).length) S.carryDone = mondayOf(t);
 }
 function carryVoraus(id, W) {
@@ -2131,14 +2173,18 @@ function clearPlanBlocks(T) {
   const t = today();
   Object.keys(D.bloecke).forEach((id) => {
     const b = D.bloecke[id];
-    if (b.woche === T && b.status === 'offen' && (b.quelle === 'liste' || b.quelle === 'claude') && !b.mitgenommen && !b.restVon && !b.fest && b.tag !== t) del('bloecke', id);
+    if (b.woche === T && b.status === 'offen' && (b.quelle === 'liste' || b.quelle === 'claude') && !b.mitgenommen && !b.restVon && !b.fest && !num(b.zeit, 0) && b.tag !== t) del('bloecke', id);
   });
 }
 function planRows(T) {
   const kept = {};
   Object.keys(D.bloecke).forEach((id) => {
     const b = D.bloecke[id];
-    if (b.woche === T && b.vorhaben && b.status !== 'gestrichen') kept[b.vorhaben] = (kept[b.vorhaben] || 0) + (b.status === 'erledigt' || b.tag === today() || b.restVon || b.fest ? num(b.std, vStd(D.vorhaben[b.vorhaben] || {})) : 0);
+    if (b.woche !== T || !b.vorhaben || b.status === 'gestrichen') return;
+    // Der Rest eines teilweise erledigten Blocks steckt schon in dessen Stunden
+    const ur = b.restVon ? D.bloecke[b.restVon] : null;
+    if (b.status === 'offen' && ur && ur.status === 'erledigt' && ur.vorhaben === b.vorhaben && ur.woche === T) return;
+    kept[b.vorhaben] = (kept[b.vorhaben] || 0) + (b.status === 'erledigt' || b.tag === today() || b.restVon || b.fest || num(b.zeit, 0) ? num(b.std, vStd(D.vorhaben[b.vorhaben] || {})) : 0);
   });
   return vorhabenFor(T).filter((v) => String(v.name || '').trim()).map((v) => ({
     id: v.id, titel: v.name.trim(), hours: Math.max(0, vStd(v) - (kept[v.id] || 0)), modus: v.modus || null,
@@ -2254,13 +2300,13 @@ function weekFacts(W) {
   Object.keys(D.bloecke).forEach((id) => {
     const b = D.bloecke[id];
     if (b.woche !== W || b.quelle === 'klausur') return;
-    if (b.status === 'erledigt') { done.push(b.titel); zeit += num(b.zeit, 0); }
+    if (b.status === 'erledigt') done.push(b.titel);
     else if (b.status === 'offen') open.push(b.titel);
   });
   let wdhTage = 0; let wdhDone = 0; let rDone = 0; let rAll = 0;
   weekDates(W).forEach((d) => {
     if (d > today()) return;
-    zeit += wdhState(d).zeit + terminZeitAt(d);
+    zeit += erfasstAt(d);
     if (wdhPlanned(d)) { wdhTage++; if (wdhState(d).done) wdhDone++; }
     routinenAt(d).forEach((r) => { rAll++; if (((tag(d).routinen || {})[r.id] || {}).erledigt) rDone++; });
   });
@@ -2571,7 +2617,7 @@ function viewHeute() {
   if (simLabel) h += '<span class="sim">Simulation: ' + esc(fmtShort(t)) + ' ' + Math.floor(nowMin() / 60) + ':' + String(nowMin() % 60).padStart(2, '0') + '</span>';
   if ((pz.frei || freeDay) && !past) {
     h += '<div class="state"><span class="sun">' + ico('heute') + '</span><span class="t">' + (pz.frei ? 'Pause · ' + esc(pz.frei.name || 'frei') : 'Freier Tag') + '</span>' +
-      '<span class="s">' + (pz.frei ? 'Bis ' + esc(fmtDMon(pz.frei.bis)) + ' ruhen Vorschlag, Wiederholung und Erinnerung. Wenn du magst, kannst du trotzdem etwas eintragen.' : 'Nichts geplant, nichts offen. Wenn du magst, kannst du trotzdem etwas hinzufügen.') + '</span></div>';
+      '<span class="s">' + (pz.frei ? 'Bis ' + esc(fmtDMon(pz.frei.bis)) + ' ruhen Vorschlag, Wiederholung und Erinnerung. Wenn du magst, kannst du trotzdem etwas eintragen.' : (poolOf(W).length + wdhUeberhang(t).length ? 'Für heute ist nichts geplant. Was diese Woche noch offen ist, steht unten – nur wenn du magst.' : 'Nichts geplant, nichts offen. Wenn du magst, kannst du trotzdem etwas hinzufügen.')) + '</span></div>';
   }
   const left = [];
   const plan = termShown.map((x) => rowTermin(t, x)).join('') + blocks.map(rowBlock).join('') + wdhListe(t).map((x) => rowWdh(t, x)).join('');
@@ -2979,13 +3025,13 @@ function weekStats(W) {
   const per = {}; const titel = [];
   Object.keys(D.bloecke).forEach((id) => {
     const b = D.bloecke[id];
-    if (b.status !== 'erledigt' || !isDate(b.erledigtAm) || b.erledigtAm < W || b.erledigtAm > end) return;
-    n++; zeit += zeitAmTag(b); if (b.titel && b.titel !== 'Freie Lernzeit') titel.push(b.titel);
-    const g = b.gebiet || (b.thema ? topOf(b.thema) : null) || '';
+    if (b.status !== 'erledigt' || b.quelle === 'klausur' || !isDate(b.erledigtAm) || b.erledigtAm < W || b.erledigtAm > end) return;
+    n++; if (b.titel && b.titel !== 'Freie Lernzeit') titel.push(b.titel);
+    const g0 = b.gebiet || (b.thema ? topOf(b.thema) : null) || '';
+    const g = g0 && thema(g0) ? g0 : '';
     per[g] = (per[g] || 0) + 1;
   });
-  weekDates(W).forEach((d) => { zeit += wdhState(d).zeit + terminZeitAt(d); });
-  Object.keys(D.bloecke).forEach((id) => { const b = D.bloecke[id]; if (b.status === 'erledigt' && isObj(b.zeitFrueher)) Object.keys(b.zeitFrueher).forEach((d) => { if (d >= W && d <= end) zeit += num(b.zeitFrueher[d], 0); }); });
+  weekDates(W).forEach((d) => { zeit += erfasstAt(d); });
   const freiTage = weekDates(W).filter((d) => pauseAt(d).frei).length;
   const pz = weekDates(W).map((d) => pauseAt(d).frei).find(Boolean) || null;
   const wdhTage = weekDates(W).filter((d) => pauseAt(d).wdh && !pauseAt(d).frei).length;
@@ -3163,10 +3209,10 @@ function viewKalender() {
 const ZS_N = 12; // Wochen pro Ansicht
 function zsDaten(von, bis) {
   const out = {}; // gebiet -> W -> { neu: [], wdh: [] }
-  const add = (g, W, art, txt) => { g = g || ''; out[g] = out[g] || {}; out[g][W] = out[g][W] || { neu: [], wdh: [], durch: [] }; if (out[g][W][art].indexOf(txt) < 0) out[g][W][art].push(txt); };
+  const add = (g, W, art, txt) => { g = g && thema(g) ? g : ''; out[g] = out[g] || {}; out[g][W] = out[g][W] || { neu: [], wdh: [], durch: [] }; if (out[g][W][art].indexOf(txt) < 0) out[g][W][art].push(txt); };
   Object.keys(D.bloecke).forEach((id) => {
     const b = D.bloecke[id];
-    if (b.status !== 'erledigt' || b.wdhVon || !isDate(b.erledigtAm) || b.erledigtAm < von || b.erledigtAm > bis || b.titel === 'Freie Lernzeit') return;
+    if (b.status !== 'erledigt' || b.wdhVon || b.quelle === 'klausur' || !isDate(b.erledigtAm) || b.erledigtAm < von || b.erledigtAm > bis || b.titel === 'Freie Lernzeit') return;
     add(b.gebiet || (b.thema ? topOf(b.thema) : null), mondayOf(b.erledigtAm), 'neu', b.titel);
   });
   Object.keys(D.tage).forEach((d) => {
@@ -3209,13 +3255,13 @@ function viewZeitstrahl() {
       const pz = weekDates(W).filter((d) => pauseAt(d).frei).length >= 4;
       const sel = K.zsSel && K.zsSel.g === (g || '') && K.zsSel.w === W;
       const f = g ? gFarbe(g) : null; const col = f ? 'var(--g-' + f + ')' : 'var(--ring)';
-      const mark = !x ? '' : (x.neu.length ? '<span style="width:14px;height:14px;border-radius:7px;background:' + col + '"></span>' : '<span style="width:14px;height:14px;box-sizing:border-box;border-radius:7px;border:2px solid ' + col + '"></span>');
-      const lab = 'KW ' + kwOf(W) + ', ' + name + ': ' + (x ? (x.neu.length ? x.neu.length + ' neu' : '') + (x.neu.length && x.wdh.length ? ', ' : '') + (x.wdh.length ? x.wdh.length + ' wiederholt' : '') : (pz ? 'Pause' : 'nichts'));
+      const mark = !x ? '' : (x.neu.length ? '<span style="width:14px;height:14px;border-radius:7px;background:' + col + '"></span>' : (x.wdh.length ? '<span style="width:14px;height:14px;box-sizing:border-box;border-radius:7px;border:2px solid ' + col + '"></span>' : '<span style="width:8px;height:8px;border-radius:4px;background:' + col + '"></span>'));
+      const lab = 'KW ' + kwOf(W) + ', ' + name + ': ' + (x ? [x.neu.length ? x.neu.length + ' neu' : '', x.wdh.length ? x.wdh.length + ' wiederholt' : '', x.durch.length ? x.durch.length + ' durchgearbeitet' : ''].filter(Boolean).join(', ') : (pz ? 'Pause' : 'nichts'));
       h += '<button style="height:40px;min-width:0;padding:0;border:0;border-left:1px solid var(--line);background:' + (sel ? 'var(--soft)' : (pz ? 'var(--ok-soft)' : 'transparent')) + ';display:flex;align-items:center;justify-content:center;cursor:' + (x ? 'pointer' : 'default') + '" title="' + esc(lab) + '" aria-label="' + esc(lab) + '"' + (x ? ' data-a="zsSel" data-g="' + esc(g || '') + '" data-w="' + W + '"' : '') + '>' + mark + '</button>';
     });
     h += '</div>';
   });
-  h += '<div class="legend2" style="padding-top:10px"><span><i style="width:12px;height:12px;border-radius:6px;background:var(--ring)"></i>neu gelernt</span><span><i style="width:12px;height:12px;border-radius:6px;border:2px solid var(--ring)"></i>nur wiederholt</span><span><i style="width:16px;height:12px;background:var(--ok-soft)"></i>Pause</span></div></section>';
+  h += '<div class="legend2" style="padding-top:10px"><span><i style="width:12px;height:12px;border-radius:6px;background:var(--ring)"></i>neu gelernt</span><span><i style="width:12px;height:12px;border-radius:6px;border:2px solid var(--ring)"></i>nur wiederholt</span><span><i style="width:8px;height:8px;border-radius:4px;background:var(--ring)"></i>nur als durchgearbeitet markiert</span><span><i style="width:16px;height:12px;background:var(--ok-soft)"></i>Pause</span></div></section>';
   if (K.zsSel) {
     const x = (data[K.zsSel.g] || {})[K.zsSel.w];
     if (x) {
@@ -3379,7 +3425,7 @@ function viewZahlen() {
     const q = (p) => work[Math.min(work.length - 1, Math.floor(p * (work.length - 1) + 0.5))];
     cards += '<div role="img" aria-label="' + esc(show.map((s) => 'KW ' + kwOf(s.W) + ': ' + (s.pause ? 'Pause' : s.n)).join(', ')) + '" style="display:flex;flex-direction:column;gap:4px"><div class="bars' + (dense ? ' dense' : '') + '">' +
       show.map((s) => '<div' + (s.wdhPause ? ' class="wp"' : '') + '>' + (s.pause ? '<span class="v">–</span><span class="b p" style="height:18px"></span>' : '<span class="v">' + s.n + '</span><span class="b" style="height:' + Math.max(2, Math.round((s.n / max) * 100)) + 'px"></span>') + '</div>').join('') +
-      '</div><div class="barlab' + (dense ? ' dense' : '') + '">' + show.map((s, i) => '<span>' + (!dense || i % 4 === 0 || i === show.length - 1 ? kwOf(s.W) : '') + '</span>').join('') + '</div></div>';
+      '</div><div class="barlab' + (dense ? ' dense' : '') + '">' + show.map((s, i) => '<span>' + (!dense || (i % 4 === 0 && i < show.length - 2) || i === show.length - 1 ? kwOf(s.W) : '') + '</span>').join('') + '</div></div>';
     const pz = show.filter((s) => s.pause).map((s) => 'KW ' + kwOf(s.W) + ' (' + (s.pause.name || 'frei') + ')');
     const wz = show.filter((s) => s.wdhPause && !s.pause).map((s) => 'KW ' + kwOf(s.W) + (s.wdhPause.name ? ' (' + s.wdhPause.name + ')' : ''));
     if (pz.length) cards += '<span class="small" style="font-size:12px">' + esc('Gestrichelt, Pause: ' + pz.join(', ')) + '</span>';
@@ -3489,12 +3535,11 @@ Object.assign(EXTRA_ACT, {
       if (F.kErr) return 'keep';
       const ganz = !!F.kGanz; const von = ganz ? '' : F.kTVon; const bis = ganz ? '' : (F.kTBis || '');
       const kl = F.kKlausur ? { art: 'klausur', gebiet: F.kGeb || null } : { art: null, gebiet: null };
-      if (f.id) undoable(F.kKlausur ? 'Klausur gespeichert' : 'Termin gespeichert', () => patch('termine', f.id, Object.assign({ titel: name, datum: F.kVon, von: von, bis: bis, ganztags: ganz, beispiel: false }, kl)));
+      if (f.id) undoable(F.kKlausur ? 'Klausur gespeichert' : 'Termin gespeichert', () => { patch('termine', f.id, Object.assign({ titel: name, datum: F.kVon, von: von, bis: bis, ganztags: ganz, beispiel: false }, kl)); reflowDay(F.kVon); });
       else if (F.kKlausur && F.kWdh) undoable('Klausur eingetragen, jede Woche am ' + WDL[wdOf(F.kVon)], () => addTerminWeekly(F.kVon, name, von, bis, ganz, F.kTEnd, kl));
       else if (F.kKlausur) undoable('Klausur eingetragen', () => addTerminOnce(F.kVon, name, von, bis, ganz, kl));
       else if (F.kWdh) undoable('Termin eingetragen, jede Woche am ' + WDL[wdOf(F.kVon)], () => addTerminWeekly(F.kVon, name, von, bis, ganz, F.kTEnd));
       else undoable('Termin eingetragen', () => addTerminOnce(F.kVon, name, von, bis, ganz));
-      if (f.id) reflowDay(F.kVon);
       K.form = null; return;
     }
     if (f.kind === 'etappe' && !name) { F.kErr = 'Eine Etappe braucht einen Namen.'; return 'keep'; }
@@ -3722,10 +3767,19 @@ function thMerge(id, target) {
     Object.keys(D.bloecke).forEach((k) => {
       const b = D.bloecke[k]; const part = {};
       if (b.thema === id) { part.thema = target; part.gebiet = g; }
+      else if (b.gebiet === id) part.gebiet = g;
       if (b.wdhVon === id) part.wdhVon = target;
       if (Object.keys(part).length) patch('bloecke', k, part);
     });
-    Object.keys(D.vorhaben).forEach((k) => { if (D.vorhaben[k].wdhVon === id) patch('vorhaben', k, { wdhVon: target }); });
+    Object.keys(D.vorhaben).forEach((k) => {
+      const v = D.vorhaben[k]; const part = {};
+      if (v.wdhVon === id) part.wdhVon = target;
+      if (v.thema === id) part.thema = target;
+      if (v.gebiet === id) part.gebiet = g;
+      if (Object.keys(part).length) patch('vorhaben', k, part);
+    });
+    Object.keys(D.etappen).forEach((k) => { const st = D.etappen[k].stoff; if (Array.isArray(st) && st.indexOf(id) >= 0) patch('etappen', k, { stoff: st.map((x) => (x === id ? target : x)).filter((x, i, a) => a.indexOf(x) === i) }); });
+    Object.keys(D.termine).forEach((k) => { if (D.termine[k].gebiet === id) patch('termine', k, { gebiet: target }); });
     const sub = thDesc(id);
     kids.forEach((k) => patch('themen', k, { eltern: target }));
     sub.forEach((x) => Object.keys(D.bloecke).forEach((k) => { if (D.bloecke[k].thema === x && D.bloecke[k].gebiet !== g) patch('bloecke', k, { gebiet: g }); }));
@@ -3752,7 +3806,16 @@ function thDeleteTree(ids, text, vorher, genau, srBehalten) {
       else if (all.has(b.thema)) part.thema = null;
       patch('bloecke', k, part);
     });
-    Object.keys(D.vorhaben).forEach((k) => { if (all.has(D.vorhaben[k].wdhVon)) patch('vorhaben', k, { wdhVon: null }); });
+    Object.keys(D.bloecke).forEach((k) => { if (all.has(D.bloecke[k].gebiet)) patch('bloecke', k, { gebiet: null }); });
+    Object.keys(D.vorhaben).forEach((k) => {
+      const v = D.vorhaben[k]; const part = {};
+      if (all.has(v.wdhVon)) part.wdhVon = null;
+      if (all.has(v.thema)) part.thema = null;
+      if (all.has(v.gebiet)) part.gebiet = null;
+      if (Object.keys(part).length) patch('vorhaben', k, part);
+    });
+    Object.keys(D.etappen).forEach((k) => { const st = D.etappen[k].stoff; if (Array.isArray(st) && st.some((x) => all.has(x))) patch('etappen', k, { stoff: st.filter((x) => !all.has(x)) }); });
+    Object.keys(D.termine).forEach((k) => { if (all.has(D.termine[k].gebiet)) patch('termine', k, { gebiet: null }); });
     all.forEach((id) => del('themen', id));
   });
   if (all.has(TH.sel)) TH.sel = null;
@@ -3914,7 +3977,7 @@ function thDetail(id) {
     '<h2 class="serif" style="font-size:24px;line-height:1.15">' + esc(t.name) + bsp(t) + '</h2>';
   h += '<div class="chips" role="group" aria-label="Zustand">' + ['aktiv', 'pausiert', 'abgeschlossen'].map((x) => '<button class="sel" aria-pressed="' + (z === x) + '" data-a="thZ" data-id="' + esc(id) + '" data-v="' + x + '">' + zWort(x) + '</button>').join('') + '</div>';
   if (z === 'abgeschlossen') h += '<span class="small">' + (isDate(t.abgeschlossenAm) ? 'Erledigt am ' + esc(fmtDMonY(t.abgeschlossenAm)) + '. ' : '') + 'Wieder aktiviert beginnt die Wiederholung mit kurzem Abstand neu.</span>';
-  else if (ez !== z) h += '<span class="small">Ruht mit dem übergeordneten Thema (' + ez + ').</span>';
+  else if (ez !== z) h += '<span class="small">Ruht mit dem übergeordneten Thema (' + zWort(ez) + ').</span>';
   else if (z === 'pausiert') h += '<span class="small">Pausiert: kommt nicht in die Wiederholung, bis du es wieder aktivierst.</span>';
   const wOn = t.wiederholen !== false;
   h += '<button class="switch ink" role="switch" aria-checked="' + wOn + '" data-a="thW" data-id="' + esc(id) + '"><span class="tr"></span>wiederholen</button>';
@@ -4073,7 +4136,6 @@ const zWort = (z) => (z === 'abgeschlossen' ? 'erledigt' : z);
 const ZUST = ['aktiv', 'pausiert', 'abgeschlossen'];
 // Angezeigt wird „erledigt“; gespeichert bleibt 'abgeschlossen'
 const MODS = [
-  { k: 'suche', name: 'Suche', text: 'Suchfeld in „Themen“ für Themen und Lerneinheiten', std: 'aktiv', gebaut: true },
   { k: 'anki', name: 'Anki-Export', text: 'Lerneinheiten als Karten exportieren', std: 'pausiert', gebaut: false },
   { k: 'folien', name: 'Folien herausschreiben', text: 'Inhalte aus Vorlesungsfolien herausschreiben', std: 'pausiert', gebaut: false }
 ];
@@ -4219,7 +4281,7 @@ function datenHtml() {
   const s = D.meta.sicherung;
   const n = (col) => Object.keys(D[col]).length;
   let h = '<section class="panel" aria-label="Daten auf diesem Gerät"><h2>Daten auf diesem Gerät</h2>' +
-    '<span class="small" style="font-size:14px">' + (sync.an ? 'Alles liegt auf diesem Gerät und über den Abgleich auch in deiner Ablage. Eine Sicherung als Datei ab und zu schadet trotzdem nicht.' : 'Alles liegt nur auf diesem Mac, in diesem Browser. Sichere es ab und zu als Datei, etwa in iCloud Drive. Mit der Datei kannst du auch umziehen.') + '</span>' +
+    '<span class="small" style="font-size:14px">' + (sync.an ? 'Alles liegt auf diesem Gerät und über den Abgleich auch in deiner Ablage. Eine Sicherung als Datei ab und zu schadet trotzdem nicht.' : 'Alles liegt nur auf diesem Gerät, in diesem Browser. Sichere es ab und zu als Datei, etwa in iCloud Drive. Mit der Datei kannst du auch umziehen.') + '</span>' +
     '<span class="small">' + (s && isDate(s.am) ? 'Zuletzt gesichert: ' + esc(fmtDMonY(s.am)) : 'Noch nicht gesichert') + ' · ' + anz(n('themen'), 'Thema', 'Themen') + ' · ' + anz(n('bloecke'), 'Eintrag', 'Einträge') + ' · ' + anz(n('termine'), 'Termin', 'Termine') + '</span>';
   if (ES.importPending) {
     const p = ES.importPending;
@@ -4337,7 +4399,7 @@ Object.assign(EXTRA_ACT, {
   abgAus: () => { syncAus(); toast('Abgleich ausgeschaltet. Die Daten bleiben auf diesem Gerät.', false); },
   abgVergiss: () => { syncAus(); try { localStorage.removeItem(SYNC_KEY); } catch (e) { /* egal */ } sync = syncLoad(); F.abgToken = ''; toast('Schlüssel von diesem Gerät entfernt', false); return 'keep'; }
 });
-const APP_STAND = '2026-11-13'; // bei jeder Veröffentlichung anpassen
+const APP_STAND = '2026-11-15'; // bei jeder Veröffentlichung anpassen
 function viewEinstellungen() {
   const t = today();
   const h = '<header class="head"><div class="col"><span class="date">' + esc(fmtLong(t)) + '</span><h1>Einstellungen</h1><p class="line">Selten gebraucht. Im Tagesablauf tauchen diese Werte nie auf.</p></div></header>';
@@ -4581,14 +4643,23 @@ const ACT = {
     const ref = d.ref || S.editT;
     const v = String(F.zeit || '').trim();
     const m = v ? parseDur(v) : 0;
-    if (m == null || m > 24 * 60) { toast('Zeit bitte als 1:30 oder in Minuten eingeben.', false); return 'keep'; }
+    if (m == null || m > 24 * 60) { toast('Zeit bitte als 1:30, als „2 h“ oder in Minuten eingeben.', false); return 'keep'; }
     const [k, id] = String(ref).split(':');
     const b = k === 'b' ? D.bloecke[id] : null;
     const day = b ? (b.tag || curDay()) : wParse(id).date;
     const cur = b ? num(b.zeit, 0) : wZeit(id);
     if (m > cur && !guardAdd(day)) return 'keep';
-    setZeit(ref, m); S.editT = null;
-    if (m > cur && markNach(day)) { if (b) patch('bloecke', id, { nachgetragen: true }); else { const wp = wParse(id); if (wp.ref) patch('tage', wp.date, { wdh: { bew: { [wp.ref]: { zeitNach: true } } } }); else patch('tage', id, { wdh: { zeitNachgetragen: true } }); } }
+    S.editT = null;
+    if (m === cur) return;
+    recording = {};
+    try {
+      setZeit(ref, m);
+      if (m > cur && markNach(day)) { if (b) patch('bloecke', id, { nachgetragen: true }); else { const wp = wParse(id); if (wp.ref) patch('tage', wp.date, { wdh: { bew: { [wp.ref]: { zeitNach: true } } } }); else patch('tage', id, { wdh: { zeitNachgetragen: true } }); } }
+    } finally {
+      const snap = recording; recording = null;
+      const rest = toastState && toastState.snap && /^Rest /.test(toastState.text);
+      if (!rest && Object.keys(snap).length) toast('Zeit gespeichert', snap);
+    }
   },
   keepB: (d) => toggleWiederholen(d.id),
   rateB: (d) => rateBlock(d.id, d.r),
@@ -4732,7 +4803,7 @@ window.addEventListener('resize', () => { const w = window.innerWidth >= 900; if
 document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleRender(); });
 // Zuletzt geöffnete Ansicht gilt, solange die App offen ist (auch nach Neuladen); nach dem Beenden startet „Heute“
 try { const v = sessionStorage.getItem('ls-view'); if (v && VIEW_FN[v]) S.view = v; } catch (e) { /* egal */ }
-window.__ls = { abgleich: { jetzt: syncJetzt, stand: () => clone(Object.assign({}, sync, { token: sync.token ? '(gesetzt)' : '' })), T: SYNC_T, merge: syncMerge }, D: D, S: S, F: F, cfg: cfg, today: today, setSim: (d, m) => { setSim(d, m); scheduleRender(); }, progress: progress, pufferDate: pufferDate, capacity2: (T) => capacity(T, wdhSplit(T), planFrom(T), true), srItems: srItems, wdhListe: wdhListe, wdhSplit: wdhSplit, wdhForecast: wdhForecast, wdhRichtwert: wdhRichtwert, wdhUeberhang: wdhUeberhang, allocRegel: allocRegel, fillWdh: fillWdh, srRate: srRate, wdhState: wdhState, poolOf: poolOf, carryOf: carryOf, vorhabenFor: vorhabenFor, capacity: capacity, termineAt: termineAt, routinenAt: routinenAt, pauseAt: pauseAt, erfasstAt: erfasstAt, notizHtml: notizHtml, dbState: () => dbState, moveBlock: moveBlock, clearPlanBlocks: (T) => { clearPlanBlocks(T); scheduleRender(); } };
+window.__ls = { test: { parseDur: parseDur, rateWdh: rateWdh, setBlockDone: setBlockDone, toggleTermin: toggleTermin, planRows: planRows, weekStats: weekStats, weekFacts: weekFacts, backToWeek: backToWeek, pullToday: pullToday, thMerge: thMerge, zsDaten: zsDaten, patch: patch, undoable: undoable }, abgleich: { jetzt: syncJetzt, stand: () => clone(Object.assign({}, sync, { token: sync.token ? '(gesetzt)' : '' })), T: SYNC_T, merge: syncMerge }, D: D, S: S, F: F, cfg: cfg, today: today, setSim: (d, m) => { setSim(d, m); scheduleRender(); }, progress: progress, pufferDate: pufferDate, capacity2: (T) => capacity(T, wdhSplit(T), planFrom(T), true), srItems: srItems, wdhListe: wdhListe, wdhSplit: wdhSplit, wdhForecast: wdhForecast, wdhRichtwert: wdhRichtwert, wdhUeberhang: wdhUeberhang, allocRegel: allocRegel, fillWdh: fillWdh, srRate: srRate, wdhState: wdhState, poolOf: poolOf, carryOf: carryOf, vorhabenFor: vorhabenFor, capacity: capacity, termineAt: termineAt, routinenAt: routinenAt, pauseAt: pauseAt, erfasstAt: erfasstAt, notizHtml: notizHtml, dbState: () => dbState, moveBlock: moveBlock, clearPlanBlocks: (T) => { clearPlanBlocks(T); scheduleRender(); } };
 scheduleRender();
 initDb();
 if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch((e) => console.warn('Offline-Speicher', e));

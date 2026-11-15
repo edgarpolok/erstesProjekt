@@ -22,7 +22,7 @@ L.run(async () => {
   let s = await L.store(p);
   L.expect('gestern: Block abgehakt am Mittwoch, ohne „nachgetragen“', [s.bloecke.b1.status, s.bloecke.b1.erledigtAm, !!s.bloecke.b1.nachgetragen], ['erledigt', '2026-11-04', false]);
   L.expect('gestern: neue Zeile direkt erledigt, ohne „nachgetragen“', Object.values(s.bloecke).filter((x) => x.titel === 'Abendzeile vergessen').map((x) => [x.tag, x.status, !!x.nachgetragen]), [['2026-11-04', 'erledigt', false]]);
-  L.expect('gestern: Routine und Termin abgehakt, ohne „nachgetragen“', s.tage['2026-11-04'], { routinen: { r1: { erledigt: true, nachgetragen: false } }, termine: { t1: { erledigt: true, nachgetragen: false } } });
+  L.expect('gestern: Routine und Termin abgehakt, ohne „nachgetragen“', s.tage['2026-11-04'], { routinen: { r1: { erledigt: true, nachgetragen: false } }, termine: { t1: { erledigt: true, min: 120, nachgetragen: false } } });
   L.expect('vergangener Tag hat keine Timer-Knöpfe', await p.locator('[data-a=startT]').count(), 0);
 
   // Montag: abgeschlossen
@@ -55,6 +55,7 @@ L.run(async () => {
   await L.click(p, '[data-a=korrAsk]'); await L.click(p, '[data-a=korrYes]');
   await L.click(p, '[data-a=tBlock][data-id=b2]'); await L.click(p, '[data-a=tBlock][data-id=b3]');
   await L.click(p, '[data-a=openT][data-ref="b:b3"]'); await L.fill(p, '[data-in=zeit]', '1:30'); await L.click(p, '[data-a=saveT]');
+  await p.waitForTimeout(1500); // „Zeit gespeichert“ (5 s Rückgängig) liegt bei dieser Breite über dem Knopf der Routine
   await L.click(p, '[data-a=tRoutine]');
   await L.click(p, '[data-a=startAdd]'); await L.fill(p, '#neu-eintrag', 'Nachtrag Mo'); await L.click(p, '[data-a=doAdd]');
   s = await L.store(p);
