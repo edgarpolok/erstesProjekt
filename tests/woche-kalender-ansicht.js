@@ -38,6 +38,21 @@ L.run(async () => {
   L.expect('Terminformular steht unter den Spalten', await p.$$eval('.wbform #tm-titel', (e) => e.length), 1);
   await L.click(p, '[data-a=wAnsicht][data-v=li]');
   L.expect('zurück zur Liste', await p.$$eval('.day', (e) => e.length), 7);
+  // Spalten sind ab 900 px der Standard; Abhaken direkt in der Spalte (heute und gestern), nicht an kommenden Tagen
+  const sp = await L.open(Object.assign({}, seed, { bloecke: { b1: seed.bloecke.b1, b2: { titel: 'ZPO', woche: '2026-10-26', tag: '2026-10-28', status: 'offen', reihenfolge: 2 } } }), 'sim-2026-10-28-1000', { w: 1280, spalten: true });
+  await L.go(sp, 'woche');
+  L.expect('Spalten ohne Umschalten', await sp.$$eval('.wbrett .wcol', (e) => e.length), 7);
+  await L.click(sp, '.wcol[data-k="wc-2026-10-28"] [data-a=wTick][data-k=b]');
+  L.expect('Block in der Spalte abgehakt', (await L.store(sp)).bloecke.b2.status, 'erledigt');
+  await L.click(sp, '.wcol[data-k="wc-2026-10-28"] [data-a=wTick][data-k=r]');
+  L.expect('Routine in der Spalte abgehakt', (await L.store(sp)).tage['2026-10-28'].routinen.r1.erledigt, true);
+  L.has('Stand im Spaltenkopf', await L.text(sp, '.wcol[data-k="wc-2026-10-28"] .hd'), '2/2');
+  await L.click(sp, '.wcol[data-k="wc-2026-10-28"] [data-a=wTick][data-k=b]');
+  L.expect('nochmal tippen nimmt den Haken zurück', (await L.store(sp)).bloecke.b2.status, 'offen');
+  await L.click(sp, '.wcol[data-k="wc-2026-10-27"] [data-a=wTick][data-k=r]');
+  L.expect('gestern geht noch', (await L.store(sp)).tage['2026-10-27'].routinen.r1.erledigt, true);
+  L.expect('kommende Tage ohne Abhaken', await sp.$$eval('.wcol[data-k="wc-2026-10-29"] [data-a=wTick]', (e) => e.length), 0);
+  L.expect('älter als gestern ohne Abhaken', await sp.$$eval('.wcol[data-k="wc-2026-10-26"] [data-a=wTick]', (e) => e.length), 0);
   const schmal = await L.open(seed, 'sim-2026-10-28-1000', 390);
   await L.go(schmal, 'woche');
   L.expect('am iPhone kein Umschalter', await schmal.$$eval('[data-a=wAnsicht]', (e) => e.length), 0);
