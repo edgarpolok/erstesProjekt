@@ -134,6 +134,9 @@ L.run(async () => {
   L.expect('Suche: wöchentlicher Termin nur mit dem nächsten Mal', await p.locator('.terminliste [data-k=tb-t1]').count(), 1);
   await suche('gibtsnicht');
   L.has('Suche ohne Treffer', await L.text(p, '.terminliste'), 'Nichts gefunden');
+  await suche('alt');
+  L.has('Suche findet auch Vergangenes', await L.text(p, '[data-k="tl-alt-t5"]'), 'Alt');
+  L.has('Vergangenes steht unter eigener Überschrift', await L.text(p, '[data-k=tl-vergangen]'), 'Vergangen');
   await suche('');
   await L.click(p, '.terminliste [data-a=kEdit][data-id=t3]');
   await L.fill(p, '#tm-titel', 'Probeklausur ZR'); await L.click(p, '[data-a=tmSave]');
@@ -145,6 +148,59 @@ L.run(async () => {
   await L.go(p, 'kalender');
   await L.click(p, '[data-a=kAnsicht][data-v=liste]');
   await L.noHScroll(p, 'Terminliste (390 px)');
+  await p.context().close();
+
+  // 8) Termin über mehrere Tage
+  p = await L.open({}, 'sim-2026-11-10-1000', 1280);
+  await L.go(p, 'kalender');
+  await L.click(p, '#k-termine [data-a=kNew]:not([data-kl])');
+  await L.fill(p, '#tm-titel', 'Seminar'); await L.fill(p, '#tm-datum', '2026-11-18'); await L.fill(p, '#tm-bisd', '2026-11-20');
+  await L.fill(p, '#tm-von', '09:00'); await L.fill(p, '#tm-bis', '12:00'); await L.click(p, '[data-a=tmSave]');
+  s = await L.store(p);
+  L.expect('mehrtägig: letzter Tag gespeichert', s.termine[ids(s)[0]].bisDatum, '2026-11-20');
+  L.expect('mehrtägig: erster Tag', await titel(p, '2026-11-18'), ['09:00 Seminar']);
+  L.expect('mehrtägig: mittlerer Tag', await titel(p, '2026-11-19'), ['09:00 Seminar']);
+  L.expect('mehrtägig: letzter Tag', await titel(p, '2026-11-20'), ['09:00 Seminar']);
+  L.expect('mehrtägig: Tag danach frei', await titel(p, '2026-11-21'), []);
+  const voll = await frei(p, '2026-11-17');
+  L.expect('mehrtägig: nimmt an jedem Tag Platz weg', await frei(p, '2026-11-19'), voll - 3);
+  await L.click(p, '[data-a=kAnsicht][data-v=liste]');
+  L.expect('mehrtägig: steht in der Terminliste einmal', await p.locator('.terminliste .tb-row').count(), 1);
+  L.has('mehrtägig: Liste nennt den Zeitraum', await L.text(p, '.terminliste .tb-row'), '18.11. bis 20.11.');
+  await L.click(p, '.terminliste [data-a=kNew]:not([data-kl])');
+  await L.fill(p, '#tm-titel', 'Verkehrt'); await L.fill(p, '#tm-datum', '2026-11-18'); await L.fill(p, '#tm-bisd', '2026-11-17'); await L.fill(p, '#tm-von', '09:00'); await L.click(p, '[data-a=tmSave]');
+  L.has('mehrtägig: Ende vor Beginn abgelehnt', await L.text(p, '[data-k=tmform] .err'), 'nicht vor dem Tag');
+  await L.click(p, '[data-a=tmCancel]');
+
+  // 9) Alle zwei Wochen und monatlich
+  await L.click(p, '.terminliste [data-a=kNew]:not([data-kl])');
+  await L.fill(p, '#tm-titel', 'Kolloquium'); await L.fill(p, '#tm-datum', '2026-11-11'); await L.fill(p, '#tm-von', '16:00');
+  await L.click(p, '[data-a=tmWdh][data-v="2"]'); await L.click(p, '[data-a=tmSave]');
+  L.has('zwei Wochen: Hinweis nennt den Rhythmus', await L.toast(p), 'alle zwei Wochen am Mittwoch');
+  s = await L.store(p);
+  const ko = ids(s).find((x) => s.termine[x].titel === 'Kolloquium');
+  L.expect('zwei Wochen: Rhythmus gespeichert', s.termine[ko].rhythmus, 'zwei');
+  L.expect('zwei Wochen: erster Mittwoch', await titel(p, '2026-11-11'), ['16:00 Kolloquium']);
+  L.expect('zwei Wochen: eine Woche später nicht', await titel(p, '2026-11-18'), ['09:00 Seminar']);
+  L.expect('zwei Wochen: zwei Wochen später wieder', await titel(p, '2026-11-25'), ['16:00 Kolloquium']);
+  L.has('zwei Wochen: Liste nennt den Rhythmus', await L.text(p, '[data-k="tl-2026-11-11"]'), 'alle zwei Wochen');
+  await L.click(p, '.terminliste [data-a=kNew]:not([data-kl])');
+  await L.fill(p, '#tm-titel', 'Miete'); await L.fill(p, '#tm-datum', '2026-12-31'); await L.click(p, '[data-a=tmArt][data-v=privat]');
+  await L.click(p, '[data-a=tmGanz][data-v="1"]'); await L.click(p, '[data-a=tmWdh][data-v=m]');
+  L.has('monatlich: Formular nennt den Tag', await L.text(p, '[data-k=tmform]'), 'Jeden Monat am 31.');
+  L.expect('monatlich: keine Wochentage zur Wahl', await p.locator('[data-a=tmWt]').count(), 0);
+  await L.click(p, '[data-a=tmSave]');
+  s = await L.store(p);
+  const mi = ids(s).find((x) => s.termine[x].titel === 'Miete');
+  L.expect('monatlich: Rhythmus gespeichert', s.termine[mi].rhythmus, 'monat');
+  L.expect('monatlich: am 31.12.', await titel(p, '2026-12-31'), [' Miete']);
+  L.expect('monatlich: am 31.1.', await titel(p, '2027-01-31'), [' Miete']);
+  L.expect('monatlich: im Februar am letzten Tag', await titel(p, '2027-02-28'), [' Miete']);
+  L.expect('monatlich: am 27.2. nicht', await titel(p, '2027-02-27'), []);
+  await L.go(p, 'einstellungen');
+  const es = await L.text(p, '[aria-label="Wiederkehrende Termine"]');
+  L.has('Einstellungen nennen „alle zwei Wochen“', es, 'alle zwei Wochen Mi');
+  L.has('Einstellungen nennen „jeden Monat am 31.“', es, 'jeden Monat am 31.');
   await p.context().close();
 
   // 6) iPhone: Tagesblatt steht unter der Woche, nichts ragt über den Rand

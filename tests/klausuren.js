@@ -19,8 +19,9 @@ L.run(async () => {
   L.expect('eine Klausur gespeichert', kl.length, 1);
   const k = kl[0] ? kl[0][1] : {};
   L.expect('Klausur: Art, Gebiet, Tag, Zeit', [k.titel, k.art, k.gebiet, k.datum, k.von, k.bis], ['Zivilrecht Probeklausur', 'klausur', 'zr', '2026-11-20', '09:00', '14:00']);
-  L.has('Liste zeigt das Schildchen „Klausur“', await L.text(p, '#k-termine'), 'Klausur');
-  L.has('Liste zeigt den Titel', await L.text(p, '#k-termine'), 'Zivilrecht Probeklausur');
+  await L.click(p, '[data-a=kAnsicht][data-v=liste]');
+  L.has('Terminliste zeigt das Schildchen „Klausur“', (await L.text(p, '.terminliste .tb-row')).toLowerCase(), 'klausur');
+  L.has('Terminliste zeigt den Titel', await L.text(p, '.terminliste'), 'Zivilrecht Probeklausur');
   await p.context().close();
 
   // 2) Lernblöcke weichen aus, die Klausur verrutscht nicht

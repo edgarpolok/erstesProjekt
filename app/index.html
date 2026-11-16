@@ -1433,18 +1433,30 @@ function pauseAt(date) {
 }
 // Ausfälle wöchentlicher Termine im Voraus: ausfall = [{ von, bis }] (ein Tag: von = bis)
 const ausfallAm = (t, d) => Array.isArray(t.ausfall) && t.ausfall.some((a) => a && isDate(a.von) && a.von <= d && d <= (isDate(a.bis) ? a.bis : a.von));
-// Wöchentliche Termine, die an diesem Tag regulär stattfänden (ohne Blick auf Ausfälle und Pausen)
+const terminTage = (t) => (Array.isArray(t.wochentage) ? t.wochentage : (typeof t.wochentag === 'number' ? [t.wochentag] : []));
+// Letzter Tag eines einmaligen Termins (mehrtägig: bisDatum)
+const terminEnde = (t) => (isDate(t.bisDatum) && t.bisDatum > t.datum ? t.bisDatum : t.datum);
+// Trifft die Reihe diesen Tag (ohne Blick auf Ausfälle und Pausen)? rhythmus: 'zwei' = alle zwei Wochen ab der Woche von „ab“, 'monat' = jeden Monat am Tag von „ab“ (in kürzeren Monaten am letzten Tag)
+function serieTrifft(t, date) {
+  if ((isDate(t.ab) && date < t.ab) || (isDate(t.endet) && date > t.endet)) return false;
+  if (t.rhythmus === 'monat' && isDate(t.ab)) { const d = dmy(date); return d.d === Math.min(dmy(t.ab).d, new Date(Date.UTC(d.y, d.m, 0)).getUTCDate()); }
+  if (terminTage(t).indexOf(wdOf(date)) < 0) return false;
+  if (t.rhythmus === 'zwei' && isDate(t.ab)) return Math.round(dayDiff(mondayOf(date), mondayOf(t.ab)) / 7) % 2 === 0;
+  return true;
+}
+function rhythmusWort(t) {
+  if (t.rhythmus === 'monat' && isDate(t.ab)) return 'jeden Monat am ' + dmy(t.ab).d + '.';
+  return t.rhythmus === 'zwei' && isDate(t.ab) ? 'alle zwei Wochen' : 'jede Woche';
+}
+// Wiederkehrende Termine, die an diesem Tag regulär stattfänden (ohne Blick auf Ausfälle und Pausen)
 function wochenTermineAm(date) {
-  const wd = wdOf(date);
   return Object.keys(D.termine).filter((id) => {
     const t = D.termine[id];
     if (!t || isDate(t.datum) || t.zustand === 'abgeschlossen' || t.zustand === 'pausiert') return false;
-    const days = Array.isArray(t.wochentage) ? t.wochentage : (typeof t.wochentag === 'number' ? [t.wochentag] : []);
-    return days.indexOf(wd) >= 0 && (!isDate(t.ab) || t.ab <= date) && (!isDate(t.endet) || date <= t.endet);
+    return serieTrifft(t, date);
   }).map((id) => Object.assign({ id: id }, D.termine[id]));
 }
 function termineAt(date) {
-  const wd = wdOf(date);
   const pz = pauseAt(date);
   const out = [];
   const stTag = (D.tage[date] || {}).termine || {};
@@ -1454,16 +1466,15 @@ function termineAt(date) {
     // Beendet oder pausiert gilt nicht rückwirkend: was an einem Tag abgehakt wurde, bleibt dort stehen
     if ((t.zustand === 'abgeschlossen' || t.zustand === 'pausiert') && !(stTag[id] && stTag[id].erledigt)) return;
     let hit = false;
-    if (isDate(t.datum)) hit = t.datum === date;
+    if (isDate(t.datum)) hit = t.datum <= date && date <= terminEnde(t);
     else {
-      const days = Array.isArray(t.wochentage) ? t.wochentage : (typeof t.wochentag === 'number' ? [t.wochentag] : []);
-      hit = days.indexOf(wd) >= 0 && (!isDate(t.ab) || t.ab <= date) && (!isDate(t.endet) || date <= t.endet) && !pz.frei;
+      hit = serieTrifft(t, date) && !pz.frei;
       if (hit && Array.isArray(t.ausser) && t.ausser.indexOf(date) >= 0) hit = false;
       if (hit && ausfallAm(t, date)) hit = false;
     }
     if (hit) {
       const a = timeToMin(t.von); const b = timeToMin(t.bis);
-      out.push({ id: id, art: t.art || null, titel: t.titel || 'Termin', von: t.ganztags ? '' : t.von || '', bis: t.ganztags ? '' : t.bis || '', ganztags: !!t.ganztags, einmalig: isDate(t.datum), min: t.ganztags ? 0 : (a != null && b != null && b > a ? b - a : 60), beispiel: !!t.beispiel, privat: t.art === 'privat', ort: t.ort || '', notiz: t.notiz || '' });
+      out.push({ id: id, art: t.art || null, titel: t.titel || 'Termin', von: t.ganztags ? '' : t.von || '', bis: t.ganztags ? '' : t.bis || '', ganztags: !!t.ganztags, einmalig: isDate(t.datum), min: t.ganztags ? 0 : (a != null && b != null && b > a ? b - a : 60), beispiel: !!t.beispiel, datum: t.datum || '', privat: t.art === 'privat', ort: t.ort || '', notiz: t.notiz || '', rh: isDate(t.datum) ? '' : rhythmusWort(t), bisDatum: isDate(t.datum) && terminEnde(t) > t.datum ? t.bisDatum : '' });
     }
   });
   return out.sort((x, y) => String(x.von).localeCompare(String(y.von)));
@@ -2885,11 +2896,11 @@ function tmOpen(wo, o) {
     F.tmGanz = !!x.ganztags; F.tmVon = x.von || ''; F.tmBis = x.bis || ''; F.tmWdh = serie;
     F.tmDatum = serie ? (o.tag || x.ab || '') : x.datum;
     F.tmTage = serie ? (Array.isArray(x.wochentage) ? x.wochentage.slice() : (typeof x.wochentag === 'number' ? [x.wochentag] : [])) : []; F.tmTageAuto = false;
-    F.tmEnd = x.endet || ''; F.tmOrt = x.ort || ''; F.tmNotiz = x.notiz || ''; F.tmZaehlt = x.zeitZaehlt !== false;
+    F.tmEnd = x.endet || ''; F.tmRh = x.rhythmus === 'zwei' || x.rhythmus === 'monat' ? x.rhythmus : 'woche'; F.tmBisD = !serie && terminEnde(x) > x.datum ? x.bisDatum : ''; F.tmOrt = x.ort || ''; F.tmNotiz = x.notiz || ''; F.tmZaehlt = x.zeitZaehlt !== false;
     F.tmMehr = !!(x.ort || x.notiz || x.zeitZaehlt === false || (serie && !o.tag));
   } else {
     F.tmTitel = ''; F.tmArt = o.art || 'termin'; F.tmGeb = null; F.tmGanz = false; F.tmVon = o.von || ''; F.tmBis = o.bis || '';
-    F.tmWdh = !!o.wdh; F.tmDatum = o.d != null ? o.d : today(); F.tmTage = []; F.tmTageAuto = !o.wdh; F.tmEnd = ''; F.tmOrt = ''; F.tmNotiz = ''; F.tmZaehlt = true; F.tmMehr = false;
+    F.tmWdh = !!o.wdh; F.tmDatum = o.d != null ? o.d : today(); F.tmTage = []; F.tmTageAuto = !o.wdh; F.tmEnd = ''; F.tmRh = 'woche'; F.tmBisD = ''; F.tmOrt = ''; F.tmNotiz = ''; F.tmZaehlt = true; F.tmMehr = false;
     if (F.tmArt === 'klausur' && !F.tmVon) { F.tmVon = '09:00'; F.tmBis = '14:00'; }
   }
   focusSoon('tm-titel');
@@ -2916,13 +2927,23 @@ function terminFormU() {
   h += '<span class="flabel">Art</span>' + pick('tmArt', art, [['termin', 'Termin'], ['klausur', 'Klausur'], ['privat', 'Privat']], 'Art');
   if (art === 'klausur') h += '<span class="flabel">Rechtsgebiet</span>' + (gebiete().length ? gebietChips(F.tmGeb || null, 'tmGeb') : '<span class="small">Lege unter Themen ein Gebiet an, dann kannst du es hier wählen.</span>');
   if (art === 'privat') h += '<span class="small">Nimmt keinen Platz weg und zählt nicht zur erfassten Zeit.</span>';
-  if (!serie || nur) h += fld('tm-datum', 'tmDatum', 'Tag', 'date', ' data-live="1"' + (f.id ? '' : ' min="' + today() + '"'));
-  else if (!amTag) h += fld('tm-datum', 'tmDatum', f.wo === 'einst' ? 'ab (optional)' : 'ab', 'date', ' data-live="1"');
+  const rh = F.tmRh === 'zwei' || F.tmRh === 'monat' ? F.tmRh : 'woche';
+  if (nur) h += fld('tm-datum', 'tmDatum', 'Tag', 'date', ' data-live="1"');
+  else if (!serie) h += two(fld('tm-datum', 'tmDatum', 'Tag', 'date', ' data-live="1"' + (f.id ? '' : ' min="' + today() + '"')), fld('tm-bisd', 'tmBisD', 'bis (bei mehreren Tagen)', 'date'));
+  else if (!amTag) h += fld('tm-datum', 'tmDatum', rh !== 'woche' ? 'erster Termin' : (f.wo === 'einst' ? 'ab (optional)' : 'ab'), 'date', ' data-live="1"');
   h += pick('tmGanz', F.tmGanz ? '1' : '0', [['0', 'mit Uhrzeit'], ['1', 'ganztägig']], 'Uhrzeit');
   if (!F.tmGanz) h += two(fld('tm-von', 'tmVon', 'von', 'time'), fld('tm-bis', 'tmBis', 'bis', 'time'));
   else if (art !== 'privat') h += '<span class="small">Ohne Uhrzeit. Kostet keine Lernzeit und steht hervorgehoben im Kalender und in „Heute“.</span>';
-  if (!f.id) h += '<span class="flabel">Wiederholen</span>' + pick('tmWdh', F.tmWdh ? '1' : '0', [['0', 'einmalig'], ['1', 'jede Woche']], 'Wiederholen');
-  if (serie && !nur) h += '<span class="flabel">Wochentage</span>' + tageChips(tmTage(), 'tmWt', 'Wochentage') + fld('tm-end', 'tmEnd', 'bis (optional)', 'date');
+  const rhOpts = [['1', 'jede Woche'], ['2', 'alle zwei Wochen'], ['m', 'monatlich']];
+  const rhCur = rh === 'zwei' ? '2' : (rh === 'monat' ? 'm' : '1');
+  if (!f.id) h += '<span class="flabel">Wiederholen</span>' + pick('tmWdh', F.tmWdh ? rhCur : '0', [['0', 'einmalig']].concat(rhOpts), 'Wiederholen');
+  else if (serie && !nur) h += '<span class="flabel">Wiederholen</span>' + pick('tmWdh', rhCur, rhOpts, 'Wiederholen');
+  if (serie && !nur) {
+    const erster = amTag ? f.tag : F.tmDatum;
+    if (rh === 'monat') h += '<span class="small">' + (isDate(erster) ? 'Jeden Monat am ' + dmy(erster).d + '.' + (dmy(erster).d > 28 ? ' In kürzeren Monaten am letzten Tag.' : '') : 'Wähle den ersten Termin, dann gilt dieser Tag in jedem Monat.') + '</span>';
+    else h += '<span class="flabel">Wochentage</span>' + tageChips(tmTage(), 'tmWt', 'Wochentage');
+    h += fld('tm-end', 'tmEnd', 'bis (optional)', 'date');
+  }
   h += '<button class="linkbtn" style="color:var(--quiet)" aria-expanded="' + !!F.tmMehr + '" data-a="tmMehr">' + (F.tmMehr ? 'Weniger' : 'Mehr: Ort, Notiz') + '</button>';
   if (F.tmMehr) {
     h += '<label for="tm-ort">Ort (optional)</label><input id="tm-ort" class="inp"' + bg + ' data-in="tmOrt" value="' + esc(fv('tmOrt')) + '" placeholder="z. B. Hörsaal 3" autocomplete="off">' +
@@ -2941,10 +2962,12 @@ function terminFormU() {
   return h + '<div class="formbtns">' + (f.id ? '<button class="btn ghost" style="margin-right:auto;text-decoration:underline" data-a="tmDel">' + (nur ? 'Fällt an dem Tag aus' : 'Entfernen') + '</button>' : '') +
     '<button class="btn ghost" data-a="tmCancel">Abbrechen</button><button class="btn" data-a="tmSave">' + (f.id ? 'Speichern' : 'Eintragen') + '</button></div></div>';
 }
-// In übergebenen Wochen weichen verteilte Blöcke aus, wo der Termin in den nächsten zwei Wochen liegt
-function tmReflow(ab, tage) {
-  const s = isDate(ab) && ab > today() ? ab : today();
-  for (let i = 0; i < 14; i++) { const d = addDays(s, i); if (tage.indexOf(wdOf(d)) >= 0) reflowDay(d); }
+// In übergebenen Wochen weichen verteilte Blöcke aus, wo der Termin liegt (Reihen: in den nächsten sechs Wochen)
+function tmReflow(id) {
+  const x = D.termine[id]; if (!x || x.art === 'privat') return;
+  const t = today();
+  if (isDate(x.datum)) { for (let d = x.datum, i = 0; d <= terminEnde(x) && i < 60; d = addDays(d, 1), i++) if (d >= t) reflowDay(d); return; }
+  for (let i = 0; i < 42; i++) { const d = addDays(t, i); if (serieTrifft(x, d)) reflowDay(d); }
 }
 function tmSave() {
   const f = TF; if (!f) return;
@@ -2954,13 +2977,17 @@ function tmSave() {
   const titel = String(F.tmTitel || '').trim();
   const ganz = !!F.tmGanz; const von = ganz ? '' : (F.tmVon || ''); const bis = ganz ? '' : (F.tmBis || '');
   const art = F.tmArt === 'klausur' ? 'klausur' : (F.tmArt === 'privat' ? 'privat' : null);
-  const tage = tmTage().slice().sort();
+  const rh = F.tmRh === 'zwei' || F.tmRh === 'monat' ? F.tmRh : 'woche';
+  const tage = rh === 'monat' ? [] : tmTage().slice().sort();
   const ab = amTag ? f.tag : (isDate(F.tmDatum) ? F.tmDatum : null);
   const endet = isDate(F.tmEnd) ? F.tmEnd : null;
+  const bisD = !serie && isDate(F.tmBisD) && F.tmBisD !== F.tmDatum ? F.tmBisD : null;
   let err = terminCheck(titel, von, bis, ganz);
   if (!err && einzel && !isDate(F.tmDatum)) err = 'Bitte einen Tag wählen.';
   if (!err && einzel && F.tmDatum < today() && !(old && (old.datum === F.tmDatum || (nur && f.tag === F.tmDatum)))) err = 'Neue Termine gehen ab heute.';
-  if (!err && !einzel && !tage.length) err = 'Bitte mindestens einen Wochentag wählen.';
+  if (!err && bisD && bisD < F.tmDatum) err = '„bis“ darf nicht vor dem Tag liegen.';
+  if (!err && !einzel && rh !== 'woche' && !ab) err = 'Bitte den ersten Termin wählen.';
+  if (!err && !einzel && rh !== 'monat' && !tage.length) err = 'Bitte mindestens einen Wochentag wählen.';
   if (!err && !einzel && endet && ab && endet < ab) err = '„bis“ darf nicht vor „ab“ liegen.';
   F.tmErr = err;
   if (err) return 'keep';
@@ -2968,34 +2995,35 @@ function tmSave() {
   if (F.tmZaehlt === false && !ganz && art !== 'privat') base.zeitZaehlt = false;
   else if (old && old.zeitZaehlt === false) base.zeitZaehlt = true;
   // Neu angelegt wird ohne leere Felder
-  const neu = Object.assign({}, base);
-  ['art', 'gebiet', 'ort', 'notiz'].forEach((k) => { if (!neu[k]) delete neu[k]; });
+  const leer = (o) => { const n = Object.assign({}, o); ['art', 'gebiet', 'ort', 'notiz', 'bisDatum', 'rhythmus'].forEach((k) => { if (!n[k]) delete n[k]; }); return n; };
+  const reihe = { wochentage: tage, endet: endet, rhythmus: rh === 'woche' ? null : rh };
   const wort = art === 'klausur' ? 'Klausur' : 'Termin';
-  const platz = art !== 'privat';
-  if (!old && !serie) undoable(wort + ' eingetragen', () => { put('termine', uid('t'), Object.assign({ datum: F.tmDatum, erstellt: nowMs() }, neu)); if (platz) reflowDay(F.tmDatum); });
-  else if (!old) undoable(wort + ' eingetragen, jede Woche' + (tage.length === 1 ? ' am ' + WDL[tage[0]] : ''), () => { put('termine', uid('t'), Object.assign({ wochentage: tage, ab: ab, endet: endet, zustand: 'aktiv', erstellt: nowMs() }, neu)); if (platz) tmReflow(ab, tage); });
-  else if (!serie) undoable(wort + ' gespeichert', () => { patch('termine', f.id, Object.assign({ datum: F.tmDatum, beispiel: false }, base)); if (platz) reflowDay(F.tmDatum); });
-  else if (!amTag) undoable(wort + ' gespeichert', () => patch('termine', f.id, Object.assign({ wochentage: tage, ab: ab, endet: endet, datum: null, beispiel: false }, base)));
+  const wie = rh === 'monat' ? 'jeden Monat am ' + dmy(ab).d + '.' : (rh === 'zwei' ? 'alle zwei Wochen' : 'jede Woche') + (tage.length === 1 ? ' am ' + WDL[tage[0]] : '');
+  const nid = uid('t');
+  if (!old && !serie) undoable(wort + ' eingetragen', () => { put('termine', nid, leer(Object.assign({ datum: F.tmDatum, bisDatum: bisD, erstellt: nowMs() }, base))); tmReflow(nid); });
+  else if (!old) undoable(wort + ' eingetragen, ' + wie, () => { put('termine', nid, leer(Object.assign({ ab: ab, zustand: 'aktiv', erstellt: nowMs() }, reihe, base))); tmReflow(nid); });
+  else if (!serie) undoable(wort + ' gespeichert', () => { patch('termine', f.id, Object.assign({ datum: F.tmDatum, bisDatum: bisD, beispiel: false }, base)); tmReflow(f.id); });
+  else if (!amTag) undoable(wort + ' gespeichert', () => patch('termine', f.id, Object.assign({ ab: ab, datum: null, beispiel: false }, reihe, base)));
   else if (nur) undoable(titel + ' am ' + fmtDM(f.tag) + ' geändert', () => {
     // Nur dieser Tag: die Reihe fällt an dem Tag aus, an ihre Stelle tritt ein einmaliger Termin
-    const nid = uid('t'); const st = (tag(f.tag).termine || {})[f.id];
+    const st = (tag(f.tag).termine || {})[f.id];
     patch('termine', f.id, { ausfall: ausfallListe(old).concat([{ von: f.tag, bis: f.tag }]).sort((a, b) => (a.von < b.von ? -1 : 1)) });
-    put('termine', nid, Object.assign({ datum: F.tmDatum, erstellt: nowMs() }, neu));
+    put('termine', nid, leer(Object.assign({ datum: F.tmDatum, erstellt: nowMs() }, base)));
     if (st && F.tmDatum === f.tag) patch('tage', f.tag, { termine: { [nid]: clone(st) } });
-    if (platz) reflowDay(F.tmDatum);
+    tmReflow(nid);
   });
   else undoable(titel + ' gespeichert, ab ' + fmtDM(f.tag), () => {
-    const daten = Object.assign({ wochentage: tage, endet: endet, datum: null, beispiel: false }, base);
+    const daten = Object.assign({ datum: null, beispiel: false }, reihe, base);
     // Begann die Reihe schon früher, endet sie am Vortag und eine neue beginnt: die Vergangenheit bleibt, wie sie war
-    if (isDate(old.ab) && old.ab >= f.tag) patch('termine', f.id, Object.assign({ ab: f.tag }, daten));
+    if (isDate(old.ab) && old.ab >= f.tag) { patch('termine', f.id, Object.assign({ ab: f.tag }, daten)); tmReflow(f.id); }
     else {
-      const nid = uid('t'); const st = (tag(f.tag).termine || {})[f.id];
+      const st = (tag(f.tag).termine || {})[f.id];
       const kopie = clone(old); delete kopie.ergebnisse;
       patch('termine', f.id, { endet: addDays(f.tag, -1) });
       put('termine', nid, Object.assign(kopie, daten, { ab: f.tag, erstellt: nowMs() }));
       if (st) patch('tage', f.tag, { termine: { [nid]: clone(st) } });
+      tmReflow(nid);
     }
-    if (platz) tmReflow(f.tag, tage);
   });
   TF = null;
 }
@@ -3266,7 +3294,7 @@ function terminZeile(d, x, off, wo) {
   const t = today(); const s = (tag(d).termine || {})[x.id] || {};
   const serie = off || !x.einmalig; const weg = off || !!s.faelltAus;
   const priv = off ? x.art === 'privat' : x.privat; const kl = x.art === 'klausur';
-  const meta = [serie ? 'jede Woche' : '', x.ort || '', weg ? (d < t ? 'fiel aus' : 'fällt aus') : (s.erledigt ? 'erledigt' : '')].filter((y) => y).join(' · ');
+  const meta = [serie ? (x.rh || rhythmusWort(x)) : '', x.bisDatum ? fmtDM(x.datum || d) + ' bis ' + fmtDM(x.bisDatum) : '', x.ort || '', weg ? (d < t ? 'fiel aus' : 'fällt aus') : (s.erledigt ? 'erledigt' : '')].filter((y) => y).join(' · ');
   const id = esc(x.id);
   return '<div class="tb-row' + (priv ? ' priv' : '') + (weg ? ' aus' : '') + '" data-k="tb-' + id + '"><span class="zt">' + esc(terminText(x) || '') + '</span><span class="tx"><b>' + esc(x.titel || 'Termin') + (kl ? '<span class="tag-bsp">Klausur</span>' : '') + (priv ? '<span class="tag-bsp">privat</span>' : '') + '</b>' +
     (meta ? '<span class="small">' + esc(meta) + '</span>' : '') + (x.notiz ? '<span class="small">' + esc(x.notiz) + '</span>' : '') + '</span><span class="acts">' +
@@ -3283,24 +3311,31 @@ function terminListe() {
   const wochen = q ? 52 : (K.lWochen || 8);
   const ende = addDays(mondayOf(t), wochen * 7 - 1);
   const gesehen = {}; let body = '';
+  const kopf = (d, rel) => '<button class="tl-kopf" data-a="kTagZeig" data-d="' + d + '" aria-label="' + esc(fmtLong(d) + ' im Monat zeigen') + '"><b>' + esc(fmtShort(d) + (dmy(d).y !== dmy(t).y ? dmy(d).y : '')) + '</b>' + (rel ? '<span>' + rel + '</span>' : '') + '</button>';
+  const zeile = (d, x) => (TF && TF.wo === 'liste' && TF.tag === d && TF.id === x.id ? terminFormU() : terminZeile(d, x, false, 'liste'));
   for (let d = t; d <= ende; d = addDays(d, 1)) {
     const st = tag(d).termine || {};
-    let terms = termineAt(d).filter((x) => !(st[x.id] || {}).faelltAus && passt(x));
-    // Bei der Suche steht jede wöchentliche Reihe nur mit dem nächsten Mal da
-    if (q) terms = terms.filter((x) => x.einmalig || !gesehen[x.id]);
+    // Mehrtägige Termine stehen einmal da, bei der Suche auch jede Reihe nur mit dem nächsten Mal
+    const terms = termineAt(d).filter((x) => !(st[x.id] || {}).faelltAus && passt(x) && !((x.bisDatum || (q && !x.einmalig)) && gesehen[x.id]));
     terms.forEach((x) => { gesehen[x.id] = true; });
     if (!terms.length) continue;
     const n = dayDiff(d, t);
-    const rel = n === 0 ? 'heute' : (n === 1 ? 'morgen' : (n <= 14 ? 'in ' + n + ' Tagen' : ''));
-    body += '<div class="tl-tag" data-k="tl-' + d + '"><button class="tl-kopf" data-a="kTagZeig" data-d="' + d + '" aria-label="' + esc(fmtLong(d) + ' im Monat zeigen') + '"><b>' + esc(fmtShort(d) + (dmy(d).y !== dmy(t).y ? dmy(d).y : '')) + '</b>' + (rel ? '<span>' + rel + '</span>' : '') + '</button>' +
-      terms.map((x) => (TF && TF.wo === 'liste' && TF.tag === d && TF.id === x.id ? terminFormU() : terminZeile(d, x, false, 'liste'))).join('') + '</div>';
+    body += '<div class="tl-tag" data-k="tl-' + d + '">' + kopf(d, n === 0 ? 'heute' : (n === 1 ? 'morgen' : (n <= 14 ? 'in ' + n + ' Tagen' : ''))) + terms.map((x) => zeile(d, x)).join('') + '</div>';
+  }
+  // Die Suche findet auch vergangene einmalige Termine, die jüngsten zuerst
+  let alt = '';
+  if (q) {
+    alt = Object.keys(D.termine).filter((id) => isDate(D.termine[id].datum) && terminEnde(D.termine[id]) < t).sort((a, b) => (D.termine[a].datum < D.termine[b].datum ? 1 : -1))
+      .map((id) => [D.termine[id].datum, termineAt(D.termine[id].datum).find((x) => x.id === id)]).filter((p) => p[1] && passt(p[1])).slice(0, 30)
+      .map((p) => '<div class="tl-tag" data-k="tl-alt-' + esc(p[1].id) + '">' + kopf(p[0], '') + zeile(p[0], p[1]) + '</div>').join('');
+    if (alt) body += '<span class="flabel" style="margin-top:16px" data-k="tl-vergangen">Vergangen</span>' + alt;
   }
   return '<section class="panel terminliste" aria-label="Terminliste" data-k="terminliste">' +
     '<input id="k-suche" class="inp" type="search" data-in="kSuche" data-live="1" value="' + esc(fv('kSuche')) + '" placeholder="Termin suchen …" aria-label="Termin suchen" autocomplete="off">' +
     '<div class="chips" role="group" aria-label="Art">' + [['alle', 'Alle'], ['termin', 'Termine'], ['klausur', 'Klausuren'], ['privat', 'Privat']].map((o) => '<button class="sel" aria-pressed="' + (art === o[0]) + '" data-a="kLArt" data-v="' + o[0] + '">' + o[1] + '</button>').join('') + '</div>' +
     (TF && TF.wo === 'kal' ? terminFormU() : '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px"><button class="addbtn" style="min-height:44px;border-radius:12px" data-a="kNew" data-v="termin">' + ico('plus', 'xs') + 'Termin</button><button class="addbtn" style="min-height:44px;border-radius:12px" data-a="kNew" data-v="termin" data-kl="1">' + ico('plus', 'xs') + 'Klausur</button></div>') +
     (body ? '<div style="display:flex;flex-direction:column" data-k="tl-liste">' + body + '</div>' : '<span class="small" data-k="tl-leer">' + (q || art !== 'alle' ? 'Nichts gefunden.' : 'In den nächsten ' + wochen + ' Wochen steht kein Termin an.') + '</span>') +
-    (q ? '<span class="small">Gesucht wird in den nächsten zwölf Monaten. Wöchentliche Termine stehen mit dem nächsten Mal da.</span>'
+    (q ? '<span class="small">Gesucht wird in den nächsten zwölf Monaten und in vergangenen einmaligen Terminen. Wiederkehrende stehen mit dem nächsten Mal da.</span>'
       : (wochen < 104 ? '<button class="linkbtn" style="color:var(--quiet)" data-a="kLMehr">Weitere 8 Wochen zeigen</button>' : '')) +
     '</section>';
 }
@@ -3420,10 +3455,8 @@ function viewKalender() {
     }).join('') : '<span class="small">Noch keine Etappen oder Pausen.</span>') + '</div>';
   }
   aside += '</section>';
-  const once = Object.keys(D.termine).map((id) => Object.assign({ id: id }, D.termine[id])).filter((x) => isDate(x.datum) && x.datum >= addDays(t, -14)).sort((a, b) => (a.datum + (a.von || '') < b.datum + (b.von || '') ? -1 : 1));
-  aside += '<section class="panel" aria-label="Termine" id="k-termine"><h2>Einmalige Termine</h2>' + (TF && TF.wo === 'kal' ? terminFormU() : '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px"><button class="addbtn" style="min-height:44px;border-radius:12px" data-a="kNew" data-v="termin">' + ico('plus', 'xs') + 'Termin</button><button class="addbtn" style="min-height:44px;border-radius:12px" data-a="kNew" data-v="termin" data-kl="1">' + ico('plus', 'xs') + 'Klausur</button></div>') +
-    (once.length ? '<div style="display:flex;flex-direction:column">' + once.map((x) => '<div class="spanrow" data-k="ot-' + esc(x.id) + '"><span class="sw ' + (x.art === 'privat' ? 'priv' : 'term') + '"></span><span class="tx"><b>' + esc(x.titel) + bsp(x) + (x.art === 'klausur' ? '<span class="tag-bsp">Klausur</span>' : '') + (x.art === 'privat' ? '<span class="tag-bsp">privat</span>' : '') + '</b><span class="small">' + esc(fmtShort(x.datum) + (x.von || x.ganztags ? ' · ' + terminText(x) : '')) + '</span></span><button class="linkbtn" style="align-self:center" aria-label="Termin ' + esc(x.titel) + ' ändern" data-a="kEdit" data-v="termin" data-id="' + esc(x.id) + '">ändern</button></div>').join('') + '</div>' : '<span class="small">Keine einmaligen Termine. Tipp im Kalender auf einen Tag, um ihn anzusehen und dort einen einzutragen.</span>') +
-    '</section>';
+  aside += '<section class="panel" aria-label="Termine" id="k-termine"><h2>Termine</h2>' + (TF && TF.wo === 'kal' ? terminFormU() : '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px"><button class="addbtn" style="min-height:44px;border-radius:12px" data-a="kNew" data-v="termin">' + ico('plus', 'xs') + 'Termin</button><button class="addbtn" style="min-height:44px;border-radius:12px" data-a="kNew" data-v="termin" data-kl="1">' + ico('plus', 'xs') + 'Klausur</button></div>' +
+    '<span class="small">Tipp auf einen Tag, um ihn anzusehen. Alle kommenden Termine stehen in der Terminliste.</span>') + '</section>';
   aside += '<section class="legend2" aria-label="Legende"><span><i style="background:var(--hl);width:auto;height:auto;padding:1px 5px;color:var(--hl-text);font-style:normal;font-size:12px;font-weight:700">einmalig</i>ganztägig oder Klausur</span><span><i style="background:var(--priv-soft);border:1.5px solid var(--priv)"></i>privat</span><span><i style="background:var(--band)"></i>Etappe</span><span><i style="background:var(--ok-band)"></i>Pause frei</span><span><i style="border:1.5px dashed var(--ring)"></i>Wiederholungspause</span><span><i style="width:16px;height:14px;border:1.5px dashed var(--ring)"></i>Puffer</span><span><i style="width:16px;height:14px;background:var(--ok-soft)"></i>freier Tag</span><span><i style="width:16px;height:14px;border:2px solid var(--ink)"></i>heute</span></section>';
   return h + '<div class="kalwrap"><section class="kal" aria-label="Kalender nach Wochen"><div class="scroll" id="kal-scroll">' + head + rows + '</div></section><aside class="kalaside">' + aside + '</aside></div>';
 }
@@ -3635,12 +3668,11 @@ function klausurenListe() {
     const x = D.termine[id];
     if (!x || x.art !== 'klausur') return;
     if (isDate(x.datum)) { out.push(Object.assign({ id: id }, x)); return; }
-    const days = Array.isArray(x.wochentage) ? x.wochentage : (typeof x.wochentag === 'number' ? [x.wochentag] : []);
-    if (!days.length || !isDate(x.ab)) return;
+    if (!isDate(x.ab)) return;
     const erg = isObj(x.ergebnisse) ? x.ergebnisse : {};
     const end = isDate(x.endet) && x.endet < t ? x.endet : t;
     for (let d = x.ab < addDays(t, -730) ? addDays(t, -730) : x.ab; d <= end; d = addDays(d, 1)) {
-      const statt = days.indexOf(wdOf(d)) >= 0 && !ausfallAm(x, d) && !(Array.isArray(x.ausser) && x.ausser.indexOf(d) >= 0) && !pauseAt(d).frei && !((tag(d).termine || {})[id] || {}).faelltAus;
+      const statt = serieTrifft(x, d) && !ausfallAm(x, d) && !(Array.isArray(x.ausser) && x.ausser.indexOf(d) >= 0) && !pauseAt(d).frei && !((tag(d).termine || {})[id] || {}).faelltAus;
       if (statt || erg[d]) out.push(klGet(id + '@' + d));
     }
   });
@@ -4607,7 +4639,7 @@ function termineHtml() {
     if (TF && TF.wo === 'einst' && TF.id === id) return '<div style="padding:8px 0;border-top:1px solid var(--line)">' + terminFormU() + '</div>';
     const days = Array.isArray(x.wochentage) ? x.wochentage : (typeof x.wochentag === 'number' ? [x.wochentag] : []);
     const span = (isDate(x.ab) ? 'ab ' + fmtDM(x.ab) : '') + (isDate(x.endet) ? (isDate(x.ab) ? ' ' : '') + 'bis ' + fmtDM(x.endet) : '');
-    return '<div class="spanrow" style="flex-wrap:wrap" data-k="et-' + esc(id) + '"><span class="sw ' + (x.art === 'privat' ? 'priv' : 'term') + '"></span><span class="tx"><b' + (z !== 'aktiv' ? ' style="color:var(--quiet)"' : '') + '>' + esc(x.titel) + bsp(x) + (x.art === 'klausur' ? '<span class="tag-bsp">Klausur</span>' : '') + (x.art === 'privat' ? '<span class="tag-bsp">privat</span>' : '') + '</b><span class="small">' + esc(days.slice().sort().map((i) => WD[i]).join(', ') + (terminText(x) ? ' · ' + terminText(x) : '') + (span ? ' · ' + span : '')) + '</span></span>' +
+    return '<div class="spanrow" style="flex-wrap:wrap" data-k="et-' + esc(id) + '"><span class="sw ' + (x.art === 'privat' ? 'priv' : 'term') + '"></span><span class="tx"><b' + (z !== 'aktiv' ? ' style="color:var(--quiet)"' : '') + '>' + esc(x.titel) + bsp(x) + (x.art === 'klausur' ? '<span class="tag-bsp">Klausur</span>' : '') + (x.art === 'privat' ? '<span class="tag-bsp">privat</span>' : '') + '</b><span class="small">' + esc((x.rhythmus === 'monat' && isDate(x.ab) ? rhythmusWort(x) : (x.rhythmus === 'zwei' && isDate(x.ab) ? 'alle zwei Wochen ' : '') + days.slice().sort().map((i) => WD[i]).join(', ')) + (terminText(x) ? ' · ' + terminText(x) : '') + (span ? ' · ' + span : '')) + '</span></span>' +
       '<button class="linkbtn" style="align-self:center" aria-label="Termin ' + esc(x.titel) + ' ändern" data-a="esTEdit" data-id="' + esc(id) + '">ändern</button><div style="flex:1 1 100%">' + zChips(z, 'esTZ', id, 'Zustand ' + x.titel) + '</div></div>';
   }).join('') + '</div>' : '<span class="small" style="font-size:14px">Noch keine wiederkehrenden Termine.</span>';
   if (nAlt) h += '<button class="linkbtn" style="color:var(--quiet)" aria-expanded="' + !!ES.tAlt + '" data-a="esTAlt">' + (ES.tAlt ? 'Beendete ausblenden' : 'Beendete zeigen (' + nAlt + ')') + '</button>';
@@ -5049,7 +5081,7 @@ const ACT = {
   tmEdit: (d) => { closeMenus(); S.wAdd = null; S.adding = false; tmOpen(d.wo, { id: d.id, tag: d.d || null }); },
   tmArt: (d) => { F.tmArt = d.v; if (d.v === 'klausur' && !F.tmGanz && !F.tmVon) { F.tmVon = '09:00'; F.tmBis = '14:00'; } return 'keep'; },
   tmGanz: (d) => { F.tmGanz = d.v === '1'; return 'keep'; },
-  tmWdh: (d) => { F.tmWdh = d.v === '1'; return 'keep'; },
+  tmWdh: (d) => { F.tmWdh = d.v !== '0'; if (F.tmWdh) F.tmRh = d.v === '2' ? 'zwei' : (d.v === 'm' ? 'monat' : 'woche'); return 'keep'; },
   tmNur: (d) => { F.tmNur = d.v; if (d.v === 'tag' && TF) F.tmDatum = TF.tag; return 'keep'; },
   tmWt: (d) => { const l = tmTage().slice(); const i = Number(d.i); const k = l.indexOf(i); if (k >= 0) l.splice(k, 1); else l.push(i); F.tmTage = l; F.tmTageAuto = false; return 'keep'; },
   tmGeb: (d) => { F.tmGeb = F.tmGeb === d.g ? null : (d.g || null); return 'keep'; },
