@@ -694,9 +694,12 @@ function fmtDays(h, dativ) {
   return (whole ? String(whole) : '') + (half ? '½' : '') + (r <= 1 ? ' Tag' : (dativ ? ' Tagen' : ' Tage'));
 }
 function parseDur(v) {
-  v = String(v || '').trim().replace(/\s*h$/i, '');
+  v = String(v || '').trim();
+  const std = /\s*(h|std\.?|stunden?)$/i.test(v); // mit „h“ dahinter sind es immer Stunden
+  const mn = /\s*(min\.?|minuten?)$/i.test(v);
+  v = v.replace(/\s*(h|std\.?|stunden?|min\.?|minuten?)$/i, '');
   if (/^\d{1,2}:\d{1,2}$/.test(v)) { const [h, m] = v.split(':').map(Number); return m < 60 ? h * 60 + m : null; }
-  if (/^\d+([.,]\d+)?$/.test(v)) { const x = parseFloat(v.replace(',', '.')); return x <= 12 && /[.,]/.test(v) ? Math.round(x * 60) : Math.round(x); }
+  if (/^\d+([.,]\d+)?$/.test(v)) { const x = parseFloat(v.replace(',', '.')); return std || (!mn && x <= 12 && /[.,]/.test(v)) ? Math.round(x * 60) : Math.round(x); }
   return null;
 }
 const timeToMin = (t) => { if (!t || !/^\d{1,2}:\d{2}$/.test(t)) return null; const [h, m] = t.split(':').map(Number); return h * 60 + m; };
@@ -724,7 +727,7 @@ const EXTRA_CHANGE = {
   vStdFrei: (el) => {
     const v = D.vorhaben[el.dataset.id]; if (!v) return; const raw = String(el.value || '').trim().replace(',', '.');
     const n = raw === '' ? null : Number(raw);
-    if (n !== null && !(isFinite(n) && n > 0 && n <= 60)) { toast('Bitte Stunden von 0,5 bis 60 eintragen.', false); return; }
+    if (n !== null && !(isFinite(n) && n >= 0.25 && n <= 60)) { toast('Bitte Stunden von 0,25 bis 60 eintragen.', false); return; }
     const h = n === null ? null : Math.max(0.25, Math.round(n * 4) / 4);
     if (h !== (typeof v.std === 'number' ? v.std : null)) vorhabenSet(el.dataset.id, { std: h });
   }
@@ -753,7 +756,13 @@ function failSave(e) {
   console.warn('Speichern fehlgeschlagen', e);
   toast('Speichern hat nicht geklappt. Prüf die Verbindung und versuch es noch einmal.', false);
 }
+// Ein „Rückgängig“ würde den ganzen Eintrag zurückschreiben: wird er danach noch einmal geändert, verfällt es
+function undoVerfaellt(col, id) {
+  if (recording || syncAuto || !toastState || !toastState.snap || !((col + '/' + id) in toastState.snap)) return;
+  clearTimeout(toastTimer); toastState = null;
+}
 function put(col, id, data) {
+  undoVerfaellt(col, id);
   rec(col, id);
   const vor = D[col][id];
   D[col] = Object.assign({}, D[col], { [id]: clone(data) });
@@ -762,6 +771,7 @@ function put(col, id, data) {
   scheduleRender();
 }
 function patch(col, id, part) {
+  undoVerfaellt(col, id);
   rec(col, id);
   const cur = D[col][id];
   const next = deepMerge(cur, part);
@@ -776,6 +786,7 @@ function patch(col, id, part) {
   scheduleRender();
 }
 function del(col, id) {
+  undoVerfaellt(col, id);
   rec(col, id);
   const m = Object.assign({}, D[col]);
   const vor = m[id];
@@ -814,18 +825,27 @@ function readStore() {
   return out;
 }
 let persistQueued = false;
+let speicherVoll = false; // das Gerät nimmt nichts mehr an: bleibender Hinweis in Heute, bis das Speichern wieder klappt
+let unlesbar = false; // gespeicherte Daten waren kein gültiger Stand: beiseitegelegt unter STORE_KEY + '-unlesbar'
 function persistNow() {
   persistQueued = false;
   const out = {};
   COLS.forEach((col) => { out[col] = D[col]; });
-  try { localStorage.setItem(STORE_KEY, JSON.stringify(out)); } catch (e) { failSave(e); }
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(out)); if (speicherVoll) { speicherVoll = false; scheduleRender(); } } catch (e) { console.warn('Speichern fehlgeschlagen', e); if (!speicherVoll) { speicherVoll = true; scheduleRender(); } }
   if (sync.an) syncSave();
 }
 function schedulePersist() { if (persistQueued) return; persistQueued = true; setTimeout(persistNow, 0); }
 const localRef = { set: () => { schedulePersist(); return Promise.resolve(); }, update: () => { schedulePersist(); return Promise.resolve(); }, delete: () => { schedulePersist(); return Promise.resolve(); } };
 async function initDb() {
   try {
-    const s = readStore();
+    let s;
+    try { s = readStore(); } catch (e) {
+      // Der Speicher ist erreichbar, aber der Inhalt ist kaputt: beiseitelegen und leer beginnen, damit sich eine Sicherung laden lässt
+      const roh = localStorage.getItem(STORE_KEY);
+      if (roh == null) throw e;
+      localStorage.setItem(STORE_KEY + '-unlesbar', roh); localStorage.removeItem(STORE_KEY);
+      unlesbar = true; s = readStore();
+    }
     COLS.forEach((col) => { D[col] = s[col]; });
     dbh = { doc: () => localRef };
     dbState = 'ok';
@@ -840,7 +860,14 @@ window.addEventListener('storage', (e) => {
   if (e.key !== STORE_KEY) return;
   try { const s = readStore(); COLS.forEach((col) => { D[col] = s[col]; }); scheduleRender(); } catch (err) { /* egal */ }
 });
-window.addEventListener('pagehide', () => { if (persistQueued) persistNow(); });
+// Felder, die erst beim Verlassen speichern (Notizen, Vorhaben): auch speichern, wenn die App in den Hintergrund geht
+function feldSichern() {
+  const el = document.activeElement;
+  if (el && el.dataset && el.dataset.ch && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT')) el.dispatchEvent(new Event('change', { bubbles: true }));
+  if (persistQueued) persistNow();
+}
+window.addEventListener('pagehide', feldSichern);
+document.addEventListener('visibilitychange', () => { if (document.hidden) feldSichern(); });
 
 /* ================= Abgleich zwischen Geräten (GitHub-Ablage; standardmäßig aus, ohne Einrichtung keine Netzanfrage) ================= */
 // Eigener Speicher-Schlüssel: Schlüssel (Token), Einstellungen und Änderungszeitpunkte stehen nie in den Daten und nie in der Sicherung.
@@ -1223,7 +1250,7 @@ const FACTOR = { voll: 1, halb: 0.5, frei: 0 };
 const tagStunden = (c, wd) => { const x = c.tagesumfang[wd]; return typeof x === 'number' ? x : c.obergrenze * FACTOR[x]; };
 const tagFaktor = (c, wd) => { const x = c.tagesumfang[wd]; return typeof x === 'number' ? (c.obergrenze > 0 ? x / c.obergrenze : (x > 0 ? 1 : 0)) : FACTOR[x]; };
 const umfWort = (x) => (typeof x === 'number' ? String(x).replace('.', ',') + ' h' : x);
-const GFARBEN = ['blau', 'violett', 'orange', 'petrol', 'rosa', 'oliv'];
+const GFARBEN = ['blau', 'orange', 'petrol', 'violett', 'rosa', 'oliv'];
 const UMF = [{ k: 1, label: '1 h' }, { k: 2, label: '2 h' }, { k: 3, label: '½ Tag' }, { k: 6, label: '1 Tag' }, { k: 12, label: '2 Tage' }];
 const EST_H = 3; // ohne Umfang schätzt Claude ½ Tag
 
@@ -1322,7 +1349,7 @@ function minFor(stufe) {
 const srNeu = (date) => ({ stufe: 1, faellig: addDays(date, abstand(1)), letzte: null, bewertung: null });
 function srRate(sr, r, date) {
   const st = num(sr && sr.stufe, 1);
-  const next = r === 'sicher' ? Math.min(st + 1, maxStufe()) : (r === 'teilweise' ? st : 1);
+  const next = r === 'sicher' ? Math.min(st + 1, maxStufe()) : (r === 'teilweise' ? Math.max(1, Math.min(st, maxStufe()) - 1) : 1);
   return { stufe: next, faellig: addDays(date, abstand(next)), letzte: date, bewertung: r };
 }
 const validSr = (sr) => sr && isDate(sr.faellig);
@@ -1394,9 +1421,12 @@ function termineAt(date) {
   const wd = wdOf(date);
   const pz = pauseAt(date);
   const out = [];
+  const stTag = (D.tage[date] || {}).termine || {};
   Object.keys(D.termine).forEach((id) => {
     const t = D.termine[id];
-    if (!t || t.zustand === 'abgeschlossen' || t.zustand === 'pausiert') return;
+    if (!t) return;
+    // Beendet oder pausiert gilt nicht rückwirkend: was an einem Tag abgehakt wurde, bleibt dort stehen
+    if ((t.zustand === 'abgeschlossen' || t.zustand === 'pausiert') && !(stTag[id] && stTag[id].erledigt)) return;
     let hit = false;
     if (isDate(t.datum)) hit = t.datum === date;
     else {
@@ -1581,18 +1611,36 @@ const zeitAmTag = (b) => Math.max(0, num(b.zeit, 0) - zeitFrueh(b));
 const terminZaehlt = (id) => !(D.termine[id] && D.termine[id].zeitZaehlt === false);
 function terminZeitAt(date) {
   const st = tag(date).termine || {};
-  return termineAt(date).reduce((a, x) => a + ((st[x.id] || {}).erledigt && !(st[x.id] || {}).faelltAus && !x.ganztags && terminZaehlt(x.id) ? x.min : 0), 0);
+  // Es zählt die Dauer, die der Termin beim Abhaken hatte (ältere Einträge ohne festgehaltene Dauer: die heutige)
+  return termineAt(date).reduce((a, x) => { const s = st[x.id] || {}; return a + (s.erledigt && !s.faelltAus && terminZaehlt(x.id) ? (typeof s.min === 'number' ? s.min : (x.ganztags ? 0 : x.min)) : 0); }, 0);
 }
 function tZeitToggle(id) {
   const x = D.termine[id]; if (!x) return;
   const an = !terminZaehlt(id);
   undoable(x.titel + (an ? ' zählt zur erfassten Zeit' : ' zählt nicht mehr zur erfassten Zeit'), () => patch('termine', id, { zeitZaehlt: an }));
 }
+// Zeit der Blöcke je Tag: was am Tag des Blocks erfasst wurde, plus früher Erfasstes am jeweiligen alten Tag.
+// Zählt auch, wenn der Block (noch) nicht abgehakt ist; einmal gerechnet, solange sich die Blöcke nicht ändern.
+let bzCache = null;
+function blockZeiten() {
+  if (bzCache && bzCache.ref === D.bloecke) return bzCache.res;
+  const res = {};
+  Object.keys(D.bloecke).forEach((k) => {
+    const b = D.bloecke[k];
+    if (isDate(b.tag)) { const z = zeitAmTag(b); if (z) res[b.tag] = (res[b.tag] || 0) + z; }
+    if (isObj(b.zeitFrueher)) Object.keys(b.zeitFrueher).forEach((d) => { const z = num(b.zeitFrueher[d], 0); if (z) res[d] = (res[d] || 0) + z; });
+  });
+  bzCache = { ref: D.bloecke, res: res };
+  return res;
+}
+// Beim Wegnehmen von einem Tag bleibt die dort erfasste Zeit bei diesem Tag
+function zeitBleibt(b) {
+  const offen = b ? num(b.zeit, 0) - zeitFrueh(b) : 0;
+  if (!b || !isDate(b.tag) || offen <= 0) return {};
+  return { zeitFrueher: Object.assign({}, isObj(b.zeitFrueher) ? b.zeitFrueher : {}, { [b.tag]: num((b.zeitFrueher || {})[b.tag], 0) + offen }) };
+}
 function erfasstAt(date) {
-  let m = wdhState(date).zeit + terminZeitAt(date);
-  blocksAt(date).forEach((b) => { if (b.status === 'erledigt') m += zeitAmTag(b); });
-  Object.keys(D.bloecke).forEach((k) => { const b = D.bloecke[k]; if (b.status === 'erledigt' && b.tag !== date && isObj(b.zeitFrueher)) m += num(b.zeitFrueher[date], 0); });
-  return m;
+  return wdhState(date).zeit + terminZeitAt(date) + num(blockZeiten()[date], 0);
 }
 
 /* ---------- Fortschritt der laufenden Woche ---------- */
@@ -1648,7 +1696,7 @@ const vStd = (v) => (typeof v.std === 'number' && v.std > 0 ? v.std : EST_H);
 // Blöcke, die beim erneuten Planen stehen bleiben (erledigt, heute begonnen, frei hinzugefügt, mitgenommen)
 function keptBlocks(d) {
   const t = today();
-  return blocksAt(d).filter((b) => !(b.status === 'offen' && (b.quelle === 'liste' || b.quelle === 'claude') && !b.mitgenommen && !b.restVon && !b.fest && b.tag !== t));
+  return blocksAt(d).filter((b) => !(b.status === 'offen' && (b.quelle === 'liste' || b.quelle === 'claude') && !b.mitgenommen && !b.restVon && !b.fest && !num(b.zeit, 0) && b.tag !== t));
 }
 const blockH = (b) => (typeof b.std === 'number' && b.std > 0 ? b.std : (b.zeit ? num(b.zeit, 0) / 60 : 0));
 // Erste Woche nach einer freien Pause (mind. 3 Tage in der Vorwoche) plant Claude bewusst leichter
@@ -1796,7 +1844,8 @@ let popId = null;
 function pop(id) { popId = id; setTimeout(() => { if (popId === id) { popId = null; scheduleRender(); } }, 400); }
 function ensureThemaSr(themaId, date) {
   const t = thema(themaId);
-  if (t && !validSr(t.sr)) { patch('themen', themaId, { sr: srNeu(date) }); return true; }
+  // Noch nie bewertet und keine erledigte Einheit mehr (Haken zurückgenommen, Block gelöscht): die Wiederholung beginnt neu
+  if (t && (!validSr(t.sr) || (!t.sr.letzte && !hatEinheiten(themaId)))) { patch('themen', themaId, { sr: srNeu(date) }); return true; }
   return false;
 }
 function setBlockDone(id, done) {
@@ -1849,13 +1898,15 @@ function syncRest(id, announce) {
   }
 }
 // Pro Thema und Tag zählt eine Bewertung: Ausgangspunkt ist immer der Stand vor der ersten Bewertung des Tages
+const spaeterBewertet = (it, date) => !!(it && it.sr && isDate(it.sr.letzte) && it.sr.letzte > date);
+const SPAETER_TEXT = 'Dieses Thema wurde seitdem schon wieder bewertet.';
 function rateRef(date, ref, r) {
   const it = srByRef(ref);
   if (!it) return;
   const e = ((tag(date).wdh || {}).bew || {})[ref];
   const vorher = e && e.r ? (e.vorher || null) : clone(it.sr || null);
   if (!r) {
-    if (e && e.r) writeSr(ref, vorher);
+    if (e && e.r && !spaeterBewertet(it, date)) writeSr(ref, vorher);
     patch('tage', date, { wdh: { bew: { [ref]: { r: null, vorher: null } } } });
     Object.keys(D.bloecke).forEach((id) => { const b = D.bloecke[id]; if (b.wdhVon && 't:' + b.wdhVon === ref && isObj(b.bewertung) && (b.bewertung.datum || b.erledigtAm) === date) patch('bloecke', id, { bewertung: null }); });
     return;
@@ -1875,6 +1926,7 @@ function rateBlock(id, r) {
   const date = b.erledigtAm || today();
   const cur = ((tag(date).wdh || {}).bew || {})['t:' + b.wdhVon];
   if (!(cur && cur.r === r) && !guardAdd(date)) return;
+  if (spaeterBewertet(srByRef('t:' + b.wdhVon), date)) { toast(SPAETER_TEXT, false); return; }
   const e = ((tag(date).wdh || {}).bew || {})['t:' + b.wdhVon];
   if (e && e.r === r) {
     rateRef(date, 't:' + b.wdhVon, null);
@@ -1896,7 +1948,8 @@ function toggleWiederholen(id) {
 }
 function toggleTermin(date, tid) {
   const st = ((tag(date).termine || {})[tid]) || {};
-  patch('tage', date, { termine: { [tid]: !st.erledigt ? { erledigt: true, nachgetragen: markNach(date) || !!st.nachgetragen } : { erledigt: false } } });
+  const x = termineAt(date).find((y) => y.id === tid);
+  patch('tage', date, { termine: { [tid]: !st.erledigt ? { erledigt: true, min: x && !x.ganztags ? x.min : 0, nachgetragen: markNach(date) || !!st.nachgetragen } : { erledigt: false, min: null } } });
   if (!st.erledigt) pop('t' + tid);
 }
 function toggleRoutine(date, rid) {
@@ -1910,11 +1963,9 @@ function rateWdh(date, ref, r) {
   const it = srByRef(ref);
   if (!it) return;
   const off = cur && cur.r === r;
-  if (!off) {
-    if (!guardAdd(date)) return;
-    // Eine spätere Bewertung nicht überschreiben
-    if (!(cur && cur.r) && it.sr && isDate(it.sr.letzte) && it.sr.letzte > date) { toast('Dieses Thema wurde seitdem schon wieder bewertet.', false); return; }
-  }
+  if (!off && !guardAdd(date)) return;
+  // Eine spätere Bewertung nicht überschreiben: weder durch Bewerten noch durch Zurücknehmen oder Ändern
+  if (spaeterBewertet(it, date)) { toast(SPAETER_TEXT, false); return; }
   rateRef(date, ref, off ? null : r);
   if (!off && markNach(date)) patch('tage', date, { wdh: { bew: { [ref]: { nachgetragen: true } } } });
   if (!off) pop('w' + wKey(date, ref));
@@ -1967,7 +2018,7 @@ function backToWeek(id) {
   const b = D.bloecke[id];
   if (!b) return;
   if (timerRef() === 'b:' + id) stopTimer();
-  undoable('In die Woche zurückgelegt', () => patch('bloecke', id, { tag: null, zurueckgelegt: true }));
+  undoable('In die Woche zurückgelegt', () => patch('bloecke', id, Object.assign({ tag: null, zurueckgelegt: true }, zeitBleibt(b))));
 }
 function deleteBlock(id) {
   const b = D.bloecke[id];
@@ -1997,20 +2048,18 @@ function setWdhVon(id, themaId) {
 function pullToday(id) {
   const t = today();
   const b = D.bloecke[id];
-  const part = { tag: t, woche: mondayOf(t), warImTag: true };
   // Schon erfasste Zeit bleibt beim alten Tag (z. B. Timer bis nach Mitternacht)
-  const offen = b ? num(b.zeit, 0) - zeitFrueh(b) : 0;
-  if (b && isDate(b.tag) && b.tag < t && offen > 0) part.zeitFrueher = Object.assign({}, isObj(b.zeitFrueher) ? b.zeitFrueher : {}, { [b.tag]: num((b.zeitFrueher || {})[b.tag], 0) + offen });
+  const part = Object.assign({ tag: t, woche: mondayOf(t), warImTag: true }, b && b.tag !== t ? zeitBleibt(b) : {});
   patch('bloecke', id, part);
 }
 // Von Hand auf einen Tag gelegt: bleibt dort, auch beim Verteilen und wenn ein Termin dazukommt
 function moveBlock(id, d) {
   if (!D.bloecke[id] || !isDate(d)) return;
-  undoable('Liegt jetzt am ' + WDL[wdOf(d)], () => patch('bloecke', id, { tag: d, fest: true, zurueckgelegt: false }));
+  undoable('Liegt jetzt am ' + WDL[wdOf(d)], () => patch('bloecke', id, Object.assign({ tag: d, fest: true, zurueckgelegt: false }, D.bloecke[id].tag !== d ? zeitBleibt(D.bloecke[id]) : {})));
 }
 function pushToPool(id) {
   if (timerRef() === 'b:' + id) stopTimer();
-  undoable('In „Noch offen“ zurückgelegt', () => patch('bloecke', id, { tag: null, zurueckgelegt: true }));
+  undoable('In „Noch offen“ zurückgelegt', () => patch('bloecke', id, Object.assign({ tag: null, zurueckgelegt: true }, zeitBleibt(D.bloecke[id]))));
 }
 function addBlock(f) {
   const t = f.date || today();
@@ -2035,7 +2084,16 @@ function wdhNachtragen(date) {
 function wZeit(id) { const p = wParse(id); const st = wdhState(p.date); return p.ref ? num(st.zeiten[p.ref], 0) : st.zeitAlt; }
 function setZeit(ref, min) {
   const [k, id] = ref.split(':');
-  if (k === 'b') { patch('bloecke', id, { zeit: min || null }); syncRest(id, true); }
+  if (k === 'b') {
+    const b = D.bloecke[id]; const part = { zeit: min || null };
+    let ueber = b ? zeitFrueh(b) - num(min, 0) : 0;
+    if (ueber > 0) { // weniger als an früheren Tagen erfasst: dort abziehen, beim jüngsten Tag zuerst
+      const zf = Object.assign({}, b.zeitFrueher);
+      Object.keys(zf).sort().reverse().forEach((d) => { const ab = Math.min(ueber, num(zf[d], 0)); zf[d] = num(zf[d], 0) - ab; ueber -= ab; });
+      part.zeitFrueher = zf;
+    }
+    patch('bloecke', id, part); syncRest(id, true);
+  }
   else if (k === 'w') { const p = wParse(id); if (p.ref) patch('tage', p.date, { wdh: { zeiten: { [p.ref]: min || null } } }); else patch('tage', id, { wdh: { zeit: min || null } }); }
 }
 
@@ -2074,7 +2132,7 @@ function carryKeep(id) {
   const t = today();
   const b = D.bloecke[id];
   if (!b) return;
-  patch('bloecke', id, { woche: mondayOf(t), tag: null, mitgenommen: true, ausWoche: b.woche });
+  patch('bloecke', id, Object.assign({ woche: mondayOf(t), tag: null, mitgenommen: true, ausWoche: b.woche }, zeitBleibt(b)));
   if (!carryOf(mondayOf(t)).length) S.carryDone = mondayOf(t);
 }
 function carryVoraus(id, W) {
@@ -2131,14 +2189,18 @@ function clearPlanBlocks(T) {
   const t = today();
   Object.keys(D.bloecke).forEach((id) => {
     const b = D.bloecke[id];
-    if (b.woche === T && b.status === 'offen' && (b.quelle === 'liste' || b.quelle === 'claude') && !b.mitgenommen && !b.restVon && !b.fest && b.tag !== t) del('bloecke', id);
+    if (b.woche === T && b.status === 'offen' && (b.quelle === 'liste' || b.quelle === 'claude') && !b.mitgenommen && !b.restVon && !b.fest && !num(b.zeit, 0) && b.tag !== t) del('bloecke', id);
   });
 }
 function planRows(T) {
   const kept = {};
   Object.keys(D.bloecke).forEach((id) => {
     const b = D.bloecke[id];
-    if (b.woche === T && b.vorhaben && b.status !== 'gestrichen') kept[b.vorhaben] = (kept[b.vorhaben] || 0) + (b.status === 'erledigt' || b.tag === today() || b.restVon || b.fest ? num(b.std, vStd(D.vorhaben[b.vorhaben] || {})) : 0);
+    if (b.woche !== T || !b.vorhaben || b.status === 'gestrichen') return;
+    // Der Rest eines teilweise erledigten Blocks steckt schon in dessen Stunden
+    const ur = b.restVon ? D.bloecke[b.restVon] : null;
+    if (b.status === 'offen' && ur && ur.status === 'erledigt' && ur.vorhaben === b.vorhaben && ur.woche === T) return;
+    kept[b.vorhaben] = (kept[b.vorhaben] || 0) + (b.status === 'erledigt' || b.tag === today() || b.restVon || b.fest || num(b.zeit, 0) ? num(b.std, vStd(D.vorhaben[b.vorhaben] || {})) : 0);
   });
   return vorhabenFor(T).filter((v) => String(v.name || '').trim()).map((v) => ({
     id: v.id, titel: v.name.trim(), hours: Math.max(0, vStd(v) - (kept[v.id] || 0)), modus: v.modus || null,
@@ -2254,13 +2316,13 @@ function weekFacts(W) {
   Object.keys(D.bloecke).forEach((id) => {
     const b = D.bloecke[id];
     if (b.woche !== W || b.quelle === 'klausur') return;
-    if (b.status === 'erledigt') { done.push(b.titel); zeit += num(b.zeit, 0); }
+    if (b.status === 'erledigt') done.push(b.titel);
     else if (b.status === 'offen') open.push(b.titel);
   });
   let wdhTage = 0; let wdhDone = 0; let rDone = 0; let rAll = 0;
   weekDates(W).forEach((d) => {
     if (d > today()) return;
-    zeit += wdhState(d).zeit + terminZeitAt(d);
+    zeit += erfasstAt(d);
     if (wdhPlanned(d)) { wdhTage++; if (wdhState(d).done) wdhDone++; }
     routinenAt(d).forEach((r) => { rAll++; if (((tag(d).routinen || {})[r.id] || {}).erledigt) rDone++; });
   });
@@ -2322,7 +2384,7 @@ function heuteLine(t, ctx) {
   if (!learn.length) {
     if (ctx.wdhDone) return 'Die Wiederholung ist geschafft. Schön gemacht.';
     if (ctx.termine && ctx.termine.length) return 'Heute ' + (ctx.termine.length > 1 ? 'stehen ' : 'steht ') + joinDe(ctx.termine) + (ctx.hasWdh ? ' an, dazu die Wiederholung.' : ' an.');
-    return ctx.hasWdh ? 'Heute steht die Wiederholung an. Alles Weitere holst du dir aus der Woche.' : 'Dein Plan ist gerade leer. Hol dir etwas aus der Woche oder nimm dir frei.';
+    return ctx.hasWdh ? 'Heute steht die Wiederholung an. Alles Weitere holst du dir aus der Woche.' : (Object.keys(D.bloecke).length + Object.keys(D.vorhaben).length + Object.keys(D.themen).length ? 'Dein Plan ist gerade leer. Hol dir etwas aus der Woche oder nimm dir frei.' : 'Noch ist alles leer. Fang in „Woche“ an und plane deine Vorhaben, oder leg unter „Themen“ deinen Stoff an. Einzelnes kannst du auch gleich hier hinzufügen.');
   }
   const many = (l) => l.length > 1;
   if (!open.length) {
@@ -2547,6 +2609,19 @@ function nachKopf(t) {
   }
   return h + '<div class="infobox"><span style="font-size:15px;font-weight:700">Dieser Tag ist abgeschlossen</span><span class="small" style="font-size:14px">Haken entfernen, Zeit verringern, Text ändern und Löschen geht weiterhin.</span><button class="linkbtn" data-a="korrAsk">Fehler korrigieren</button></div>';
 }
+// Was der Nutzer wissen muss, auch wenn er nie in die Einstellungen schaut
+function geraeteHinweise() {
+  let h = '';
+  const box = (t, s, knopf) => '<div class="infobox" role="status"><span style="font-size:15px;font-weight:700">' + t + '</span><span class="small" style="font-size:14px">' + s + '</span>' + (knopf ? '<button class="linkbtn" data-a="nav" data-v="einstellungen">Zu den Einstellungen</button>' : '') + '</div>';
+  if (speicherVoll) h += box('Der Speicher dieses Geräts ist voll', 'Neue Änderungen werden gerade nicht gespeichert. Sichere deine Daten jetzt als Datei (Einstellungen → Daten auf diesem Gerät) und schaff Platz im Browser.', true);
+  if (unlesbar) h += box('Die gespeicherten Daten waren nicht lesbar', 'Sie liegen unverändert beiseite, die App beginnt leer. Lade deine letzte Sicherung unter Einstellungen → Daten auf diesem Gerät' + (sync.an ? '; der Abgleich holt den Stand aus deiner Ablage von selbst.' : '.'), true);
+  if (sync.an) {
+    const alt = sync.zuletzt && Date.now() - sync.zuletzt > 86400000;
+    if (sync.status === 'zugang') h += box('Der Abgleich klappt gerade nicht', 'Der Zugang zu deiner Ablage wird abgelehnt, vielleicht ist der Schlüssel abgelaufen. Was du auf diesem Gerät einträgst, bleibt hier erhalten und wird später abgeglichen.', true);
+    else if (alt && (sync.status === 'fehler' || sync.status === 'offline')) h += box('Seit über einem Tag nicht abgeglichen', 'Dieses Gerät hat deine Ablage länger nicht erreicht. Was du hier einträgst, bleibt erhalten und wird später abgeglichen.', true);
+  }
+  return h;
+}
 function viewHeute() {
   if (S.day && S.day >= today()) S.day = null;
   const past = !!S.day;
@@ -2569,9 +2644,10 @@ function viewHeute() {
   let h = past ? nachKopf(t) : '<header class="head"><div class="col"><span class="date">' + esc(fmtLong(t)) + '</span><h1>' + greeting() + '</h1><p class="line">' + esc(line) + '</p></div>' +
     '<button class="iconbtn gear" aria-label="Einstellungen" data-a="nav" data-v="einstellungen">' + ico('einst') + '</button></header>';
   if (simLabel) h += '<span class="sim">Simulation: ' + esc(fmtShort(t)) + ' ' + Math.floor(nowMin() / 60) + ':' + String(nowMin() % 60).padStart(2, '0') + '</span>';
+  if (!past) h += geraeteHinweise();
   if ((pz.frei || freeDay) && !past) {
     h += '<div class="state"><span class="sun">' + ico('heute') + '</span><span class="t">' + (pz.frei ? 'Pause · ' + esc(pz.frei.name || 'frei') : 'Freier Tag') + '</span>' +
-      '<span class="s">' + (pz.frei ? 'Bis ' + esc(fmtDMon(pz.frei.bis)) + ' ruhen Vorschlag, Wiederholung und Erinnerung. Wenn du magst, kannst du trotzdem etwas eintragen.' : 'Nichts geplant, nichts offen. Wenn du magst, kannst du trotzdem etwas hinzufügen.') + '</span></div>';
+      '<span class="s">' + (pz.frei ? 'Bis ' + esc(fmtDMon(pz.frei.bis)) + ' ruhen Vorschlag, Wiederholung und Erinnerung. Wenn du magst, kannst du trotzdem etwas eintragen.' : (poolOf(W).length + wdhUeberhang(t).length ? 'Für heute ist nichts geplant. Was diese Woche noch offen ist, steht unten – nur wenn du magst.' : 'Nichts geplant, nichts offen. Wenn du magst, kannst du trotzdem etwas hinzufügen.')) + '</span></div>';
   }
   const left = [];
   const plan = termShown.map((x) => rowTermin(t, x)).join('') + blocks.map(rowBlock).join('') + wdhListe(t).map((x) => rowWdh(t, x)).join('');
@@ -2979,13 +3055,13 @@ function weekStats(W) {
   const per = {}; const titel = [];
   Object.keys(D.bloecke).forEach((id) => {
     const b = D.bloecke[id];
-    if (b.status !== 'erledigt' || !isDate(b.erledigtAm) || b.erledigtAm < W || b.erledigtAm > end) return;
-    n++; zeit += zeitAmTag(b); if (b.titel && b.titel !== 'Freie Lernzeit') titel.push(b.titel);
-    const g = b.gebiet || (b.thema ? topOf(b.thema) : null) || '';
+    if (b.status !== 'erledigt' || b.quelle === 'klausur' || !isDate(b.erledigtAm) || b.erledigtAm < W || b.erledigtAm > end) return;
+    n++; if (b.titel && b.titel !== 'Freie Lernzeit') titel.push(b.titel);
+    const g0 = b.gebiet || (b.thema ? topOf(b.thema) : null) || '';
+    const g = g0 && thema(g0) ? g0 : '';
     per[g] = (per[g] || 0) + 1;
   });
-  weekDates(W).forEach((d) => { zeit += wdhState(d).zeit + terminZeitAt(d); });
-  Object.keys(D.bloecke).forEach((id) => { const b = D.bloecke[id]; if (b.status === 'erledigt' && isObj(b.zeitFrueher)) Object.keys(b.zeitFrueher).forEach((d) => { if (d >= W && d <= end) zeit += num(b.zeitFrueher[d], 0); }); });
+  weekDates(W).forEach((d) => { zeit += erfasstAt(d); });
   const freiTage = weekDates(W).filter((d) => pauseAt(d).frei).length;
   const pz = weekDates(W).map((d) => pauseAt(d).frei).find(Boolean) || null;
   const wdhTage = weekDates(W).filter((d) => pauseAt(d).wdh && !pauseAt(d).frei).length;
@@ -3160,14 +3236,116 @@ function viewKalender() {
 }
 
 /* ---------- Zeitstrahl: wann an welchem Gebiet gearbeitet wurde (gefüllt: neu gelernt, Ring: nur wiederholt) ---------- */
-const ZS_N = 12; // Wochen pro Ansicht
-function zsDaten(von, bis) {
-  const out = {}; // gebiet -> W -> { neu: [], wdh: [] }
-  const add = (g, W, art, txt) => { g = g || ''; out[g] = out[g] || {}; out[g][W] = out[g][W] || { neu: [], wdh: [], durch: [] }; if (out[g][W][art].indexOf(txt) < 0) out[g][W][art].push(txt); };
+const zsN = () => (window.innerWidth >= 900 ? 26 : (window.innerWidth >= 520 ? 12 : 8)); // Wochen pro Ansicht: breit ein halbes Jahr, am iPhone acht Wochen (damit die Punkte Platz haben)
+/* ---------- Gruppen für Statistik und Zeitstrahl: Gebiete oder, eine Ebene tiefer, die Teile eines Gebiets ---------- */
+// „tiefer“ = Id eines Gebiets: dann wird nach dessen Unterthemen gruppiert (z. B. wenn nur der Schwerpunkt gelernt wird)
+function gruppeVon(themaId, gebiet, tiefer) {
+  const top = (gebiet && thema(gebiet) ? topOf(gebiet) : null) || (themaId && thema(themaId) ? topOf(themaId) : null) || '';
+  if (!tiefer) return top;
+  if (top !== tiefer) return '~';
+  let cur = themaId && thema(themaId) ? themaId : null; let guard = 0;
+  while (cur && cur !== tiefer && thema(cur).eltern && thema(cur).eltern !== tiefer && guard++ < 10) cur = thema(cur).eltern;
+  return cur && cur !== tiefer && thema(cur).eltern === tiefer ? cur : tiefer;
+}
+function gruppeName(k, tiefer) {
+  if (k === '#t') return 'Termine';
+  if (k === '~') return 'andere Gebiete';
+  if (!k || !thema(k)) return 'ohne Gebiet';
+  return tiefer && k === tiefer ? thema(k).name + ' (allgemein)' : thema(k).name;
+}
+function gruppeFarbe(k, tiefer) {
+  if (!k || k === '~' || k === '#t' || !thema(k) || k === tiefer) return k === '#t' ? 'var(--soll)' : 'var(--ring)';
+  if (!tiefer) return 'var(--g-' + gFarbe(k) + ')';
+  return 'var(--g-' + GFARBEN[Math.max(0, thKids(tiefer).indexOf(k)) % GFARBEN.length] + ')';
+}
+// Welche Ebene gezeigt wird: gewählt (K.tiefer = Id), ausdrücklich alle Gebiete (''), sonst von selbst tiefer, wenn fast alles in einem Gebiet liegt
+function tieferFuer(summen) {
+  if (K.tiefer === '') return null;
+  if (K.tiefer && thema(K.tiefer) && thKids(K.tiefer).length) return K.tiefer;
+  const ks = Object.keys(summen).filter((k) => k && thema(k) && summen[k] > 0);
+  const ges = Object.keys(summen).reduce((a, k) => a + (k === '#t' ? 0 : summen[k]), 0);
+  const g = ks.sort((a, b) => summen[b] - summen[a])[0];
+  return g && ges > 0 && summen[g] / ges >= 0.9 && thKids(g).length >= 2 ? g : null;
+}
+function tieferChips(tiefer) {
+  const gs = gebiete().filter((g) => thKids(g).length);
+  if (!gs.length) return '';
+  return '<div class="chips" role="group" aria-label="Ebene">' + '<button class="sel" aria-pressed="' + !tiefer + '" data-a="kTiefer" data-id="">Alle Gebiete</button>' +
+    gs.map((g) => '<button class="sel" style="white-space:normal;max-width:100%;overflow-wrap:anywhere;text-align:left" aria-pressed="' + (tiefer === g) + '" data-a="kTiefer" data-id="' + esc(g) + '">' + esc('Nur ' + gName(g)) + '</button>').join('') + '</div>';
+}
+// Erfasste Minuten je Woche und Gruppe; die Summe einer Woche ist die Summe von erfasstAt über ihre Tage
+function zeitGruppen(von, bis, tiefer) {
+  const out = {};
+  const add = (d, k, m) => { if (!m || d < von || d > bis) return; const W = mondayOf(d); out[W] = out[W] || {}; out[W][k] = (out[W][k] || 0) + m; };
   Object.keys(D.bloecke).forEach((id) => {
     const b = D.bloecke[id];
-    if (b.status !== 'erledigt' || b.wdhVon || !isDate(b.erledigtAm) || b.erledigtAm < von || b.erledigtAm > bis || b.titel === 'Freie Lernzeit') return;
-    add(b.gebiet || (b.thema ? topOf(b.thema) : null), mondayOf(b.erledigtAm), 'neu', b.titel);
+    const k = gruppeVon(b.thema || b.wdhVon, b.gebiet, tiefer);
+    if (isDate(b.tag)) add(b.tag, k, zeitAmTag(b));
+    if (isObj(b.zeitFrueher)) Object.keys(b.zeitFrueher).forEach((d) => add(d, k, num(b.zeitFrueher[d], 0)));
+  });
+  Object.keys(D.tage).forEach((d) => {
+    if (d < von || d > bis) return;
+    const w = D.tage[d].wdh || {};
+    add(d, '', num(w.zeit, 0));
+    if (isObj(w.zeiten)) Object.keys(w.zeiten).forEach((ref) => { const it = srByRef(ref); add(d, it ? gruppeVon(it.kind === 't' ? it.id : null, it.gebiet, tiefer) : '', num(w.zeiten[ref], 0)); });
+    if (D.tage[d].termine) add(d, '#t', terminZeitAt(d));
+  });
+  return out;
+}
+// Gestapelte Säulen: Lernzeit pro Woche nach Gruppe; das Band ist der übliche Bereich, kein Ziel
+function zeitChart(stats, zg, keys, tiefer) {
+  const W = window.innerWidth < 700 ? 340 : 640; const H = W < 400 ? 180 : 210; const L = 36; const B = 22; const T = 8; // schmal: kleinere Zeichenfläche, damit die Schrift lesbar bleibt
+  const n = stats.length; const pw = (W - L - 6) / n; const bw = Math.max(3, Math.min(34, pw - (pw < 14 ? 2 : (pw < 24 ? 4 : 8))));
+  const tot = stats.map((s) => keys.reduce((a, k) => a + num((zg[s.W] || {})[k], 0), 0) / 60);
+  const roh = Math.max(1, ...tot); const schritt = roh <= 8 ? 2 : (roh <= 20 ? 5 : (roh <= 40 ? 10 : 20));
+  const max = Math.ceil(roh / schritt) * schritt;
+  const y = (v) => T + (H - T - B) * (1 - v / max);
+  const work = stats.map((s, i) => (s.pause ? null : tot[i])).filter((v) => v != null).sort((a, b) => a - b);
+  const q = (p) => work[Math.min(work.length - 1, Math.floor(p * (work.length - 1) + 0.5))];
+  let s = '';
+  if (work.length >= 4 && q(0.75) > q(0.25)) s += '<rect x="' + L + '" y="' + y(q(0.75)).toFixed(1) + '" width="' + (W - L - 6) + '" height="' + (y(q(0.25)) - y(q(0.75))).toFixed(1) + '" style="fill:var(--seg)"/>';
+  for (let v = 0; v <= max + 0.01; v += schritt) s += '<line x1="' + L + '" x2="' + (W - 6) + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '" style="stroke:var(--line)" stroke-width="1"/><text x="' + (L - 6) + '" y="' + (y(v) + 4).toFixed(1) + '" text-anchor="end" font-size="11" style="fill:var(--quiet)">' + v + ' h</text>';
+  stats.forEach((st, i) => {
+    const x = L + i * pw + (pw - bw) / 2;
+    if (n <= 16 || (i % 4 === 0 && i < n - 2) || i === n - 1) s += '<text x="' + (x + bw / 2).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="middle" font-size="11" style="fill:var(--quiet)">' + kwOf(st.W) + '</text>';
+    if (st.pause && !tot[i]) { s += '<rect x="' + x.toFixed(1) + '" y="' + y(max).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + (y(0) - y(max)).toFixed(1) + '" rx="3" style="fill:var(--ok-soft)"><title>' + esc('KW ' + kwOf(st.W) + ': Pause' + (st.pause.name ? ' (' + st.pause.name + ')' : '')) + '</title></rect>'; return; }
+    let acc = 0;
+    keys.forEach((k) => {
+      const v = num((zg[st.W] || {})[k], 0) / 60; if (v <= 0) return;
+      const top = y(acc + v); const bot = y(acc) - (acc > 0 ? 1.5 : 0);
+      s += '<rect x="' + x.toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + Math.max(1, bot - top).toFixed(1) + '" style="fill:' + gruppeFarbe(k, tiefer) + '"><title>' + esc('KW ' + kwOf(st.W) + ' · ' + gruppeName(k, tiefer) + ': ' + fmtHM(Math.round(v * 60))) + '</title></rect>';
+      acc += v;
+    });
+  });
+  const text = work.length >= 4 ? 'Meist ' + fmtH(q(0.25) * 60) + ' bis ' + fmtH(q(0.75) * 60) + ' pro Woche.' : '';
+  return { svg: '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc('Erfasste Zeit pro Woche: ' + stats.map((st, i) => 'KW ' + kwOf(st.W) + ' ' + fmtHM(Math.round(tot[i] * 60))).join(', ')) + '" style="width:100%;height:auto" data-k="zeit-wochen">' + s + '</svg>', text: text, band: work.length >= 4 && q(0.75) > q(0.25) };
+}
+// Stoff auf einen Blick: ein Kästchen je Thema der untersten Ebene
+function stoffHtml(tiefer) {
+  const rows = tiefer ? thKids(tiefer) : gebiete();
+  const fest = {}; srItems().forEach((it) => { if (it.kind === 't' && abstand(num(it.sr.stufe, 1)) >= 60) fest[it.id] = true; });
+  let h = '<section class="panel" aria-label="Stoff auf einen Blick"><div style="display:flex;flex-direction:column;gap:2px"><h2>Stoff auf einen Blick</h2><span class="small">Was habe ich schon geschafft?</span></div>';
+  const zeilen = rows.map((g) => {
+    const desc = thDesc(g); const blatt = (desc.length ? desc : [g]).filter((id) => !thKids(id).length);
+    const st = (id) => (fest[id] ? 2 : (isDate(D.themen[id].durchAm) || effZustand(id) === 'abgeschlossen' ? 1 : 0));
+    const sorted = blatt.slice().sort((a, b) => st(b) - st(a));
+    const nG = blatt.filter((id) => st(id) === 2).length; const nD = blatt.filter((id) => st(id) >= 1).length;
+    const col = gruppeFarbe(g, tiefer);
+    return '<div style="display:flex;flex-direction:column;gap:5px" data-k="stoff-' + esc(g) + '"><span style="font-size:14px"><b>' + esc(thema(g).name) + '</b> <span class="small">' + nD + ' von ' + blatt.length + ' durchgearbeitet' + (nG ? ' · ' + nG + ' gefestigt' : '') + '</span></span>' +
+      '<div role="img" aria-label="' + esc(thema(g).name + ': ' + nD + ' von ' + blatt.length + ' durchgearbeitet, ' + nG + ' gefestigt') + '" style="display:flex;flex-wrap:wrap;gap:3px">' +
+      sorted.map((id) => { const z = st(id); return '<span title="' + esc(themaLabel(id) + ': ' + ['offen', 'durchgearbeitet', 'gefestigt'][z]) + '" style="width:13px;height:13px;box-sizing:border-box;border-radius:4px;border:1.5px solid ' + col + ';background:' + (z === 2 ? col : (z === 1 ? 'color-mix(in srgb,' + col + ' 38%,transparent)' : 'transparent')) + '"></span>'; }).join('') + '</div></div>';
+  });
+  if (!zeilen.length) return h + '<span class="small" style="font-size:14px">Sobald du unter „Themen“ deinen Stoff angelegt hast, steht hier ein Kästchen je Thema.</span></section>';
+  const leg = (bg, t) => '<span><i style="width:12px;height:12px;box-sizing:border-box;border-radius:4px;border:1.5px solid var(--ring);background:' + bg + '"></i>' + t + '</span>';
+  return h + zeilen.join('') + '<div class="legend2">' + leg('transparent', 'offen') + leg('color-mix(in srgb,var(--ring) 38%,transparent)', 'durchgearbeitet') + leg('var(--ring)', 'gefestigt (Abstand ab 60 Tagen)') + '</div></section>';
+}
+function zsDaten(von, bis, tiefer) {
+  const out = {}; // gebiet -> W -> { neu: [], wdh: [] }
+  const add = (g, W, art, txt) => { g = g === '~' || (g && thema(g)) ? g : ''; out[g] = out[g] || {}; out[g][W] = out[g][W] || { neu: [], wdh: [], durch: [] }; if (out[g][W][art].indexOf(txt) < 0) out[g][W][art].push(txt); };
+  Object.keys(D.bloecke).forEach((id) => {
+    const b = D.bloecke[id];
+    if (b.status !== 'erledigt' || b.wdhVon || b.quelle === 'klausur' || !isDate(b.erledigtAm) || b.erledigtAm < von || b.erledigtAm > bis || b.titel === 'Freie Lernzeit') return;
+    add(gruppeVon(b.thema, b.gebiet, tiefer), mondayOf(b.erledigtAm), 'neu', b.titel);
   });
   Object.keys(D.tage).forEach((d) => {
     if (d < von || d > bis) return;
@@ -3175,51 +3353,68 @@ function zsDaten(von, bis) {
     Object.keys(bew).forEach((ref) => {
       if (!bew[ref] || !bew[ref].r) return;
       const it = srByRef(ref);
-      if (it) add(it.gebiet, mondayOf(d), 'wdh', it.titel);
+      if (it) add(gruppeVon(it.kind === 't' ? it.id : null, it.gebiet, tiefer), mondayOf(d), 'wdh', it.titel);
     });
   });
   // Durchgearbeitet, mit Durchgang, sobald es mehr als einen gibt
   Object.keys(D.themen).forEach((id) => {
     const t = D.themen[id];
     const ds = (Array.isArray(t.frueher) ? t.frueher : []).concat([t.durchAm]);
-    ds.forEach((d, i) => { if (isDate(d) && d >= von && d <= bis) add(topOf(id), mondayOf(d), 'durch', t.name + (ds.length > 1 ? ' (' + (i + 1) + '. Durchgang)' : '')); });
+    ds.forEach((d, i) => { if (isDate(d) && d >= von && d <= bis) add(gruppeVon(id, null, tiefer), mondayOf(d), 'durch', t.name + (ds.length > 1 ? ' (' + (i + 1) + '. Durchgang)' : '')); });
   });
   return out;
 }
 function viewZeitstrahl() {
   const cur = mondayOf(today());
   const last = addDays(cur, -7 * num(K.zsOff, 0));
-  const weeks = []; for (let i = ZS_N - 1; i >= 0; i--) weeks.push(addDays(last, -7 * i));
-  const data = zsDaten(weeks[0], addDays(last, 6));
-  const rows = gebiete().slice();
-  Object.keys(data).forEach((g) => { if (g && rows.indexOf(g) < 0 && thema(g)) rows.push(g); });
+  const N = zsN();
+  const weeks = []; for (let i = N - 1; i >= 0; i--) weeks.push(addDays(last, -7 * i));
+  let data = zsDaten(weeks[0], addDays(last, 6));
+  const summen = {}; Object.keys(data).forEach((g) => { summen[g] = Object.keys(data[g]).length; });
+  const tiefer = tieferFuer(summen);
+  if (tiefer) data = zsDaten(weeks[0], addDays(last, 6), tiefer);
+  const rows = tiefer ? thKids(tiefer).slice() : gebiete().slice();
+  if (tiefer) ['~', tiefer].forEach((g) => { if (data[g]) rows.push(g); });
+  else Object.keys(data).forEach((g) => { if (g && rows.indexOf(g) < 0 && thema(g)) rows.push(g); });
   if (data['']) rows.push('');
-  const cols = 'grid-template-columns:minmax(84px,150px) repeat(' + ZS_N + ',minmax(0,1fr))';
+  const zg = zeitGruppen(weeks[0], addDays(last, 6), tiefer);
+  const cols = 'grid-template-columns:minmax(84px,150px) repeat(' + N + ',minmax(0,1fr))';
   let h = '<div class="stack l"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap"><span class="small" style="font-size:14px">KW ' + kwOf(weeks[0]) + ' bis KW ' + kwOf(last) + '</span><div style="display:flex;gap:2px">' +
     '<button class="iconbtn" aria-label="Frühere Wochen" data-a="zsPrev">' + ico('left', 's') + '</button>' + (K.zsOff ? '<button class="iconbtn" style="width:auto;padding:0 10px;font-size:14px;font-weight:600;color:var(--ink)" data-a="zsNow">Heute</button>' : '') +
     '<button class="iconbtn" aria-label="Spätere Wochen" aria-disabled="' + !K.zsOff + '" data-a="zsNext">' + ico('right', 's') + '</button></div></div>';
+  h += tieferChips(tiefer);
   if (!rows.length) return h + '<p class="empty">Noch keine Gebiete. Sobald du Lerneinheiten erledigst oder wiederholst, siehst du hier, wann du woran gearbeitet hast.</p></div>';
-  h += '<section class="panel" aria-label="Zeitstrahl" style="gap:0;padding:12px 10px"><div style="display:grid;' + cols + ';align-items:end;padding-bottom:6px;border-bottom:1px solid var(--line)"><span></span>' +
-    weeks.map((W) => '<span style="font-size:11px;font-weight:700;color:' + (W === cur ? 'var(--ink)' : 'var(--quiet)') + ';text-align:center">' + kwOf(W) + '</span>').join('') + '</div>';
+  const ets = Object.keys(D.etappen).map((id) => D.etappen[id]).filter((e) => isDate(e.von) && isDate(e.bis));
+  const etIn = (W) => ets.filter((e) => e.von <= addDays(W, 6) && e.bis >= W);
+  const klIn = (W) => weekDates(W).reduce((a, d) => a + termineAt(d).filter((x) => x.art === 'klausur').length, 0);
+  const hatEt = weeks.some((W) => etIn(W).length); const hatKl = weeks.some((W) => klIn(W));
+  h += '<section class="panel" aria-label="Zeitstrahl" style="gap:0;padding:12px 10px">';
+  if (hatEt) h += '<div style="display:grid;' + cols + ';align-items:center;height:14px" data-k="zs-etappen"><span class="small" style="font-size:11px">Etappen</span>' + weeks.map((W) => { const e = etIn(W); return '<span title="' + esc(e.map((x) => x.name).join(', ')) + '" style="height:5px;margin:0 1px;border-radius:2px;background:' + (e.length ? 'var(--ring)' : 'transparent') + '"></span>'; }).join('') + '</div>';
+  if (hatKl) h += '<div style="display:grid;' + cols + ';align-items:center;height:16px" data-k="zs-klausuren"><span class="small" style="font-size:11px">Klausuren</span>' + weeks.map((W) => { const n = klIn(W); return '<span title="' + (n ? esc('KW ' + kwOf(W) + ': ' + anz(n, 'Klausur', 'Klausuren')) : '') + '" style="font-size:9px;line-height:1;text-align:center;color:var(--ink)">' + (n ? '◆' : '') + '</span>'; }).join('') + '</div>';
+  h += '<div style="display:grid;' + cols + ';align-items:end;padding-bottom:6px;border-bottom:1px solid var(--line)"><span></span>' +
+    weeks.map((W, i) => '<span style="font-size:11px;font-weight:700;color:' + (W === cur ? 'var(--ink)' : 'var(--quiet)') + ';text-align:center">' + (N <= 12 || i % 2 === (N - 1) % 2 ? kwOf(W) : '') + '</span>').join('') + '</div>';
   rows.forEach((g) => {
-    const name = g ? gName(g) : 'ohne Gebiet';
-    h += '<div style="display:grid;' + cols + ';align-items:center;min-height:40px;border-bottom:1px solid var(--line)" data-k="zs-' + esc(g || 'ohne') + '"><span class="gname" style="font-size:13px;min-width:0;overflow-wrap:anywhere"' + (g ? gStyle(g) : '') + '><span class="dot' + (g ? '' : ' open') + '"></span>' + esc(name) + '</span>';
+    const name = gruppeName(g, tiefer);
+    const echt = g && g !== '~' && g !== tiefer;
+    const col = gruppeFarbe(g, tiefer);
+    h += '<div style="display:grid;' + cols + ';align-items:center;min-height:40px;border-bottom:1px solid var(--line)" data-k="zs-' + esc(g === '~' ? 'andere' : (g || 'ohne')) + '"><span class="gname" style="font-size:13px;min-width:0;overflow-wrap:anywhere' + (echt && tiefer ? ';--gm:' + col + ';--gt:var(--ink)' : '') + '"' + (echt && !tiefer ? gStyle(g) : '') + '><span class="dot' + (echt ? '' : ' open') + '"></span>' + esc(name) + '</span>';
     weeks.forEach((W) => {
       const x = (data[g || ''] || {})[W];
       const pz = weekDates(W).filter((d) => pauseAt(d).frei).length >= 4;
       const sel = K.zsSel && K.zsSel.g === (g || '') && K.zsSel.w === W;
-      const f = g ? gFarbe(g) : null; const col = f ? 'var(--g-' + f + ')' : 'var(--ring)';
-      const mark = !x ? '' : (x.neu.length ? '<span style="width:14px;height:14px;border-radius:7px;background:' + col + '"></span>' : '<span style="width:14px;height:14px;box-sizing:border-box;border-radius:7px;border:2px solid ' + col + '"></span>');
-      const lab = 'KW ' + kwOf(W) + ', ' + name + ': ' + (x ? (x.neu.length ? x.neu.length + ' neu' : '') + (x.neu.length && x.wdh.length ? ', ' : '') + (x.wdh.length ? x.wdh.length + ' wiederholt' : '') : (pz ? 'Pause' : 'nichts'));
-      h += '<button style="height:40px;min-width:0;padding:0;border:0;border-left:1px solid var(--line);background:' + (sel ? 'var(--soft)' : (pz ? 'var(--ok-soft)' : 'transparent')) + ';display:flex;align-items:center;justify-content:center;cursor:' + (x ? 'pointer' : 'default') + '" title="' + esc(lab) + '" aria-label="' + esc(lab) + '"' + (x ? ' data-a="zsSel" data-g="' + esc(g || '') + '" data-w="' + W + '"' : '') + '>' + mark + '</button>';
+      const min = num((zg[W] || {})[g || ''], 0);
+      const ton = min <= 0 ? 0 : (min < 180 ? 12 : (min < 360 ? 24 : 40)); // Farbstärke: bis 3 h, bis 6 h, mehr
+      const mark = !x ? '' : (x.neu.length ? '<span style="width:14px;height:14px;border-radius:7px;background:' + col + '"></span>' : (x.wdh.length ? '<span style="width:14px;height:14px;box-sizing:border-box;border-radius:7px;border:2px solid ' + col + '"></span>' : '<span style="width:8px;height:8px;border-radius:4px;background:' + col + '"></span>'));
+      const lab = 'KW ' + kwOf(W) + ', ' + name + ': ' + (x ? [x.neu.length ? x.neu.length + ' neu' : '', x.wdh.length ? x.wdh.length + ' wiederholt' : '', x.durch.length ? x.durch.length + ' durchgearbeitet' : ''].filter(Boolean).join(', ') : (pz ? 'Pause' : 'nichts')) + (min ? ', erfasst ' + fmtHM(min) : '');
+      h += '<button style="height:40px;min-width:0;padding:0;border:0;border-left:1px solid var(--line);background:' + (ton ? 'color-mix(in srgb,' + col + ' ' + ton + '%,transparent)' : (sel ? 'var(--soft)' : (pz ? 'var(--ok-soft)' : 'transparent'))) + (sel ? ';box-shadow:inset 0 0 0 2px var(--ink)' : '') + ';display:flex;align-items:center;justify-content:center;cursor:' + (x ? 'pointer' : 'default') + '" title="' + esc(lab) + '" aria-label="' + esc(lab) + '"' + (x ? ' data-a="zsSel" data-g="' + esc(g || '') + '" data-w="' + W + '"' : '') + '>' + mark + '</button>';
     });
     h += '</div>';
   });
-  h += '<div class="legend2" style="padding-top:10px"><span><i style="width:12px;height:12px;border-radius:6px;background:var(--ring)"></i>neu gelernt</span><span><i style="width:12px;height:12px;border-radius:6px;border:2px solid var(--ring)"></i>nur wiederholt</span><span><i style="width:16px;height:12px;background:var(--ok-soft)"></i>Pause</span></div></section>';
+  h += '<div class="legend2" style="padding-top:10px"><span><i style="width:12px;height:12px;border-radius:6px;background:var(--ring)"></i>neu gelernt</span><span><i style="width:12px;height:12px;border-radius:6px;border:2px solid var(--ring)"></i>nur wiederholt</span><span><i style="width:8px;height:8px;border-radius:4px;background:var(--ring)"></i>nur als durchgearbeitet markiert</span><span><i style="width:16px;height:12px;background:var(--ok-soft)"></i>Pause</span><span><i style="width:16px;height:12px;background:color-mix(in srgb,var(--ring) 40%,transparent)"></i>je kräftiger die Fläche, desto mehr erfasste Zeit</span>' + (hatKl ? '<span>◆ Klausur</span>' : '') + '</div></section>';
   if (K.zsSel) {
     const x = (data[K.zsSel.g] || {})[K.zsSel.w];
     if (x) {
-      h += '<section class="panel" aria-label="Woche im Detail"><h2>' + esc((K.zsSel.g ? gName(K.zsSel.g) : 'ohne Gebiet') + ' · KW ' + kwOf(K.zsSel.w)) + '</h2><span class="small">' + esc(fmtRange(K.zsSel.w, addDays(K.zsSel.w, 6))) + '</span>' +
+      h += '<section class="panel" aria-label="Woche im Detail"><h2>' + esc(gruppeName(K.zsSel.g, tiefer) + ' · KW ' + kwOf(K.zsSel.w)) + '</h2><span class="small">' + esc(fmtRange(K.zsSel.w, addDays(K.zsSel.w, 6))) + '</span>' +
         (x.neu.length ? '<span style="font-size:14px;font-weight:700">Neu gelernt</span>' + x.neu.map((t) => '<span style="font-size:14px;line-height:1.4">' + esc(t) + '</span>').join('') : '') +
         (x.wdh.length ? '<span style="font-size:14px;font-weight:700">Wiederholt</span>' + x.wdh.map((t) => '<span style="font-size:14px;line-height:1.4">' + esc(t) + '</span>').join('') : '') +
         (x.durch.length ? '<span style="font-size:14px;font-weight:700">Durchgearbeitet</span>' + x.durch.map((t) => '<span style="font-size:14px;line-height:1.4">' + esc(t) + '</span>').join('') : '') +
@@ -3229,8 +3424,9 @@ function viewZeitstrahl() {
   return h + '</div>';
 }
 Object.assign(EXTRA_ACT, {
-  zsPrev: () => { K.zsOff = num(K.zsOff, 0) + ZS_N; K.zsSel = null; },
-  zsNext: () => { K.zsOff = Math.max(0, num(K.zsOff, 0) - ZS_N); K.zsSel = null; },
+  zsPrev: () => { K.zsOff = num(K.zsOff, 0) + zsN(); K.zsSel = null; },
+  zsNext: () => { K.zsOff = Math.max(0, num(K.zsOff, 0) - zsN()); K.zsSel = null; },
+  kTiefer: (d) => { K.tiefer = d.id || ''; K.zsSel = null; },
   zsNow: () => { K.zsOff = 0; K.zsSel = null; },
   zsSel: (d) => { K.zsSel = K.zsSel && K.zsSel.g === d.g && K.zsSel.w === d.w ? null : { g: d.g, w: d.w }; }
 });
@@ -3303,19 +3499,28 @@ function klausurenHtml() {
     h += '<div style="display:flex;flex-direction:column;gap:4px" data-k="kl-schnitt">' + Object.keys(g).sort((a, b) => (a ? gName(a) : '~').localeCompare(b ? gName(b) : '~')).map((k) =>
       '<div style="display:flex;justify-content:space-between;gap:8px;font-size:14px"><span>' + esc(k ? gName(k) : 'ohne Rechtsgebiet') + ' · ' + anz(g[k].length, 'Klausur', 'Klausuren') + '</span><b>Schnitt ' + hNum1(g[k].reduce((a, v) => a + v, 0) / g[k].length) + ' P.</b></div>').join('') + '</div>';
     if (mit.length >= 2) {
-      const n = mit.length; const X = (i) => 10 + i * (280 / (n - 1)); const Y = (v) => 70 - (v / 18) * 60;
-      h += '<svg viewBox="0 0 300 80" role="img" aria-label="' + esc('Verlauf: ' + mit.map((x) => klausurPunkte(x)).join(', ') + ' Punkte') + '" style="width:100%;height:auto;max-height:120px" data-k="kl-verlauf">' +
-        '<polyline fill="none" stroke="var(--soll)" stroke-width="1.5" points="' + mit.map((x, i) => X(i).toFixed(1) + ',' + Y(klausurPunkte(x)).toFixed(1)).join(' ') + '"/>' +
-        mit.map((x, i) => '<circle cx="' + X(i).toFixed(1) + '" cy="' + Y(klausurPunkte(x)).toFixed(1) + '" r="3.5" fill="var(--ink)"/>').join('') + '</svg>';
+      const d0 = mit[0].datum; const span = Math.max(1, dayDiff(mit[mit.length - 1].datum, d0));
+      const KW = window.innerWidth < 700 ? 340 : 640;
+      const X = (x) => 34 + (dayDiff(x.datum, d0) / span) * (KW - 50); const Y = (v) => 150 - (v / 18) * 138;
+      const kg = (x) => (x.gebiet && thema(x.gebiet) ? topOf(x.gebiet) : '');
+      const schnitt = mit.map((x, i) => { const a = mit.slice(Math.max(0, i - 2), i + 1).map(klausurPunkte); return X(x).toFixed(1) + ',' + Y(a.reduce((p, v) => p + v, 0) / a.length).toFixed(1); });
+      h += '<svg viewBox="0 0 ' + KW + ' 174" role="img" aria-label="' + esc('Verlauf: ' + mit.map((x) => klausurPunkte(x)).join(', ') + ' Punkte') + '" style="width:100%;height:auto" data-k="kl-verlauf">' +
+        [0, 4, 9, 13, 18].map((v) => '<line x1="34" x2="' + (KW - 6) + '" y1="' + Y(v).toFixed(1) + '" y2="' + Y(v).toFixed(1) + '" style="stroke:var(--line)" stroke-width="1"/><text x="28" y="' + (Y(v) + 4).toFixed(1) + '" text-anchor="end" font-size="11" style="fill:var(--quiet)">' + v + '</text>').join('') +
+        '<text x="34" y="170" font-size="11" style="fill:var(--quiet)">' + esc(fmtDM(d0)) + '</text><text x="' + (KW - 6) + '" y="170" text-anchor="end" font-size="11" style="fill:var(--quiet)">' + esc(fmtDM(mit[mit.length - 1].datum)) + '</text>' +
+        (mit.length >= 3 ? '<polyline fill="none" style="stroke:var(--ink)" stroke-width="2" stroke-linejoin="round" points="' + schnitt.join(' ') + '"/>' : '') +
+        mit.map((x) => '<circle cx="' + X(x).toFixed(1) + '" cy="' + Y(klausurPunkte(x)).toFixed(1) + '" r="5.5" stroke-width="2" style="fill:' + gruppeFarbe(kg(x), null) + ';stroke:var(--card)"><title>' + esc(fmtShort(x.datum) + ' · ' + (kg(x) ? gName(kg(x)) : 'ohne Rechtsgebiet') + ': ' + klausurPunkte(x) + ' Punkte') + '</title></circle>').join('') + '</svg>' +
+        '<div class="legend2">' + Object.keys(g).map((k) => '<span><i style="width:10px;height:10px;border-radius:5px;background:' + gruppeFarbe(k, null) + '"></i>' + esc(k ? gName(k) : 'ohne Rechtsgebiet') + '</span>').join('') + (mit.length >= 3 ? '<span><i style="width:16px;height:2px;background:var(--ink)"></i>Schnitt der letzten drei</span>' : '') + '</div>';
     }
   }
-  h += '<div style="display:flex;flex-direction:column">' + past.map((x) => {
+  const alleZeigen = !!K.showAll.kl || past.length <= 6 || (K.kl && past.slice(5).some((x) => x.id === K.kl));
+  h += '<div style="display:flex;flex-direction:column">' + (alleZeigen ? past : past.slice(0, 5)).map((x) => {
     const p = klausurPunkte(x);
     const st = p != null ? p + ' P.' : (x.ergebnis && x.ergebnis.ohne ? 'ohne Korrektur' : 'Korrektur steht aus');
     return '<div class="spanrow" style="flex-wrap:wrap" data-k="kl-' + esc(x.id) + '"><span class="sw term"></span><span class="tx"><b>' + esc(x.titel) + '</b><span class="small">' + esc(fmtShort(x.datum) + (x.gebiet && thema(x.gebiet) ? ' · ' + gName(topOf(x.gebiet)) : '') + ' · ' + st) + '</span></span>' +
       '<button class="linkbtn" style="align-self:center" data-a="klOpen" data-id="' + esc(x.id) + '">' + (p == null && !(x.ergebnis && x.ergebnis.ohne) ? 'Punkte eintragen' : 'ändern') + '</button>' +
       (K.kl === x.id ? '<div style="flex:1 1 100%">' + klausurForm(x) + '</div>' : '') + '</div>';
   }).join('') + '</div>';
+  if (past.length > 6) h += '<button class="linkbtn" data-a="kAll" data-id="kl">' + (K.showAll.kl ? 'Nur die letzten fünf zeigen' : 'Alle ' + past.length + ' zeigen') + '</button>';
   return h + '</section>';
 }
 function klausurFehlerWdh(id, i) {
@@ -3354,6 +3559,12 @@ function viewZahlen() {
     h += '<p style="padding:0 4px;font-size:15px;line-height:1.5;color:var(--quiet)">Die Seite füllt sich von selbst aus dem, was du ohnehin einträgst. Erste Zahlen gibt es nach der ersten vollen Woche.</p>';
   }
   const stats = sel.map((W) => Object.assign({ W: W }, weekStats(W)));
+  // Gruppen im Zeitraum: Gebiete oder, eine Ebene tiefer, die Teile eines Gebiets
+  const selVon = sel.length ? sel[0] : null; const selBis = sel.length ? addDays(sel[sel.length - 1], 6) : null;
+  const zaehl = (tf) => { const o = {}; if (selVon) Object.keys(D.bloecke).forEach((id) => { const b = D.bloecke[id]; if (b.status !== 'erledigt' || b.quelle === 'klausur' || !isDate(b.erledigtAm) || b.erledigtAm < selVon || b.erledigtAm > selBis) return; const k = gruppeVon(b.thema, b.gebiet, tf); o[k] = (o[k] || 0) + 1; }); return o; };
+  const tiefer = tieferFuer(zaehl(null));
+  const zg = selVon ? zeitGruppen(selVon, selBis, tiefer) : {};
+  if (hasData) h += tieferChips(tiefer);
   // Wiederholungsstand
   const cat = (sr) => { const a = abstand(num(sr.stufe, 1)); return a <= 3 ? 0 : (a <= 30 ? 1 : 2); };
   const th = [0, 0, 0]; const ei = [0, 0, 0];
@@ -3379,7 +3590,7 @@ function viewZahlen() {
     const q = (p) => work[Math.min(work.length - 1, Math.floor(p * (work.length - 1) + 0.5))];
     cards += '<div role="img" aria-label="' + esc(show.map((s) => 'KW ' + kwOf(s.W) + ': ' + (s.pause ? 'Pause' : s.n)).join(', ')) + '" style="display:flex;flex-direction:column;gap:4px"><div class="bars' + (dense ? ' dense' : '') + '">' +
       show.map((s) => '<div' + (s.wdhPause ? ' class="wp"' : '') + '>' + (s.pause ? '<span class="v">–</span><span class="b p" style="height:18px"></span>' : '<span class="v">' + s.n + '</span><span class="b" style="height:' + Math.max(2, Math.round((s.n / max) * 100)) + 'px"></span>') + '</div>').join('') +
-      '</div><div class="barlab' + (dense ? ' dense' : '') + '">' + show.map((s, i) => '<span>' + (!dense || i % 4 === 0 || i === show.length - 1 ? kwOf(s.W) : '') + '</span>').join('') + '</div></div>';
+      '</div><div class="barlab' + (dense ? ' dense' : '') + '">' + show.map((s, i) => '<span>' + (!dense || (i % 4 === 0 && i < show.length - 2) || i === show.length - 1 ? kwOf(s.W) : '') + '</span>').join('') + '</div></div>';
     const pz = show.filter((s) => s.pause).map((s) => 'KW ' + kwOf(s.W) + ' (' + (s.pause.name || 'frei') + ')');
     const wz = show.filter((s) => s.wdhPause && !s.pause).map((s) => 'KW ' + kwOf(s.W) + (s.wdhPause.name ? ' (' + s.wdhPause.name + ')' : ''));
     if (pz.length) cards += '<span class="small" style="font-size:12px">' + esc('Gestrichelt, Pause: ' + pz.join(', ')) + '</span>';
@@ -3388,16 +3599,40 @@ function viewZahlen() {
   } else cards += '<span class="small" style="font-size:14px">Nach der ersten vollen Woche steht hier, wie viele Blöcke du geschafft hast. Pausen erscheinen als Pausen, nicht als leere Wochen.</span>';
   cards += '</section>';
   // Verteilung
-  const per = {};
-  stats.forEach((s) => Object.keys(s.per).forEach((g) => { per[g] = (per[g] || 0) + s.per[g]; }));
-  const keys = Object.keys(per).sort((a, b) => per[b] - per[a]);
-  const pmax = Math.max(1, ...keys.map((k) => per[k]));
-  cards += '<section class="panel" aria-label="Verteilung auf die Gebiete"><h2>Verteilung auf die Gebiete</h2>' + (keys.length ? keys.map((g) => '<div class="vert"' + (g && thema(g) ? gStyle(g) : '') + '><span class="gname" style="font-size:14px;min-width:0"><span class="dot' + (g && thema(g) ? '' : ' open') + '"></span>' + esc(g && thema(g) ? gName(g) : 'ohne Gebiet') + '</span><span class="track"><span style="width:' + Math.round((per[g] / pmax) * 100) + '%"></span></span><span class="n">' + per[g] + '</span></div>').join('') +
-    '<span class="small" style="font-size:12px">erledigte Blöcke im Zeitraum, nach oberster Themenebene</span>' : '<span class="small" style="font-size:14px">Zeigt später, wie sich die erledigten Blöcke auf deine Gebiete verteilen.</span>') + '</section>';
+  const per = zaehl(tiefer);
+  const zsum = {}; Object.keys(zg).forEach((W) => Object.keys(zg[W]).forEach((k) => { if (k !== '#t') zsum[k] = (zsum[k] || 0) + zg[W][k]; }));
+  const zges = Object.keys(zsum).reduce((a, k) => a + zsum[k], 0);
+  const pges = Object.keys(per).reduce((a, k) => a + per[k], 0);
+  const anteil = (k) => (zges ? num(zsum[k], 0) / zges : (pges ? num(per[k], 0) / pges : 0)); // nach erfasster Zeit, ohne Zeiten nach Blöcken
+  const keys = Object.keys(Object.assign({}, per, zsum)).sort((a, b) => anteil(b) - anteil(a) || num(per[b], 0) - num(per[a], 0));
+  // Anteil am Stoff: Themen der untersten Ebene je Gruppe
+  const blaetter = (g) => { const d = thDesc(g); return (d.length ? d : [g]).filter((id) => !thKids(id).length).length; };
+  const stoffRows = tiefer ? thKids(tiefer) : gebiete();
+  const stoffGes = stoffRows.reduce((a, g) => a + blaetter(g), 0);
+  const stoff = (k) => (stoffGes && stoffRows.indexOf(k) >= 0 ? blaetter(k) / stoffGes : null);
+  // Zuletzt daran gearbeitet (ohne Blick auf den Zeitraum)
+  const letzt = {};
+  const merk = (k, d) => { if (isDate(d) && d <= t && (!letzt[k] || d > letzt[k])) letzt[k] = d; };
+  Object.keys(D.bloecke).forEach((id) => { const b = D.bloecke[id]; if (b.status === 'erledigt' && b.quelle !== 'klausur') merk(gruppeVon(b.thema || b.wdhVon, b.gebiet, tiefer), b.erledigtAm); });
+  Object.keys(D.tage).forEach((d) => { const bew = (D.tage[d].wdh || {}).bew || {}; Object.keys(bew).forEach((ref) => { if (!bew[ref] || !bew[ref].r) return; const it = srByRef(ref); if (it) merk(gruppeVon(it.kind === 't' ? it.id : null, it.gebiet, tiefer), d); }); });
+  const vor = (d) => { const n = dayDiff(t, d); return n <= 0 ? 'heute' : (n === 1 ? 'gestern' : (n <= 21 ? 'vor ' + n + ' Tagen' : 'am ' + fmtDM(d))); };
+  const skala = Math.max(0.01, ...keys.map((k) => Math.max(anteil(k), stoff(k) || 0)));
+  cards += '<section class="panel" aria-label="Verteilung auf die Gebiete"><div style="display:flex;flex-direction:column;gap:2px"><h2>' + (tiefer ? esc('Verteilung in ' + gName(tiefer)) : 'Verteilung auf die Gebiete') + '</h2><span class="small">Was kommt zu kurz?</span></div>' + (keys.length ? keys.map((g) => {
+    const echt = g && g !== '~' && thema(g) && g !== tiefer; const col = gruppeFarbe(g, tiefer); const sa = stoff(g);
+    return '<div class="vert" style="--gm:' + col + (echt && !tiefer ? ';--gt:var(--g-' + gFarbe(g) + '-t)' : '') + '" data-k="vert-' + esc(g === '~' ? 'andere' : (g || 'ohne')) + '"><span class="gname" style="font-size:14px;min-width:0"><span class="dot' + (echt ? '' : ' open') + '"></span>' + esc(gruppeName(g, tiefer)) + '</span>' +
+      '<span class="track" style="position:relative;overflow:visible" title="' + esc(Math.round(anteil(g) * 100) + ' % ' + (zges ? 'der erfassten Zeit' : 'der erledigten Blöcke') + (sa != null ? ', ' + Math.round(sa * 100) + ' % des Stoffs' : '') + (letzt[g] ? ', zuletzt ' + vor(letzt[g]) : '')) + '"><span style="width:' + Math.round((anteil(g) / skala) * 100) + '%"></span>' + (sa != null ? '<i style="position:absolute;top:-3px;bottom:-3px;width:2px;margin-left:-1px;border-radius:1px;background:var(--ink);left:' + Math.round((sa / skala) * 100) + '%"></i>' : '') + '</span><span class="n">' + num(per[g], 0) + '</span>' +
+      '<span class="small" style="grid-column:1 / -1;font-size:12px;margin-top:-4px">' + Math.round(anteil(g) * 100) + ' %' + (letzt[g] ? ' · zuletzt ' + vor(letzt[g]) : '') + '</span></div>';
+  }).join('') +
+    '<span class="small" style="font-size:12px">Balken: Anteil ' + (zges ? 'an der erfassten Zeit' : 'an den erledigten Blöcken') + ' im Zeitraum' + (stoffGes ? ' · Strich: Anteil am Stoff (endet der Balken deutlich davor, kam das zuletzt kurz)' : '') + ' · Zahl: erledigte Blöcke</span>' : '<span class="small" style="font-size:14px">Zeigt später, wie sich deine Lernzeit auf deine Gebiete verteilt.</span>') + '</section>';
   // Erfasste Zeit
   const zeit = stats.reduce((a, s) => a + s.zeit, 0);
   const withT = stats.filter((s) => s.zeit > 0).length;
-  cards += '<section class="panel" aria-label="Erfasste Zeit"><h2>Erfasste Zeit</h2>' + (stats.length ? '<span class="big">' + fmtHM(zeit) + '</span><span class="small" style="font-size:14px">erfasst in ' + withT + ' von ' + stats.length + (stats.length === 1 ? ' Woche' : ' Wochen') + '. Nur, was du mit Timer oder von Hand eingetragen hast. Lückenhaft, und das ist in Ordnung.</span>' : '<span class="small" style="font-size:14px">Hier steht, was du mit Timer oder von Hand erfasst hast. Lücken sind normal, die Zahl heißt deshalb „erfasst“.</span>') + '</section>';
+  const zkeys = Object.keys(zsum).sort((a, b) => zsum[b] - zsum[a]).concat(Object.keys(zg).some((W) => zg[W]['#t']) ? ['#t'] : []);
+  const zc = stats.length >= 2 && zeit > 0 ? zeitChart(stats, zg, zkeys, tiefer) : null;
+  const zeitCard = '<section class="panel" style="grid-column:1 / -1" aria-label="Erfasste Zeit"><div style="display:flex;flex-direction:column;gap:2px"><h2>Erfasste Zeit</h2><span class="small">Lerne ich genug?</span></div>' + (stats.length ? '<span class="big">' + fmtHM(zeit) + '</span>' +
+    (zc ? zc.svg + '<div class="legend2">' + zkeys.map((k) => '<span><i style="width:12px;height:12px;border-radius:3px;background:' + gruppeFarbe(k, tiefer) + '"></i>' + esc(gruppeName(k, tiefer)) + '</span>').join('') + (zc.band ? '<span><i style="width:16px;height:12px;background:var(--seg)"></i>dein üblicher Bereich</span>' : '') + (stats.some((x) => x.pause) ? '<span><i style="width:16px;height:12px;background:var(--ok-soft)"></i>Pause</span>' : '') + '</div>' + (zc.text ? '<p style="font-size:15px;line-height:1.45">' + esc(zc.text) + '</p>' : '') : '') +
+    '<span class="small" style="font-size:14px">erfasst in ' + withT + ' von ' + stats.length + (stats.length === 1 ? ' Woche' : ' Wochen') + '. Nur, was du mit Timer oder von Hand eingetragen hast. Lückenhaft, und das ist in Ordnung.</span>' : '<span class="small" style="font-size:14px">Hier steht, was du mit Timer oder von Hand erfasst hast. Lücken sind normal, die Zahl heißt deshalb „erfasst“.</span>') + '</section>';
+  cards += stoffHtml(tiefer) + zeitCard;
   h += '<div class="zgrid">' + cards + '</div>';
   // Abzeichen
   const groups = [];
@@ -3406,13 +3641,11 @@ function viewZahlen() {
   Object.keys(D.themen).forEach((id) => { const x = D.themen[id]; if (x.zustand === 'abgeschlossen' && isDate(x.abgeschlossenAm) && !(thema(x.eltern) && thema(x.eltern).zustand === 'abgeschlossen')) abB.push({ k: 'check', name: 'Thema ' + x.name, d: x.abgeschlossenAm }); });
   Object.keys(D.routinen).forEach((id) => { const x = D.routinen[id]; if (x.zustand === 'abgeschlossen' && isDate(x.abgeschlossenAm)) abB.push({ k: 'check', name: 'Routine ' + x.titel, d: x.abgeschlossenAm }); });
   abB.sort((a, b) => (a.d > b.d ? -1 : 1));
-  const gefB = srItems().filter((it) => it.kind === 't' && abstand(num(it.sr.stufe, 1)) >= 60).map((it) => ({ k: 'stack', name: it.titel, d: it.sr.letzte || '' }));
   if (etB.length) groups.push({ id: 'e', title: 'Etappen · ' + etB.length, items: etB });
   if (abB.length) groups.push({ id: 'a', title: 'Erledigt · ' + abB.length, items: abB });
-  if (gefB.length) groups.push({ id: 'g', title: 'Gefestigt · ' + gefB.length, items: gefB });
   h += klausurenHtml();
   const BI = { flag: ICON.flag, check: ICON.check, stack: '<path d="M5 18h14M7 13.5h10M9 9h6M11 4.5h2"/>' };
-  h += '<section class="panel" aria-label="Abzeichen"><div class="h2row" style="margin:0"><h2>Abzeichen</h2><span class="small">alles, was erledigt oder gefestigt ist</span></div>';
+  h += '<section class="panel" aria-label="Abzeichen"><div class="h2row" style="margin:0"><h2>Abzeichen</h2><span class="small">Etappen, die vorbei sind, und alles, was du als erledigt markiert hast</span></div>';
   if (groups.length) {
     groups.forEach((g) => {
       const all = !!K.showAll[g.id];
@@ -3422,7 +3655,7 @@ function viewZahlen() {
         (g.items.length > 6 ? '<button class="linkbtn" data-a="kAll" data-id="' + g.id + '">' + (all ? 'Weniger zeigen' : 'Alle ' + g.items.length + ' zeigen') + '</button>' : '') + '</div>';
     });
   } else {
-    h += '<div class="badges">' + [['Gefestigt', 'wenn ein Thema bei langen Abständen ankommt'], ['Erledigt', 'wenn du ein Thema oder eine Routine als erledigt markierst'], ['Etappe', 'wenn eine Etappe vorbei ist']].map((m) => '<div class="badge"><span class="halo e"></span><b>' + m[0] + '</b><small>' + m[1] + '</small></div>').join('') + '</div>';
+    h += '<div class="badges">' + [['Erledigt', 'wenn du ein Thema oder eine Routine als erledigt markierst'], ['Etappe', 'wenn eine Etappe vorbei ist']].map((m) => '<div class="badge"><span class="halo e"></span><b>' + m[0] + '</b><small>' + m[1] + '</small></div>').join('') + '</div>';
   }
   h += '</section></div>';
   return h;
@@ -3489,12 +3722,11 @@ Object.assign(EXTRA_ACT, {
       if (F.kErr) return 'keep';
       const ganz = !!F.kGanz; const von = ganz ? '' : F.kTVon; const bis = ganz ? '' : (F.kTBis || '');
       const kl = F.kKlausur ? { art: 'klausur', gebiet: F.kGeb || null } : { art: null, gebiet: null };
-      if (f.id) undoable(F.kKlausur ? 'Klausur gespeichert' : 'Termin gespeichert', () => patch('termine', f.id, Object.assign({ titel: name, datum: F.kVon, von: von, bis: bis, ganztags: ganz, beispiel: false }, kl)));
+      if (f.id) undoable(F.kKlausur ? 'Klausur gespeichert' : 'Termin gespeichert', () => { patch('termine', f.id, Object.assign({ titel: name, datum: F.kVon, von: von, bis: bis, ganztags: ganz, beispiel: false }, kl)); reflowDay(F.kVon); });
       else if (F.kKlausur && F.kWdh) undoable('Klausur eingetragen, jede Woche am ' + WDL[wdOf(F.kVon)], () => addTerminWeekly(F.kVon, name, von, bis, ganz, F.kTEnd, kl));
       else if (F.kKlausur) undoable('Klausur eingetragen', () => addTerminOnce(F.kVon, name, von, bis, ganz, kl));
       else if (F.kWdh) undoable('Termin eingetragen, jede Woche am ' + WDL[wdOf(F.kVon)], () => addTerminWeekly(F.kVon, name, von, bis, ganz, F.kTEnd));
       else undoable('Termin eingetragen', () => addTerminOnce(F.kVon, name, von, bis, ganz));
-      if (f.id) reflowDay(F.kVon);
       K.form = null; return;
     }
     if (f.kind === 'etappe' && !name) { F.kErr = 'Eine Etappe braucht einen Namen.'; return 'keep'; }
@@ -3722,10 +3954,19 @@ function thMerge(id, target) {
     Object.keys(D.bloecke).forEach((k) => {
       const b = D.bloecke[k]; const part = {};
       if (b.thema === id) { part.thema = target; part.gebiet = g; }
+      else if (b.gebiet === id) part.gebiet = g;
       if (b.wdhVon === id) part.wdhVon = target;
       if (Object.keys(part).length) patch('bloecke', k, part);
     });
-    Object.keys(D.vorhaben).forEach((k) => { if (D.vorhaben[k].wdhVon === id) patch('vorhaben', k, { wdhVon: target }); });
+    Object.keys(D.vorhaben).forEach((k) => {
+      const v = D.vorhaben[k]; const part = {};
+      if (v.wdhVon === id) part.wdhVon = target;
+      if (v.thema === id) part.thema = target;
+      if (v.gebiet === id) part.gebiet = g;
+      if (Object.keys(part).length) patch('vorhaben', k, part);
+    });
+    Object.keys(D.etappen).forEach((k) => { const st = D.etappen[k].stoff; if (Array.isArray(st) && st.indexOf(id) >= 0) patch('etappen', k, { stoff: st.map((x) => (x === id ? target : x)).filter((x, i, a) => a.indexOf(x) === i) }); });
+    Object.keys(D.termine).forEach((k) => { if (D.termine[k].gebiet === id) patch('termine', k, { gebiet: target }); });
     const sub = thDesc(id);
     kids.forEach((k) => patch('themen', k, { eltern: target }));
     sub.forEach((x) => Object.keys(D.bloecke).forEach((k) => { if (D.bloecke[k].thema === x && D.bloecke[k].gebiet !== g) patch('bloecke', k, { gebiet: g }); }));
@@ -3752,7 +3993,16 @@ function thDeleteTree(ids, text, vorher, genau, srBehalten) {
       else if (all.has(b.thema)) part.thema = null;
       patch('bloecke', k, part);
     });
-    Object.keys(D.vorhaben).forEach((k) => { if (all.has(D.vorhaben[k].wdhVon)) patch('vorhaben', k, { wdhVon: null }); });
+    Object.keys(D.bloecke).forEach((k) => { if (all.has(D.bloecke[k].gebiet)) patch('bloecke', k, { gebiet: null }); });
+    Object.keys(D.vorhaben).forEach((k) => {
+      const v = D.vorhaben[k]; const part = {};
+      if (all.has(v.wdhVon)) part.wdhVon = null;
+      if (all.has(v.thema)) part.thema = null;
+      if (all.has(v.gebiet)) part.gebiet = null;
+      if (Object.keys(part).length) patch('vorhaben', k, part);
+    });
+    Object.keys(D.etappen).forEach((k) => { const st = D.etappen[k].stoff; if (Array.isArray(st) && st.some((x) => all.has(x))) patch('etappen', k, { stoff: st.filter((x) => !all.has(x)) }); });
+    Object.keys(D.termine).forEach((k) => { if (all.has(D.termine[k].gebiet)) patch('termine', k, { gebiet: null }); });
     all.forEach((id) => del('themen', id));
   });
   if (all.has(TH.sel)) TH.sel = null;
@@ -3914,7 +4164,7 @@ function thDetail(id) {
     '<h2 class="serif" style="font-size:24px;line-height:1.15">' + esc(t.name) + bsp(t) + '</h2>';
   h += '<div class="chips" role="group" aria-label="Zustand">' + ['aktiv', 'pausiert', 'abgeschlossen'].map((x) => '<button class="sel" aria-pressed="' + (z === x) + '" data-a="thZ" data-id="' + esc(id) + '" data-v="' + x + '">' + zWort(x) + '</button>').join('') + '</div>';
   if (z === 'abgeschlossen') h += '<span class="small">' + (isDate(t.abgeschlossenAm) ? 'Erledigt am ' + esc(fmtDMonY(t.abgeschlossenAm)) + '. ' : '') + 'Wieder aktiviert beginnt die Wiederholung mit kurzem Abstand neu.</span>';
-  else if (ez !== z) h += '<span class="small">Ruht mit dem übergeordneten Thema (' + ez + ').</span>';
+  else if (ez !== z) h += '<span class="small">Ruht mit dem übergeordneten Thema (' + zWort(ez) + ').</span>';
   else if (z === 'pausiert') h += '<span class="small">Pausiert: kommt nicht in die Wiederholung, bis du es wieder aktivierst.</span>';
   const wOn = t.wiederholen !== false;
   h += '<button class="switch ink" role="switch" aria-checked="' + wOn + '" data-a="thW" data-id="' + esc(id) + '"><span class="tr"></span>wiederholen</button>';
@@ -4073,7 +4323,6 @@ const zWort = (z) => (z === 'abgeschlossen' ? 'erledigt' : z);
 const ZUST = ['aktiv', 'pausiert', 'abgeschlossen'];
 // Angezeigt wird „erledigt“; gespeichert bleibt 'abgeschlossen'
 const MODS = [
-  { k: 'suche', name: 'Suche', text: 'Suchfeld in „Themen“ für Themen und Lerneinheiten', std: 'aktiv', gebaut: true },
   { k: 'anki', name: 'Anki-Export', text: 'Lerneinheiten als Karten exportieren', std: 'pausiert', gebaut: false },
   { k: 'folien', name: 'Folien herausschreiben', text: 'Inhalte aus Vorlesungsfolien herausschreiben', std: 'pausiert', gebaut: false }
 ];
@@ -4219,7 +4468,7 @@ function datenHtml() {
   const s = D.meta.sicherung;
   const n = (col) => Object.keys(D[col]).length;
   let h = '<section class="panel" aria-label="Daten auf diesem Gerät"><h2>Daten auf diesem Gerät</h2>' +
-    '<span class="small" style="font-size:14px">' + (sync.an ? 'Alles liegt auf diesem Gerät und über den Abgleich auch in deiner Ablage. Eine Sicherung als Datei ab und zu schadet trotzdem nicht.' : 'Alles liegt nur auf diesem Mac, in diesem Browser. Sichere es ab und zu als Datei, etwa in iCloud Drive. Mit der Datei kannst du auch umziehen.') + '</span>' +
+    '<span class="small" style="font-size:14px">' + (sync.an ? 'Alles liegt auf diesem Gerät und über den Abgleich auch in deiner Ablage. Eine Sicherung als Datei ab und zu schadet trotzdem nicht.' : 'Alles liegt nur auf diesem Gerät, in diesem Browser. Sichere es ab und zu als Datei, etwa in iCloud Drive. Mit der Datei kannst du auch umziehen.') + '</span>' +
     '<span class="small">' + (s && isDate(s.am) ? 'Zuletzt gesichert: ' + esc(fmtDMonY(s.am)) : 'Noch nicht gesichert') + ' · ' + anz(n('themen'), 'Thema', 'Themen') + ' · ' + anz(n('bloecke'), 'Eintrag', 'Einträge') + ' · ' + anz(n('termine'), 'Termin', 'Termine') + '</span>';
   if (ES.importPending) {
     const p = ES.importPending;
@@ -4337,7 +4586,7 @@ Object.assign(EXTRA_ACT, {
   abgAus: () => { syncAus(); toast('Abgleich ausgeschaltet. Die Daten bleiben auf diesem Gerät.', false); },
   abgVergiss: () => { syncAus(); try { localStorage.removeItem(SYNC_KEY); } catch (e) { /* egal */ } sync = syncLoad(); F.abgToken = ''; toast('Schlüssel von diesem Gerät entfernt', false); return 'keep'; }
 });
-const APP_STAND = '2026-11-13'; // bei jeder Veröffentlichung anpassen
+const APP_STAND = '2026-11-16'; // bei jeder Veröffentlichung anpassen
 function viewEinstellungen() {
   const t = today();
   const h = '<header class="head"><div class="col"><span class="date">' + esc(fmtLong(t)) + '</span><h1>Einstellungen</h1><p class="line">Selten gebraucht. Im Tagesablauf tauchen diese Werte nie auf.</p></div></header>';
@@ -4581,14 +4830,23 @@ const ACT = {
     const ref = d.ref || S.editT;
     const v = String(F.zeit || '').trim();
     const m = v ? parseDur(v) : 0;
-    if (m == null || m > 24 * 60) { toast('Zeit bitte als 1:30 oder in Minuten eingeben.', false); return 'keep'; }
+    if (m == null || m > 24 * 60) { toast('Zeit bitte als 1:30, als „2 h“ oder in Minuten eingeben.', false); return 'keep'; }
     const [k, id] = String(ref).split(':');
     const b = k === 'b' ? D.bloecke[id] : null;
     const day = b ? (b.tag || curDay()) : wParse(id).date;
     const cur = b ? num(b.zeit, 0) : wZeit(id);
     if (m > cur && !guardAdd(day)) return 'keep';
-    setZeit(ref, m); S.editT = null;
-    if (m > cur && markNach(day)) { if (b) patch('bloecke', id, { nachgetragen: true }); else { const wp = wParse(id); if (wp.ref) patch('tage', wp.date, { wdh: { bew: { [wp.ref]: { zeitNach: true } } } }); else patch('tage', id, { wdh: { zeitNachgetragen: true } }); } }
+    S.editT = null;
+    if (m === cur) return;
+    recording = {};
+    try {
+      setZeit(ref, m);
+      if (m > cur && markNach(day)) { if (b) patch('bloecke', id, { nachgetragen: true }); else { const wp = wParse(id); if (wp.ref) patch('tage', wp.date, { wdh: { bew: { [wp.ref]: { zeitNach: true } } } }); else patch('tage', id, { wdh: { zeitNachgetragen: true } }); } }
+    } finally {
+      const snap = recording; recording = null;
+      const rest = toastState && toastState.snap && /^Rest /.test(toastState.text);
+      if (!rest && Object.keys(snap).length) toast('Zeit gespeichert', snap);
+    }
   },
   keepB: (d) => toggleWiederholen(d.id),
   rateB: (d) => rateBlock(d.id, d.r),
@@ -4732,7 +4990,7 @@ window.addEventListener('resize', () => { const w = window.innerWidth >= 900; if
 document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleRender(); });
 // Zuletzt geöffnete Ansicht gilt, solange die App offen ist (auch nach Neuladen); nach dem Beenden startet „Heute“
 try { const v = sessionStorage.getItem('ls-view'); if (v && VIEW_FN[v]) S.view = v; } catch (e) { /* egal */ }
-window.__ls = { abgleich: { jetzt: syncJetzt, stand: () => clone(Object.assign({}, sync, { token: sync.token ? '(gesetzt)' : '' })), T: SYNC_T, merge: syncMerge }, D: D, S: S, F: F, cfg: cfg, today: today, setSim: (d, m) => { setSim(d, m); scheduleRender(); }, progress: progress, pufferDate: pufferDate, capacity2: (T) => capacity(T, wdhSplit(T), planFrom(T), true), srItems: srItems, wdhListe: wdhListe, wdhSplit: wdhSplit, wdhForecast: wdhForecast, wdhRichtwert: wdhRichtwert, wdhUeberhang: wdhUeberhang, allocRegel: allocRegel, fillWdh: fillWdh, srRate: srRate, wdhState: wdhState, poolOf: poolOf, carryOf: carryOf, vorhabenFor: vorhabenFor, capacity: capacity, termineAt: termineAt, routinenAt: routinenAt, pauseAt: pauseAt, erfasstAt: erfasstAt, notizHtml: notizHtml, dbState: () => dbState, moveBlock: moveBlock, clearPlanBlocks: (T) => { clearPlanBlocks(T); scheduleRender(); } };
+window.__ls = { test: { parseDur: parseDur, rateWdh: rateWdh, setBlockDone: setBlockDone, toggleTermin: toggleTermin, planRows: planRows, weekStats: weekStats, weekFacts: weekFacts, backToWeek: backToWeek, pullToday: pullToday, thMerge: thMerge, zsDaten: zsDaten, zeitGruppen: zeitGruppen, patch: patch, undoable: undoable }, abgleich: { jetzt: syncJetzt, stand: () => clone(Object.assign({}, sync, { token: sync.token ? '(gesetzt)' : '' })), T: SYNC_T, merge: syncMerge }, D: D, S: S, F: F, cfg: cfg, today: today, setSim: (d, m) => { setSim(d, m); scheduleRender(); }, progress: progress, pufferDate: pufferDate, capacity2: (T) => capacity(T, wdhSplit(T), planFrom(T), true), srItems: srItems, wdhListe: wdhListe, wdhSplit: wdhSplit, wdhForecast: wdhForecast, wdhRichtwert: wdhRichtwert, wdhUeberhang: wdhUeberhang, allocRegel: allocRegel, fillWdh: fillWdh, srRate: srRate, wdhState: wdhState, poolOf: poolOf, carryOf: carryOf, vorhabenFor: vorhabenFor, capacity: capacity, termineAt: termineAt, routinenAt: routinenAt, pauseAt: pauseAt, erfasstAt: erfasstAt, notizHtml: notizHtml, dbState: () => dbState, moveBlock: moveBlock, clearPlanBlocks: (T) => { clearPlanBlocks(T); scheduleRender(); } };
 scheduleRender();
 initDb();
 if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch((e) => console.warn('Offline-Speicher', e));

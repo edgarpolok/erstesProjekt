@@ -111,6 +111,7 @@ L.run(async () => {
   // 5) Zeitstrahl: Durchgearbeitet mit Durchgang
   await L.go(p, 'kalender');
   await L.click(p, '[data-a=kTab][data-v=zeit]');
+  await L.click(p, '[data-a=kTiefer][data-id=""]'); // nur ein Gebiet: der Zeitstrahl zeigt von selbst dessen Teile, hier zurück auf „Alle Gebiete“
   await L.click(p, '[data-k=zs-zr] [data-a=zsSel] >> nth=-1');
   const detail = await L.text(p, '[aria-label="Woche im Detail"]');
   L.has('Zeitstrahl: Abschnitt Durchgearbeitet', detail, 'Durchgearbeitet');

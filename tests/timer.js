@@ -36,7 +36,7 @@ L.run(async () => {
   await L.click(p, '[data-a=stopT]');
   s = await L.store(p);
   L.expect('über Mitternacht: 25 min, Block bleibt am Mittwoch', [s.bloecke.b1.zeit, s.bloecke.b1.tag], [25, '2026-11-04']);
-  L.expect('erfasst Mi / Do', await p.evaluate(() => [window.__ls.erfasstAt('2026-11-04'), window.__ls.erfasstAt('2026-11-05')]), [0, 0]);
+  L.expect('erfasst Mi / Do: die Zeit zählt am Starttag, auch wenn der Block noch nicht abgehakt ist', await p.evaluate(() => [window.__ls.erfasstAt('2026-11-04'), window.__ls.erfasstAt('2026-11-05')]), [25, 0]);
   // Block in den neuen Tag holen, 10 min weiterlernen, abhaken: alte 25 min bleiben beim Mittwoch
   await L.sim(p, '2026-11-05', 20);
   await L.click(p, '[data-a=poolOpen]'); await L.click(p, '[data-a=pull]');

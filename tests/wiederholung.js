@@ -14,7 +14,7 @@ L.run(async () => {
     return out;
   });
   L.expect('Abstände bei „sicher“ nacheinander (ab Stufe 1, oben gedeckelt)', folge, [3, 7, 14, 30, 60, 90, 120, 120, 120]);
-  L.expect('„teilweise“ bleibt auf der Stufe', await p.evaluate(() => window.__ls.srRate({ stufe: 4, faellig: '2026-10-20' }, 'teilweise', '2026-10-29')), { stufe: 4, faellig: '2026-11-12', letzte: '2026-10-29', bewertung: 'teilweise' });
+  L.expect('„teilweise“ geht eine Stufe zurück', await p.evaluate(() => window.__ls.srRate({ stufe: 4, faellig: '2026-10-20' }, 'teilweise', '2026-10-29')), { stufe: 3, faellig: '2026-11-05', letzte: '2026-10-29', bewertung: 'teilweise' });
   L.expect('„nicht“ fällt auf Stufe 1 zurück', await p.evaluate(() => window.__ls.srRate({ stufe: 6, faellig: '2026-10-20' }, 'nicht', '2026-10-29')), { stufe: 1, faellig: '2026-10-30', letzte: '2026-10-29', bewertung: 'nicht' });
   await p.context().close();
 
@@ -26,7 +26,7 @@ L.run(async () => {
   await L.click(p, '[data-a=rateW][data-r=sicher]');
   L.expect('sicher: Stufe 3, 7 Tage ab heute', await sr(), { stufe: 3, faellig: '2026-11-05', letzte: '2026-10-29', bewertung: 'sicher' });
   await L.click(p, '[data-a=rateW][data-r=teilweise]');
-  L.expect('am selben Tag umbewerten geht vom Stand vor der Bewertung aus', await sr(), { stufe: 2, faellig: '2026-11-01', letzte: '2026-10-29', bewertung: 'teilweise' });
+  L.expect('am selben Tag umbewerten geht vom Stand vor der Bewertung aus', await sr(), { stufe: 1, faellig: '2026-10-30', letzte: '2026-10-29', bewertung: 'teilweise' });
   await L.click(p, '[data-a=rateW][data-r=nicht]');
   L.expect('nicht: Stufe 1, morgen', await sr(), { stufe: 1, faellig: '2026-10-30', letzte: '2026-10-29', bewertung: 'nicht' });
   await L.click(p, '[data-a=rateW][data-r=nicht]');

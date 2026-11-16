@@ -16,8 +16,8 @@ self.addEventListener('fetch', (e) => {
   const fonts = url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com';
   if (req.mode === 'navigate' || (url.origin === location.origin && url.pathname.endsWith('.html'))) {
     e.respondWith(fetch(req).then((res) => {
-      const copy = res.clone();
-      caches.open(CACHE).then((c) => c.put('index.html', copy));
+      // Nur eine echte Antwort merken, keine Fehlerseite
+      if (res.ok && !res.redirected) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put('index.html', copy)); }
       return res;
     }).catch(() => caches.match('index.html').then((r) => r || caches.match('./'))));
     return;

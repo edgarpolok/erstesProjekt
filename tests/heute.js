@@ -5,7 +5,7 @@ const nur = (s, f) => Object.values(s.bloecke).filter(f);
 L.run(async () => {
   // 1) Leerer Mittwoch: Eintrag anlegen, abhaken, Zeit eintragen
   let p = await L.open({}, 'sim-2026-10-28-1000');
-  L.has('leerer Tag zeigt den Hinweis', await L.text(p), 'Dein Plan ist gerade leer');
+  L.has('leerer Tag zeigt den Hinweis', await L.text(p), 'Noch ist alles leer');
   await L.click(p, '[data-a=startAdd]');
   await L.fill(p, '#neu-eintrag', 'Schuldrecht AT – Unmöglichkeit');
   await L.click(p, '[data-a=doAdd]');
