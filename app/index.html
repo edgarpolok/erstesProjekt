@@ -4586,7 +4586,7 @@ Object.assign(EXTRA_ACT, {
   abgAus: () => { syncAus(); toast('Abgleich ausgeschaltet. Die Daten bleiben auf diesem Gerät.', false); },
   abgVergiss: () => { syncAus(); try { localStorage.removeItem(SYNC_KEY); } catch (e) { /* egal */ } sync = syncLoad(); F.abgToken = ''; toast('Schlüssel von diesem Gerät entfernt', false); return 'keep'; }
 });
-const APP_STAND = '2026-11-15'; // bei jeder Veröffentlichung anpassen
+const APP_STAND = '2026-11-16'; // bei jeder Veröffentlichung anpassen
 function viewEinstellungen() {
   const t = today();
   const h = '<header class="head"><div class="col"><span class="date">' + esc(fmtLong(t)) + '</span><h1>Einstellungen</h1><p class="line">Selten gebraucht. Im Tagesablauf tauchen diese Werte nie auf.</p></div></header>';
