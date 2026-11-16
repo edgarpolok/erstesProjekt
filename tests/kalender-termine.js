@@ -36,7 +36,7 @@ L.run(async () => {
   L.expect('Heute: privater Termin hat keinen Kreis zum Abhaken', await p.locator('[data-a=tTermin]').count(), 0);
   L.expect('privat zählt keine Zeit', await erfasst(p, '2026-11-10'), 0);
   await L.go(p, 'woche');
-  L.has('Woche zeigt den privaten Termin', await L.text(p, '.day.today'), 'Abendessen');
+  L.has('Woche zeigt den privaten Termin', await L.text(p, '.wcol.today'), 'Abendessen');
   // Aus Heute ändern: wird ein gewöhnlicher Termin, dann nimmt er Platz weg und lässt sich abhaken
   await L.go(p, 'heute');
   await L.click(p, '.ausserdem button');
