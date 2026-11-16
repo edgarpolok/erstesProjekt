@@ -31,7 +31,7 @@ L.run(async () => {
   // stattdessen Termin
   await L.click(p, '[data-a=tfOpen][data-d="' + DO + '"]');
   L.has('Terminformular im Tag', await L.text(p, '.day[data-k="d-' + DO + '"]'), 'Einmaliger Termin am Donnerstag');
-  await L.fill(p, '#tf-titel', 'Sprechstunde'); await L.fill(p, '#tf-von', '08:00'); await L.fill(p, '#tf-bis', '20:00'); await L.click(p, '[data-a=tfSave]');
+  await L.fill(p, '#tm-titel', 'Sprechstunde'); await L.fill(p, '#tm-von', '08:00'); await L.fill(p, '#tm-bis', '20:00'); await L.click(p, '[data-a=tmSave]');
   s = await L.store(p);
   L.expect('Termin am Donnerstag', Object.values(s.termine).map((t) => [t.titel, t.datum]), [['Sprechstunde', DO]]);
   L.expect('eigener Block bleibt trotz vollem Tag liegen', s.bloecke[eigen].tag, DO);

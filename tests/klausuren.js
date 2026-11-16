@@ -10,11 +10,11 @@ L.run(async () => {
   let p = await L.open({ themen: THEMEN }, 'sim-2026-11-10-1000', 1280);
   await L.go(p, 'kalender');
   await L.click(p, '[data-a=kNew][data-kl="1"]');
-  L.expect('Klausur-Schalter ist an', await p.getAttribute('[data-a=kKlausur]', 'aria-checked'), 'true');
-  L.expect('Beginn vorbelegt', await p.inputValue('#k-t-von'), '09:00');
-  L.expect('Ende vorbelegt', await p.inputValue('#k-t-bis'), '14:00');
-  await L.fill(p, '#k-name', 'Zivilrecht Probeklausur'); await L.fill(p, '#k-datum', '2026-11-20');
-  await L.click(p, '[data-a=kGeb][data-g=zr]'); await L.click(p, '[data-a=kSave]');
+  L.expect('Art „Klausur“ ist gewählt', await p.getAttribute('[data-a=tmArt][data-v=klausur]', 'aria-pressed'), 'true');
+  L.expect('Beginn vorbelegt', await p.inputValue('#tm-von'), '09:00');
+  L.expect('Ende vorbelegt', await p.inputValue('#tm-bis'), '14:00');
+  await L.fill(p, '#tm-titel', 'Zivilrecht Probeklausur'); await L.fill(p, '#tm-datum', '2026-11-20');
+  await L.click(p, '[data-a=tmGeb][data-g=zr]'); await L.click(p, '[data-a=tmSave]');
   let kl = await klausuren(p);
   L.expect('eine Klausur gespeichert', kl.length, 1);
   const k = kl[0] ? kl[0][1] : {};
@@ -28,7 +28,7 @@ L.run(async () => {
   p = await L.open({ themen: THEMEN, wochen: wo, bloecke: { b1: { titel: 'Vorhaben', woche: '2026-11-09', tag: '2026-11-12', status: 'offen', quelle: 'claude', std: 4 } } }, 'sim-2026-11-10-1000', 1280);
   await L.go(p, 'kalender');
   await L.click(p, '[data-a=kNew][data-kl="1"]');
-  await L.fill(p, '#k-name', 'Strafrecht Klausur'); await L.fill(p, '#k-datum', '2026-11-12'); await L.click(p, '[data-a=kSave]');
+  await L.fill(p, '#tm-titel', 'Strafrecht Klausur'); await L.fill(p, '#tm-datum', '2026-11-12'); await L.click(p, '[data-a=tmSave]');
   let s = await L.store(p);
   L.ok('Lernblock weicht vom Klausurtag aus', s.bloecke.b1.tag !== '2026-11-12', s.bloecke.b1.tag);
   kl = await klausuren(p);
@@ -43,8 +43,8 @@ L.run(async () => {
   // 4) Aus der Woche eintragen, Rückgängig
   p = await L.open({}, 'sim-2026-11-10-1000', 1280);
   await L.go(p, 'woche'); await L.click(p, '[data-a=wAdd]'); await L.click(p, '[data-a=tfOpen]');
-  await L.fill(p, '#tf-titel', 'Öffentliches Recht'); await L.fill(p, '#tf-von', '10:00');
-  await L.click(p, '[data-a=tGanz][data-k=tfKlausur]'); await L.click(p, '[data-a=tfSave]');
+  await L.fill(p, '#tm-titel', 'Öffentliches Recht'); await L.fill(p, '#tm-von', '10:00');
+  await L.click(p, '[data-a=tmArt][data-v=klausur]'); await L.click(p, '[data-a=tmSave]');
   kl = await klausuren(p);
   L.expect('Klausur aus der Woche gespeichert', kl.map(([, t]) => t.titel), ['Öffentliches Recht']);
   await L.click(p, '.toast [data-a=undo]');
@@ -136,10 +136,10 @@ L.run(async () => {
   p = await L.open({ themen: THEMEN }, 'sim-2026-11-10-1012', 1280);
   await L.click(p, '[data-a=startAdd]'); await L.click(p, '[data-a=addMore]');
   await L.click(p, '[data-a=tfHeute]');
-  L.expect('Beginn ab jetzt vorbelegt', await p.inputValue('#tf-von'), '10:10');
+  L.expect('Beginn ab jetzt vorbelegt', await p.inputValue('#tm-von'), '10:10');
   L.hasNot('keine Tagesauswahl in Heute', await L.text(p, '[data-k=tform]'), 'Mi 11.');
-  await L.fill(p, '#tf-titel', 'Spontane Klausur'); await L.click(p, '[data-a=tGanz][data-k=tfKlausur]');
-  await L.click(p, '[data-a=tfGeb][data-g=sr]'); await L.click(p, '[data-a=tfSave]');
+  await L.fill(p, '#tm-titel', 'Spontane Klausur'); await L.click(p, '[data-a=tmArt][data-v=klausur]');
+  await L.click(p, '[data-a=tmGeb][data-g=sr]'); await L.click(p, '[data-a=tmSave]');
   kl = await klausuren(p);
   L.expect('spontane Klausur: Tag, Beginn, Gebiet', kl.map(([, t]) => [t.titel, t.datum, t.von, t.gebiet]), [['Spontane Klausur', '2026-11-10', '10:10', 'sr']]);
   L.has('steht im Plan für heute', await L.text(p), 'Spontane Klausur');
@@ -149,8 +149,8 @@ L.run(async () => {
   p = await L.open({ themen: THEMEN }, 'sim-2026-11-10-1000', 1280);
   await L.go(p, 'kalender');
   await L.click(p, '[data-a=kNew][data-kl="1"]');
-  await L.fill(p, '#k-name', 'Klausurenkurs'); await L.fill(p, '#k-datum', '2026-11-14');
-  await L.click(p, '[data-a=tGanz][data-k=kWdh]'); await L.click(p, '[data-a=kSave]');
+  await L.fill(p, '#tm-titel', 'Klausurenkurs'); await L.fill(p, '#tm-datum', '2026-11-14');
+  await L.click(p, '[data-a=tmWdh][data-v="1"]'); await L.click(p, '[data-a=tmSave]');
   kl = await klausuren(p);
   L.expect('wöchentliche Klausur: Samstag, ab 14.11.', kl.map(([, t]) => [t.titel, t.wochentage, t.ab, t.datum || null]), [['Klausurenkurs', [5], '2026-11-14', null]]);
   await p.context().close();

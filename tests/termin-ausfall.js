@@ -1,4 +1,4 @@
-// Wöchentliche Termine fallen im Voraus aus (Kalender-Schalter, Einstellungen, Zeitraum teilen, Kapazität)
+// Wöchentliche Termine fallen im Voraus aus (Schalter im Tagesblatt des Kalenders, Einstellungen, Zeitraum teilen, Kapazität)
 const L = require('./lib');
 
 const REP = { titel: 'Rep', wochentage: [2], von: '09:00', bis: '13:00', zustand: 'aktiv' }; // jeden Mittwoch
@@ -10,7 +10,7 @@ L.run(async () => {
   let p = await L.open({ termine: { t1: REP } }, 'sim-2026-11-03-1000', 1280);
   await L.go(p, 'kalender');
   await L.click(p, '.kal button.cell[data-d="2026-11-11"]');
-  L.has('Formular zeigt Schalter mit Terminnamen', await L.text(p, '[data-k=k-ausfall]'), 'Rep');
+  L.has('Tagesblatt zeigt den Termin mit Schalter', await L.text(p, '[data-k=tb-termine]'), 'Rep');
   L.has('Schalter heißt „fällt aus“', await L.text(p, SCHALTER), 'fällt aus');
   L.expect('Schalter zunächst aus', await p.getAttribute(SCHALTER, 'aria-checked'), 'false');
   await L.click(p, SCHALTER);
@@ -90,9 +90,9 @@ L.run(async () => {
   p = await L.open({ termine: { t1: REP, t2: { titel: 'Einmal', datum: '2026-11-11', von: '15:00', bis: '16:00', zustand: 'aktiv' } } }, 'sim-2026-11-03-1000', 1280);
   await L.go(p, 'kalender');
   await L.click(p, '.kal button.cell[data-d="2026-11-11"]');
-  const liste = await L.text(p, '[data-k=k-ausfall]');
-  L.has('wöchentlicher Termin steht in der Liste', liste, 'Rep');
-  L.hasNot('einmaliger Termin steht nicht in der Liste', liste, 'Einmal');
+  const liste = await L.text(p, '[data-k=tb-termine]');
+  L.has('wöchentlicher Termin steht im Tagesblatt', liste, 'Rep');
+  L.has('einmaliger Termin steht im Tagesblatt', liste, 'Einmal');
   L.expect('kein Schalter für den einmaligen Termin', await p.locator('[data-a=kAusfall][data-id=t2]').count(), 0);
   await p.context().close();
 });

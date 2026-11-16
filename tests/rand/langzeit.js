@@ -123,11 +123,11 @@ function browser(CFG) {
   const gliedern = (txt, unter) => { F.thGlied = txt; F.thGliedUnter = unter || ''; act('thGliedSave'); };
   const topId = (name) => Object.keys(D.themen).find((id) => !D.themen[id].eltern && D.themen[id].name === name) || null;
   const routine = (titel, art, tage) => { act('esRNew'); F.rTitel = titel; ES.rArt = art; ES.rTage = tage || []; act('esRSave'); };
-  const wTermin = (titel, tage, von, bis, ab, endet) => { act('esTNew'); F.tTitel = titel; ES.tTage = tage; F.tVon = von; F.tBis = bis; F.tAb = ab || ''; F.tEnd = endet || ''; act('esTSave'); return Object.keys(D.termine).find((id) => D.termine[id].titel === titel); };
-  const kForm = (kind, vals) => { act('kNew', { v: kind, kl: vals.kl ? '1' : '0', d: vals.d || '' }); Object.assign(F, vals.f || {}); act('kSave'); if (F.kErr) err('Formular ' + kind + ' am ' + today() + ': ' + F.kErr); };
+  const wTermin = (titel, tage, von, bis, ab, endet) => { act('esTNew'); F.tmTitel = titel; F.tmTage = tage; F.tmTageAuto = false; F.tmVon = von; F.tmBis = bis; F.tmDatum = ab || ''; F.tmEnd = endet || ''; act('tmSave'); return Object.keys(D.termine).find((id) => D.termine[id].titel === titel); };
+  const kForm = (kind, vals) => { act('kNew', { v: kind, kl: vals.kl ? '1' : '0', d: vals.d || '' }); Object.assign(F, vals.f || {}); act(kind === 'termin' ? 'tmSave' : 'kSave'); const fe = kind === 'termin' ? F.tmErr : F.kErr; if (fe) err('Formular ' + kind + ' am ' + today() + ': ' + fe); };
   const pause = (name, von, bis, art) => kForm('pause', { f: { kName: name, kVon: von, kBis: bis, kArt: art || 'frei' } });
   const etappe = (name, von, bis, ziel, stoff, komplett) => kForm('etappe', { f: { kName: name, kVon: von, kBis: bis, kZiel: ziel, kStoff: stoff || [], kKomplett: !!komplett } });
-  const ausfall = (tid, von, bis) => { act('esTEdit', { id: tid }); F.tAusVon = von; F.tAusBis = bis || von; act('esTAusAdd'); act('esTCancel'); };
+  const ausfall = (tid, von, bis) => { act('esTEdit', { id: tid }); F.tAusVon = von; F.tAusBis = bis || von; act('esTAusAdd'); act('tmCancel'); };
   const leaves = () => Object.keys(D.themen).filter((id) => !thKids(id).length);
   const dfs = (id, out) => { out.push(id); thKids(id).forEach((k) => dfs(k, out)); return out; };
   const underTop = (id, gname) => { const t = topOf(id); return t && D.themen[t].name === gname; };
@@ -374,7 +374,7 @@ function browser(CFG) {
     // spontan etwas hinzufügen
     if (chance(0.12)) { act('startAdd'); F.addText = pick(SATZ) + ' ' + ri(1, 40); S.addDone = chance(0.6); S.addMore = false; act('doAdd'); const nb = Object.keys(D.bloecke).pop(); if (nb && D.bloecke[nb].status === 'erledigt' && !D.bloecke[nb].thema) st.offen.push({ id: nb, due: addD(date, ri(0, 5)) }); }
     if (chance(0.03)) { const l = Object.keys(st.geplant).filter((x) => D.themen[x]); if (l.length) { act('startAdd'); F.addText = 'Wiederholt: ' + pick(SATZ); S.addMore = true; F.addWdh = pick(l); S.addDone = true; act('doAdd'); } }
-    if (chance(0.02)) { act('tfHeute'); F.tfTitel = 'Probeklausur'; F.tfVon = '16:00'; F.tfBis = '18:00'; F.tfKlausur = true; act('tfSave', { d: date }); if (S.tfOpen) act('tfClose'); }
+    if (chance(0.02)) { act('tfHeute'); F.tmTitel = 'Probeklausur'; F.tmVon = '16:00'; F.tmBis = '18:00'; F.tmArt = 'klausur'; act('tmSave'); act('tmCancel'); }
     if (chance(0.05)) { act('startT', { art: 'f' }); setzeUhr(date, Math.min(1380, st.cur + ri(20, 70))); act('stopT'); }
     if (chance(0.04)) { // Block löschen (sofort, mit Rückgängig)
       const bl = blocksAt(date).filter((b) => b.status === 'offen'); if (bl.length) { const vorher = stable(D); act('delB', { id: pick(bl).id }); if (chance(0.5)) { act('undo'); st.stats.undo++; if (stable(D) === vorher) st.stats.undoOk++; else err('Rückgängig nach Löschen stellt den Stand am ' + date + ' nicht wieder her'); } }
@@ -543,7 +543,7 @@ function browser(CFG) {
       wTermin('Vorlesung Europäisches Kollisionsrecht', [3], '14:00', '16:00', '2026-11-05', '2027-02-05');
       pause('Weihnachten', '2026-12-24', '2027-01-02');
       if (st.ipr) etappe('Vorlesungszeit IPR', '2026-11-02', '2027-02-05', 'IPR-Grundlagen durcharbeiten', dfs(st.ipr, []).filter((id) => !thKids(id).length).slice(0, 6), false);
-      act('kNew', { v: 'termin', kl: '1', d: '2027-02-09' }); F.kName = 'Schwerpunktklausur IPR'; F.kGeb = st.ipr; F.kTVon = '09:00'; F.kTBis = '12:00'; act('kSave');
+      act('kNew', { v: 'termin', kl: '1', d: '2027-02-09' }); F.tmTitel = 'Schwerpunktklausur IPR'; F.tmGeb = st.ipr; F.tmVon = '09:00'; F.tmBis = '12:00'; act('tmSave');
       st.klausurTermin = Object.keys(D.termine).find((id) => D.termine[id].titel === 'Schwerpunktklausur IPR');
     });
     ev('2027-01-01', () => { if (st.ipr) etappe('Seminararbeit IPR', '2027-01-04', '2027-02-15', 'Abgabe der Seminararbeit', dfs(st.ipr, []).filter((id) => !thKids(id).length).slice(6, 10), true); });
@@ -560,7 +560,7 @@ function browser(CFG) {
       Object.keys(GEB).forEach((g) => { st.gid[g] = topId(g); });
       for (let i = 0; i < 3; i++) { const c = st.chunks.shift(); gliedern(c.text, topId(c.g)); }
       st.repId = wTermin('Repetitorium', [0, 2, 3], '09:00', '12:00', wochentagAb(D0(0), 0), '');
-      act('kNew', { v: 'termin', kl: '1', d: wochentagAb(D0(1), 5) }); F.kName = 'Klausurenkurs'; F.kWdh = true; F.kTEnd = ''; F.kTVon = '09:00'; F.kTBis = '14:00'; act('kSave');
+      act('kNew', { v: 'termin', kl: '1', d: wochentagAb(D0(1), 5) }); F.tmTitel = 'Klausurenkurs'; F.tmWdh = true; F.tmEnd = ''; F.tmVon = '09:00'; F.tmBis = '14:00'; act('tmSave');
       st.kurs = Object.keys(D.termine).find((id) => D.termine[id].titel === 'Klausurenkurs');
     });
     ev(D0(14), () => {

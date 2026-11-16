@@ -7,20 +7,24 @@ L.run(async () => {
     const tg = w + ' px: ';
     const p = await L.open({}, 'sim-2026-11-03-1000', w);
     await L.go(p, 'kalender');
-    L.expect(tg + 'vergangene Tage nicht antippbar', await p.locator('.kal button.cell[data-d="2026-11-02"]').count(), 0);
-    L.expect(tg + 'heute antippbar', await p.locator('.kal button.cell[data-d="2026-11-03"]').count(), 1);
-    // Tag antippen öffnet das Formular mit diesem Datum
+    // Vergangene Tage lassen sich ansehen, eintragen geht dort nicht
+    await L.click(p, '.kal button.cell[data-d="2026-11-02"]');
+    L.has(tg + 'Tagesblatt zeigt den vergangenen Tag', await L.text(p, '.tagblatt'), '2. November');
+    L.expect(tg + 'vergangener Tag: kein „+ Termin“', await p.locator('.tagblatt [data-a=kNew]').count(), 0);
+    // Tag antippen öffnet das Tagesblatt, „+ Termin“ das Formular mit diesem Datum
     await L.click(p, '.kal button.cell[data-d="2026-11-05"]');
-    L.expect(tg + 'Formular übernimmt das Datum', await p.inputValue('#k-datum'), '2026-11-05');
-    await L.fill(p, '#k-name', 'Klausur Strafrecht'); await L.fill(p, '#k-t-von', '09:00'); await L.fill(p, '#k-t-bis', '13:00'); await L.click(p, '[data-a=kSave]');
+    L.has(tg + 'Tagesblatt: noch keine Termine', await L.text(p, '.tagblatt'), 'Keine Termine');
+    await L.click(p, '.tagblatt [data-a=kNew]');
+    L.expect(tg + 'Formular übernimmt das Datum', await p.inputValue('#tm-datum'), '2026-11-05');
+    await L.fill(p, '#tm-titel', 'Klausur Strafrecht'); await L.fill(p, '#tm-von', '09:00'); await L.fill(p, '#tm-bis', '13:00'); await L.click(p, '[data-a=tmSave]');
     // ganztägig
-    await L.click(p, '[data-a=kNew][data-v=termin]'); await L.fill(p, '#k-name', 'Abgabe Seminararbeit'); await L.fill(p, '#k-datum', '2026-11-20'); await L.click(p, '[data-a=tGanz][data-k=kGanz]'); await L.click(p, '[data-a=kSave]');
+    await L.click(p, '[data-a=kNew][data-v=termin]'); await L.fill(p, '#tm-titel', 'Abgabe Seminararbeit'); await L.fill(p, '#tm-datum', '2026-11-20'); await L.click(p, '[data-a=tmGanz][data-v="1"]'); await L.click(p, '[data-a=tmSave]');
     // jede Woche bis 16.12.
-    await L.click(p, '.kal button.cell[data-d="2026-11-04"]'); await L.fill(p, '#k-name', 'AG Zivilrecht'); await L.fill(p, '#k-t-von', '14:00'); await L.fill(p, '#k-t-bis', '16:00'); await L.click(p, '[data-a=tGanz][data-k=kWdh]'); await L.fill(p, '#k-tend', '2026-12-16'); await L.click(p, '[data-a=kSave]');
+    await L.click(p, '.kal button.cell[data-d="2026-11-04"]'); await L.click(p, '.tagblatt [data-a=kNew]'); await L.fill(p, '#tm-titel', 'AG Zivilrecht'); await L.fill(p, '#tm-von', '14:00'); await L.fill(p, '#tm-bis', '16:00'); await L.click(p, '[data-a=tmWdh][data-v="1"]'); await L.fill(p, '#tm-end', '2026-12-16'); await L.click(p, '[data-a=tmSave]');
     // Fehlerfälle
-    await L.click(p, '[data-a=kNew][data-v=termin]'); await L.fill(p, '#k-name', 'Alt'); await L.fill(p, '#k-datum', '2026-11-01'); await L.fill(p, '#k-t-von', '10:00'); await L.click(p, '[data-a=kSave]');
+    await L.click(p, '[data-a=kNew][data-v=termin]'); await L.fill(p, '#tm-titel', 'Alt'); await L.fill(p, '#tm-datum', '2026-11-01'); await L.fill(p, '#tm-von', '10:00'); await L.click(p, '[data-a=tmSave]');
     L.expect(tg + 'Termin in der Vergangenheit abgelehnt', await L.text(p, '.kalaside .err'), 'Neue Termine gehen ab heute.');
-    await L.fill(p, '#k-datum', '2026-11-10'); await L.fill(p, '#k-t-von', ''); await L.click(p, '[data-a=kSave]');
+    await L.fill(p, '#tm-datum', '2026-11-10'); await L.fill(p, '#tm-von', ''); await L.click(p, '[data-a=tmSave]');
     L.expect(tg + 'Termin ohne Uhrzeit abgelehnt', await L.text(p, '.kalaside .err'), 'Ein Termin braucht eine Uhrzeit (von) oder „ganztägig“.');
     await L.click(p, '[data-a=kCancel]');
     const term = Object.values((await L.store(p)).termine).map((t) => [t.titel, t.datum || ('wö ' + (t.wochentage || []).join()), t.von, t.bis, !!t.ganztags, t.ab || '', t.endet || '']).sort();
@@ -35,7 +39,7 @@ L.run(async () => {
     // Heute am 20.11. zeigt den ganztägigen Termin; Termin aus der Woche eintragen
     await L.sim(p, '2026-11-20', 9 * 60); await L.go(p, 'heute');
     L.has(tg + 'Heute 20.11. zeigt „ganztägig“', await L.text(p), 'ganztägig');
-    await L.go(p, 'woche'); await L.click(p, '[data-a=wAdd]'); await L.click(p, '[data-a=tfOpen]'); await L.fill(p, '#tf-titel', 'Sprechstunde'); await L.click(p, '[data-a=tGanz][data-k=tfGanz]'); await L.click(p, '[data-a=tfSave]');
+    await L.go(p, 'woche'); await L.click(p, '[data-a=wAdd]'); await L.click(p, '[data-a=tfOpen]'); await L.fill(p, '#tm-titel', 'Sprechstunde'); await L.click(p, '[data-a=tmGanz][data-v="1"]'); await L.click(p, '[data-a=tmSave]');
     L.expect(tg + 'Termin aus der Woche: heute, ganztägig', Object.values((await L.store(p)).termine).filter((t) => t.titel === 'Sprechstunde').map((t) => [t.datum, !!t.ganztags]), [['2026-11-20', true]]);
     await L.noHScroll(p, 'Woche');
     await p.context().close();

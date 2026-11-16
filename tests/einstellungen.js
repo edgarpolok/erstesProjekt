@@ -28,7 +28,7 @@ L.run(async () => {
 
   // Routine und wiederkehrender Termin
   await L.click(p, '[data-a=esRNew]'); await L.fill(p, '#r-titel', '10-Finger'); await L.click(p, '[data-a=esRArt][data-v=alle]'); await L.fill(p, '#r-n', '2'); await L.click(p, '[data-a=esRSave]');
-  await L.click(p, '[data-a=esTNew]'); await L.fill(p, '#t-titel', 'Vorlesung IPR'); await L.click(p, '[data-a=esTTag][data-i="1"]'); await L.fill(p, '#t-von', '10:00'); await L.fill(p, '#t-bis', '12:00'); await L.click(p, '[data-a=esTSave]');
+  await L.click(p, '[data-a=esTNew]'); await L.fill(p, '#tm-titel', 'Vorlesung IPR'); await L.click(p, '[data-a=tmWt][data-i="1"]'); await L.fill(p, '#tm-von', '10:00'); await L.fill(p, '#tm-bis', '12:00'); await L.click(p, '[data-a=tmSave]');
   let s = await L.store(p);
   L.expect('Routine gespeichert', Object.values(s.routinen).map((r) => [r.titel, r.haeufigkeit, r.zustand]), [['10-Finger', { art: 'alle', n: 2, ab: '2026-10-29' }, 'aktiv']]);
   L.expect('Termin gespeichert (Dienstag = 1)', Object.values(s.termine).map((t) => [t.titel, t.wochentage, t.von, t.bis, t.datum]), [['Vorlesung IPR', [1], '10:00', '12:00', null]]);

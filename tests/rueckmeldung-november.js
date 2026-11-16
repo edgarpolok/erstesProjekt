@@ -35,8 +35,8 @@ L.run(async () => {
   L.expect('nicht abgehakt zählt nicht', await p.evaluate(() => window.__ls.erfasstAt('2026-11-12')), 0);
   await L.go(p, 'einstellungen');
   await L.click(p, '[data-a=esTEdit][data-id=t2]');
-  L.expect('Einstellungen: Schalter zeigt „aus“', await p.getAttribute('[data-a=esTZeit][data-id=t2]', 'aria-checked'), 'false');
-  await L.click(p, '[data-a=esTZeit][data-id=t2]');
+  L.expect('Einstellungen: Schalter zeigt „aus“', await p.getAttribute('[data-a=tmZaehlt]', 'aria-checked'), 'false');
+  await L.click(p, '[data-a=tmZaehlt]'); await L.click(p, '[data-a=tmSave]');
   L.expect('Einstellungen: eingeschaltet gespeichert', (await L.store(p)).termine.t2.zeitZaehlt, true);
   L.has('Stand der App unten in den Einstellungen', await L.text(p), 'Stand der App:');
   await p.context().close();

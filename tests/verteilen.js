@@ -67,8 +67,8 @@ L.run(async () => {
     bloecke: { b1: { titel: 'Vorhaben Do', woche: '2026-11-02', tag: '2026-11-05', status: 'offen', quelle: 'claude', std: 5, erstellt: 1 }, b2: { titel: 'Eigener Eintrag Do', woche: '2026-11-02', tag: '2026-11-05', status: 'offen', quelle: 'frei', erstellt: 2 } } };
   p = await L.open(seed, 'sim-2026-11-03-1000', 1280);
   await L.go(p, 'kalender');
-  await L.click(p, '.kal button.cell[data-d="2026-11-05"]');
-  await L.fill(p, '#k-name', 'Klausur Strafrecht'); await L.fill(p, '#k-t-von', '09:00'); await L.fill(p, '#k-t-bis', '13:00'); await L.click(p, '[data-a=kSave]');
+  await L.click(p, '.kal button.cell[data-d="2026-11-05"]'); await L.click(p, '.tagblatt [data-a=kNew]');
+  await L.fill(p, '#tm-titel', 'Klausur Strafrecht'); await L.fill(p, '#tm-von', '09:00'); await L.fill(p, '#tm-bis', '13:00'); await L.click(p, '[data-a=tmSave]');
   s = await L.store(p);
   L.expect('neuer Termin genau wie eingegeben', Object.values(s.termine).map((t) => [t.titel, t.datum, t.von, t.bis]), [['Klausur Strafrecht', '2026-11-05', '09:00', '13:00']]);
   L.ok('verteilter Block weicht vom Termin-Tag aus', s.bloecke.b1.tag !== '2026-11-05', s.bloecke.b1.tag);

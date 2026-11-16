@@ -19,7 +19,7 @@
   --g-blau: #4A76C9; --g-blau-t: #2F5AA8; --g-violett: #8063C9; --g-violett-t: #5E44A6;
   --g-orange: #C07A3A; --g-orange-t: #8C5420; --g-petrol: #2E8585; --g-petrol-t: #1E6464;
   --g-rosa: #B45A8C; --g-rosa-t: #8E3F6C; --g-oliv: #868436; --g-oliv-t: #63621F;
-  --ok-band: #CDE9D6; --hl: #F7E8A6; --hl-text: #3B3416; --hl-dot: #C9A227; --past: #FAF8F5; --st1: #D9D3CA; --st2: #968E83; --st3: #3D3832;
+  --ok-band: #CDE9D6; --hl: #F7E8A6; --hl-text: #3B3416; --priv: #66788A; --priv-soft: #E3E9EE; --hl-dot: #C9A227; --past: #FAF8F5; --st1: #D9D3CA; --st2: #968E83; --st3: #3D3832;
   --f-display: ui-serif, 'New York', Georgia, serif;
   --f-body: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, 'Segoe UI', sans-serif;
 }
@@ -32,7 +32,7 @@
     --g-blau: #8FB0EA; --g-blau-t: #B3C9F2; --g-violett: #B29DE6; --g-violett-t: #CFC0F2;
     --g-orange: #E0A673; --g-orange-t: #EFC9A4; --g-petrol: #6CC2C2; --g-petrol-t: #9CD9D9;
     --g-rosa: #E39CC3; --g-rosa-t: #F0BFD9; --g-oliv: #C6C47A; --g-oliv-t: #DCDAA6;
-    --ok-band: #2F4A38; --hl: #4A4122; --hl-text: #F3E6B3; --hl-dot: #C9A227; --past: #1A1815; --st1: #4A4540; --st2: #918A80; --st3: #E8E2D9;
+    --ok-band: #2F4A38; --hl: #4A4122; --hl-text: #F3E6B3; --priv: #A3B4C4; --priv-soft: #29323A; --hl-dot: #C9A227; --past: #1A1815; --st1: #4A4540; --st2: #918A80; --st3: #E8E2D9;
     color-scheme: dark;
   }
 }
@@ -44,7 +44,7 @@
   --g-blau: #8FB0EA; --g-blau-t: #B3C9F2; --g-violett: #B29DE6; --g-violett-t: #CFC0F2;
   --g-orange: #E0A673; --g-orange-t: #EFC9A4; --g-petrol: #6CC2C2; --g-petrol-t: #9CD9D9;
   --g-rosa: #E39CC3; --g-rosa-t: #F0BFD9; --g-oliv: #C6C47A; --g-oliv-t: #DCDAA6;
-  --ok-band: #2F4A38; --hl: #4A4122; --hl-text: #F3E6B3; --hl-dot: #C9A227; --past: #1A1815; --st1: #4A4540; --st2: #918A80; --st3: #E8E2D9;
+  --ok-band: #2F4A38; --hl: #4A4122; --hl-text: #F3E6B3; --priv: #A3B4C4; --priv-soft: #29323A; --hl-dot: #C9A227; --past: #1A1815; --st1: #4A4540; --st2: #918A80; --st3: #E8E2D9;
   color-scheme: dark;
 }
 
@@ -457,6 +457,28 @@ select.inp { padding: 0 8px; }
 .kal .foot { display: none; align-items: center; flex-wrap: wrap; gap: 3px; margin-top: auto; }
 .kal .foot i { width: 6px; height: 6px; border-radius: 3px; background: var(--ink); opacity: 0.55; }
 .kal .cell.before .foot i { background: var(--ring); opacity: 1; }
+.kal .tm.once.priv { background: var(--priv-soft); color: var(--ink); font-weight: 600; }
+.kal .tdots i.priv, .kal .tdots i.once.priv, .kal .cell.before .tdots i.priv { background: var(--priv-soft); border: 1.5px solid var(--priv); }
+.kal .foot i.priv, .kal .cell.before .foot i.priv { background: var(--priv); opacity: 1; }
+.kal .cell.sel { background: var(--soft); box-shadow: inset 0 0 0 2px var(--ring); border-radius: 8px; }
+.kal .cell.today.sel { background: var(--soft); box-shadow: inset 0 0 0 2px var(--ink); }
+.kal .tagblatt { grid-column: 1 / -1; grid-row: 4; margin: 4px 0 12px; }
+.tagblatt h2 { font-size: 16px; }
+.tb-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+.tb-row .zt { flex: 0 0 62px; padding-top: 2px; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--quiet); }
+.tb-row .tx { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.tb-row .tx b { font-size: 15px; overflow-wrap: anywhere; }
+.tb-row .tx .small { overflow-wrap: anywhere; }
+.tb-row.priv .zt { color: var(--priv); }
+.tb-row.aus .tx b { text-decoration: line-through; color: var(--quiet); font-weight: 600; }
+.tb-row .acts { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; }
+.tb-row .acts .linkbtn { align-self: flex-end; min-height: 36px; white-space: nowrap; }
+.ausserdem { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 6px 14px; border-radius: 14px; background: var(--priv-soft); font-size: 14px; line-height: 1.4; }
+.ausserdem .lbl { font-weight: 700; }
+.ausserdem button { min-height: 44px; padding: 0 2px; border: 0; background: transparent; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.ausserdem .zt { margin-right: 5px; font-variant-numeric: tabular-nums; color: var(--quiet); }
+.mk.priv { border-style: dashed; border-color: var(--priv); }
+.spanrow .sw.priv { background: var(--priv-soft); border: 1.5px solid var(--priv); }
 .kal .foot .more { margin-right: 3px; font-size: 11px; font-weight: 700; color: var(--quiet); }
 @media (min-width: 900px) { .kal .tm { display: block; } .kal .foot { display: flex; } .kal .tdots { display: none; } }
 .kal .kwbtn em { display: none; margin-top: 6px; font-style: normal; font-size: 12px; font-weight: 600; color: var(--ink); white-space: nowrap; }
@@ -1437,7 +1459,7 @@ function termineAt(date) {
     }
     if (hit) {
       const a = timeToMin(t.von); const b = timeToMin(t.bis);
-      out.push({ id: id, art: t.art || null, titel: t.titel || 'Termin', von: t.ganztags ? '' : t.von || '', bis: t.ganztags ? '' : t.bis || '', ganztags: !!t.ganztags, einmalig: isDate(t.datum), min: t.ganztags ? 0 : (a != null && b != null && b > a ? b - a : 60), beispiel: !!t.beispiel });
+      out.push({ id: id, art: t.art || null, titel: t.titel || 'Termin', von: t.ganztags ? '' : t.von || '', bis: t.ganztags ? '' : t.bis || '', ganztags: !!t.ganztags, einmalig: isDate(t.datum), min: t.ganztags ? 0 : (a != null && b != null && b > a ? b - a : 60), beispiel: !!t.beispiel, privat: t.art === 'privat', ort: t.ort || '', notiz: t.notiz || '' });
     }
   });
   return out.sort((x, y) => String(x.von).localeCompare(String(y.von)));
@@ -1474,7 +1496,7 @@ function capH(date) {
   return tagStunden(c, wdOf(date));
 }
 function freeH(date) {
-  return Math.max(0, capH(date) - termineAt(date).reduce((a, t) => a + t.min, 0) / 60);
+  return Math.max(0, capH(date) - termineAt(date).reduce((a, t) => a + (t.privat ? 0 : t.min), 0) / 60);
 }
 const isPufferDay = (date) => cfg().pufferTag >= 0 && wdOf(date) === cfg().pufferTag;
 const isFreeDay = (date) => capH(date) <= 0;
@@ -1608,7 +1630,8 @@ const zaehltImPuffer = (b) => !!(b.warImTag || b.mitgenommen || b.zurueckgelegt 
 const zeitFrueh = (b) => (isObj(b.zeitFrueher) ? Object.keys(b.zeitFrueher).reduce((a, d) => a + num(b.zeitFrueher[d], 0), 0) : 0);
 const zeitAmTag = (b) => Math.max(0, num(b.zeit, 0) - zeitFrueh(b));
 // Abgehakte Termine mit Uhrzeit zählen zur erfassten Zeit, außer der Termin ist auf „zählt nicht“ gestellt
-const terminZaehlt = (id) => !(D.termine[id] && D.termine[id].zeitZaehlt === false);
+// Private Termine zählen nie zur erfassten Zeit und nehmen keinen Platz weg
+const terminZaehlt = (id) => !(D.termine[id] && (D.termine[id].zeitZaehlt === false || D.termine[id].art === 'privat'));
 function terminZeitAt(date) {
   const st = tag(date).termine || {};
   // Es zählt die Dauer, die der Termin beim Abhaken hatte (ältere Einträge ohne festgehaltene Dauer: die heutige)
@@ -1654,7 +1677,7 @@ function progress(W) {
     const td = tag(d);
     termineAt(d).forEach((x) => {
       const st = (td.termine || {})[x.id] || {};
-      if (!st.faelltAus) items.push({ day: d, done: !!st.erledigt, k: 't' });
+      if (!st.faelltAus && !x.privat) items.push({ day: d, done: !!st.erledigt, k: 't' });
     });
     routinenAt(d).forEach((r) => {
       const st = (td.routinen || {})[r.id] || {};
@@ -2277,19 +2300,6 @@ async function submitClaude(T) {
 }
 function reopenPlan(T) { patch('wochen', T, { status: null }); }
 
-/* ---------- Einmalige Termine aus der Woche ---------- */
-function addTerminOnce(date, titel, von, bis, ganztags, extra) {
-  titel = String(titel || '').trim();
-  if (!titel || !isDate(date)) return false;
-  put('termine', uid('t'), Object.assign({ titel: titel, datum: date, von: ganztags ? '' : von || '', bis: ganztags ? '' : bis || '', ganztags: !!ganztags, erstellt: nowMs() }, extra || {}));
-  reflowDay(date);
-  return true;
-}
-// Jede Woche am Wochentag des gewählten Tags, ab diesem Tag, optional bis zu einem Enddatum
-function addTerminWeekly(date, titel, von, bis, ganztags, endet, extra) {
-  put('termine', uid('t'), Object.assign({ titel: titel, wochentage: [wdOf(date)], von: ganztags ? '' : von || '', bis: ganztags ? '' : bis || '', ganztags: !!ganztags, ab: date, endet: isDate(endet) ? endet : null, zustand: 'aktiv', erstellt: nowMs() }, extra || {}));
-  [date, addDays(date, 7)].forEach((d) => reflowDay(d));
-}
 // In einer übergebenen Woche: passt ein Block nach einem neuen Termin nicht mehr, wandert er auf einen Tag mit Platz, sonst nach „noch offen“
 function reflowDay(date) {
   const W = mondayOf(date);
@@ -2362,7 +2372,7 @@ async function maybeEinschaetzung(W) {
 /* ================= Ansicht: Heute ================= */
 const S = {
   view: 'heute', menu: null, edit: null, wvon: null, editT: null, wdhTag: {}, poolOpen: null,
-  adding: false, addMore: false, addDone: false, addG: undefined, wk: null, dayOpen: {}, tfOpen: false, tfDay: null,
+  adding: false, addMore: false, addDone: false, addG: undefined, wk: null, dayOpen: {}, 
   planOpen: {}, vMore: {}, planShow: {}
 };
 const F = {};
@@ -2447,9 +2457,9 @@ function rowTermin(t, x) {
   const k = 't' + x.id;
   return '<div class="row' + (on ? ' done' : '') + '" data-k="r-' + esc(k) + '"><div class="top">' +
     checkBtn(on, x.titel, 'tTermin', ' data-id="' + esc(x.id) + '"', k) +
-    '<div class="body"><span class="clock"' + (x.ganztags ? ' style="align-self:flex-start;padding:1px 6px;border-radius:4px;background:var(--hl);color:var(--hl-text)"' : '') + '>' + esc(terminText(x)) + '</span><span class="title">' + esc(x.titel) + bsp(x) + (x.art === 'klausur' ? '<span class="tag-bsp">Klausur</span>' : '') + nachTag(on && st) + '</span></div>' +
+    '<div class="body"><span class="clock"' + (x.ganztags ? ' style="align-self:flex-start;padding:1px 6px;border-radius:4px;background:var(--hl);color:var(--hl-text)"' : '') + '>' + esc(terminText(x) + (x.ort && !x.ganztags ? ' · ' + x.ort : '')) + '</span><span class="title">' + esc(x.titel) + bsp(x) + (x.art === 'klausur' ? '<span class="tag-bsp">Klausur</span>' : '') + nachTag(on && st) + '</span></div>' +
     '<button class="dots" aria-label="Optionen: ' + esc(x.titel) + '" aria-expanded="' + (S.menu === k) + '" data-a="menu" data-m="' + k + '">' + DOTS_SVG + '</button></div>' +
-    (S.menu === k ? '<div class="actions"><button class="chipbtn" data-a="cancelTermin" data-id="' + esc(x.id) + '" data-t="' + esc(x.titel) + '">' + (t < today() ? 'Fiel aus' : 'Fällt heute aus') + '</button>' + (x.ganztags ? '' : '<button class="switch ink" role="switch" aria-checked="' + terminZaehlt(x.id) + '" data-a="tZeitZaehlt" data-id="' + esc(x.id) + '"><span class="tr"></span>zählt zur erfassten Zeit</button>') + '</div>' : '') +
+    (S.menu === k ? '<div class="actions">' + (t >= today() ? '<button class="chipbtn" data-a="tmEdit" data-wo="heute" data-id="' + esc(x.id) + '" data-d="' + t + '">Ändern</button>' : '') + '<button class="chipbtn" data-a="cancelTermin" data-id="' + esc(x.id) + '" data-t="' + esc(x.titel) + '">' + (t < today() ? 'Fiel aus' : 'Fällt heute aus') + '</button>' + (x.ganztags ? '' : '<button class="switch ink" role="switch" aria-checked="' + terminZaehlt(x.id) + '" data-a="tZeitZaehlt" data-id="' + esc(x.id) + '"><span class="tr"></span>zählt zur erfassten Zeit</button>') + '</div>' : '') +
     '</div>';
 }
 function blockMeta(b) {
@@ -2630,7 +2640,9 @@ function viewHeute() {
   const pz = pauseAt(t);
   const puffer = isPufferDay(t) && !pz.frei;
   const freeDay = !pz.frei && capH(t) <= 0;
-  const termine = termineAt(t);
+  const alleTermine = termineAt(t);
+  const termine = alleTermine.filter((x) => !x.privat);
+  const privat = alleTermine.filter((x) => x.privat);
   const blocks = blocksAt(t);
   const wst = wdhState(t);
   const hasWdh = wdhPlanned(t);
@@ -2650,6 +2662,11 @@ function viewHeute() {
       '<span class="s">' + (pz.frei ? 'Bis ' + esc(fmtDMon(pz.frei.bis)) + ' ruhen Vorschlag, Wiederholung und Erinnerung. Wenn du magst, kannst du trotzdem etwas eintragen.' : (poolOf(W).length + wdhUeberhang(t).length ? 'Für heute ist nichts geplant. Was diese Woche noch offen ist, steht unten – nur wenn du magst.' : 'Nichts geplant, nichts offen. Wenn du magst, kannst du trotzdem etwas hinzufügen.')) + '</span></div>';
   }
   const left = [];
+  // Private Termine stehen abgesetzt über dem Plan: sie nehmen keinen Platz weg und werden nicht abgehakt
+  if (privat.length) left.push('<div class="ausserdem" data-k="ausserdem"><span class="lbl">' + (past ? 'Außerdem:' : 'Heute außerdem:') + '</span>' + privat.map((x) => {
+    const inh = (terminText(x) ? '<span class="zt">' + esc(terminText(x)) + '</span>' : '') + esc(x.titel) + (x.ort ? ' · ' + esc(x.ort) : '');
+    return past ? '<span>' + inh + '</span>' : '<button aria-label="' + esc(x.titel + ' ändern') + '" data-a="tmEdit" data-wo="heute" data-id="' + esc(x.id) + '" data-d="' + t + '">' + inh + '</button>';
+  }).join('') + '</div>');
   const plan = termShown.map((x) => rowTermin(t, x)).join('') + blocks.map(rowBlock).join('') + wdhListe(t).map((x) => rowWdh(t, x)).join('');
   if (!(pz.frei || freeDay) || plan || past) {
     left.push('<div class="h2row"><h2 class="h2">' + (past ? (pz.frei ? 'Pause · ' + (pz.frei.name || 'frei') : 'An diesem Tag') : (puffer ? 'Puffertag' : 'Plan für heute')) + '</h2>' + (total ? '<span class="small">' + (past ? 'erfasst: ' : 'heute erfasst: ') + fmtHM(total) + '</span>' : '') + '</div>');
@@ -2657,7 +2674,7 @@ function viewHeute() {
   left.push(plan);
   left.push(cancelled.map((x) => '<div class="cancelled" data-k="c-' + esc(x.id) + '"><span><s>' + esc(x.titel) + '</s> · ' + (past ? 'fiel aus' : 'fällt heute aus') + '</span><button class="quietbtn" data-a="restoreTermin" data-id="' + esc(x.id) + '">zurückholen</button></div>').join(''));
   if (past) left.push(wdhNachHinweis(t));
-  left.push(S.tfOpen && S.tfHeute && !past ? terminForm(W, t) : addForm());
+  left.push(TF && TF.wo === 'heute' && !past ? terminFormU() : addForm());
   if (!pz.frei && !past) {
     const pl = poolList(W, t, true);
     const open = S.poolOpen == null ? puffer : S.poolOpen;
@@ -2710,7 +2727,7 @@ function dayItems(d, W) {
   const items = [];
   termineAt(d).forEach((x) => {
     const st = (td.termine || {})[x.id] || {};
-    items.push({ k: 't', title: x.titel, time: terminText(x), done: !!st.erledigt, suffix: st.faelltAus ? (d < t ? 'fiel aus' : 'fällt aus') : (st.erledigt && st.nachgetragen ? 'nachgetragen' : ''), muted: !!st.faelltAus });
+    items.push({ k: 't', id: x.id, title: x.titel, time: terminText(x), done: !!st.erledigt, suffix: [x.ort, x.privat ? 'privat' : '', st.faelltAus ? (d < t ? 'fiel aus' : 'fällt aus') : (st.erledigt && st.nachgetragen ? 'nachgetragen' : '')].filter((y) => y).join(' · '), muted: !!st.faelltAus, nz: x.privat, edit: d >= t && !st.faelltAus, date: d });
   });
   blocksAt(d).forEach((b) => {
     if (b.status === 'offen' && d < t) return; // liegt in „Noch offen" bzw. „Liegen geblieben"
@@ -2732,10 +2749,11 @@ function dayItems(d, W) {
   return items;
 }
 function itemHtml(it) {
-  const mk = '<span class="mk' + (it.done ? ' on' : '') + (it.x ? ' x' : '') + (it.muted && !it.done ? ' aus' : '') + '"' + (it.x ? ' role="img" aria-label="liegen geblieben"' : '') + '>' + (it.x ? '<svg viewBox="0 0 24 24" aria-hidden="true">' + ICON.x + '</svg>' : CHECK_SVG) + '</span>';
+  const mk = it.nz ? '<span class="mk priv"></span>' : '<span class="mk' + (it.done ? ' on' : '') + (it.x ? ' x' : '') + (it.muted && !it.done ? ' aus' : '') + '"' + (it.x ? ' role="img" aria-label="liegen geblieben"' : '') + '>' + (it.x ? '<svg viewBox="0 0 24 24" aria-hidden="true">' + ICON.x + '</svg>' : CHECK_SVG) + '</span>';
   const dot = it.gebiet && thema(it.gebiet) ? '<span class="idot"' + gStyle(it.gebiet) + '></span>' : '';
   let push = '';
   if (it.edit && it.k === 'b') push = '<button class="dots" aria-label="' + esc('Optionen: ' + it.title) + '" aria-expanded="' + (S.wMenu === it.id) + '" data-a="wMenu" data-id="' + esc(it.id) + '">' + DOTS_SVG + '</button>';
+  if (it.edit && it.k === 't') push = '<button class="dots" aria-label="' + esc('Termin ändern: ' + it.title) + '" data-a="tmEdit" data-wo="woche" data-id="' + esc(it.id) + '" data-d="' + it.date + '">' + DOTS_SVG + '</button>';
   if (it.k === 'w' && it.liste) {
     const key = it.date;
     const open = !!S.wdhTag[key];
@@ -2756,7 +2774,7 @@ function blockMenu(it) {
     '<div class="chips"><button class="chipbtn" data-a="wPool" data-id="' + id + '">Zurück in „Noch offen“</button><button class="chipbtn" data-a="wDel" data-id="' + id + '">Löschen</button></div></div>';
 }
 function dayAdd(d, W) {
-  if (S.tfOpen && S.tfDay === d) return terminForm(W, true);
+  if (TF && TF.wo === 'woche' && TF.tag === d) return terminFormU();
   if (S.wAdd !== d) return '<button class="wplus" data-a="wAdd" data-d="' + d + '">' + ico('plus', 'xs') + 'Hinzufügen</button>';
   return '<div class="wadd" data-k="wa-' + d + '"><div style="display:flex;gap:8px;flex-wrap:wrap"><label class="sr-only" for="w-add">Was willst du am ' + esc(WDL[wdOf(d)]) + ' lernen?</label><input id="w-add" class="inp grow" data-in="wAddText" data-enter="wAddSave" data-d="' + d + '" value="' + esc(fv('wAddText')) + '" placeholder="Was willst du lernen?" autocomplete="off"><button class="btn" data-a="wAddSave" data-d="' + d + '">Eintragen</button></div>' +
     '<div style="display:flex;gap:4px;justify-content:space-between"><button class="linkbtn" style="color:var(--quiet)" data-a="tfOpen" data-d="' + d + '">stattdessen Termin</button><button class="linkbtn" style="color:var(--quiet);text-decoration:none" data-a="wAddClose">Abbrechen</button></div></div>';
@@ -2773,7 +2791,8 @@ function dayCard(d, W) {
   const def = isToday;
   const open = S.dayOpen[key] != null ? S.dayOpen[key] : def;
   const expanded = !canToggle || open;
-  const dn = items.filter((i) => i.done).length;
+  const zi = items.filter((i) => !i.nz);
+  const dn = zi.filter((i) => i.done).length;
   let note = ''; let noteOk = false;
   if (pz.frei) { note = 'Pause · ' + (pz.frei.name || 'frei'); noteOk = true; }
   else if (free) { note = 'Freier Tag'; noteOk = true; }
@@ -2788,8 +2807,8 @@ function dayCard(d, W) {
   else h += '<button class="collapsed" tabindex="-1" aria-hidden="true" data-a="dayT" data-key="' + key + '" data-open="false">' + items.filter((i) => i.k === 't').map((i) => '<span class="ag' + (i.muted ? ' off' : '') + '"><span class="tm">' + esc(i.time || '') + '</span><span>' + esc(i.title) + '</span></span>').join('') +
     items.filter((i) => i.k === 'w').map((i) => '<span class="ag lern">Wiederholung: ' + esc(i.suffix) + '</span>').join('') +
     (items.some((i) => i.k === 'b') ? '<span class="ag lern">Lernen: ' + esc(items.filter((i) => i.k === 'b').map((i) => i.title).join(' · ')) + '</span>' : '') +
-    '<span class="mks">' + items.map((i) => '<span class="mk' + (i.done ? ' on' : '') + '">' + CHECK_SVG + '</span>').join('') +
-    '<em class="' + (dn === items.length ? 'all' : '') + '">' + (dn === items.length ? dn + ' erledigt' : dn + ' von ' + items.length + ' erledigt') + '</em></span></button>';
+    (zi.length ? '<span class="mks">' + zi.map((i) => '<span class="mk' + (i.done ? ' on' : '') + '">' + CHECK_SVG + '</span>').join('') +
+    '<em class="' + (dn === zi.length ? 'all' : '') + '">' + (dn === zi.length ? dn + ' erledigt' : dn + ' von ' + zi.length + ' erledigt') + '</em></span>' : '') + '</button>';
   if (note) h += '<span class="daynote' + (noteOk ? ' ok' : '') + '">' + (noteOk ? ico('heute', 'xs') : '') + esc(note) + '</span>';
   if (d < t) h += '<button class="linkbtn" style="min-height:36px;margin:-4px 0 -8px -4px;font-size:13px;color:var(--quiet)" aria-label="' + esc(WDL[wdOf(d)] + ' ' + fmtDM(d) + (isOpenDay(d) ? ' bearbeiten' : ' ansehen oder korrigieren')) + '" data-a="editDay" data-d="' + d + '">' + (isOpenDay(d) ? 'Tag bearbeiten' : 'Tag ansehen · korrigieren') + '</button>';
   h += '</div>' + (canToggle ? '<button class="chev' + (expanded ? ' open' : '') + '" tabindex="-1" aria-hidden="true" data-a="dayT" data-key="' + key + '" data-open="' + expanded + '">' + ico('down', 'xs') + '</button>' : '') + '</div>';
@@ -2842,12 +2861,34 @@ function carryVorausHtml(W) {
       esc((b.woche < mondayOf(t) ? 'aus KW ' + kwOf(b.woche) : (b.tag && b.tag >= t ? 'noch für ' + (b.tag === t ? 'heute' : WDL[wdOf(b.tag)]) + ' geplant' : 'noch offen')) + (b.std ? ' · ' + fmtH(b.std * 60) : '')) + '</span></span></div>' +
       '<div class="two"><button class="btn" data-a="carryVoraus" data-id="' + esc(b.id) + '" data-w="' + W + '">mitnehmen</button><button class="btn line" data-a="carryDrop" data-id="' + esc(b.id) + '">streichen</button></div></div>').join('') + '</section>';
 }
-function zeitFelder(pre, kVon, kBis, kGanz, bg) {
-  const st = bg ? ' style="background:var(--card)"' : '';
-  return '<button class="switch ink" role="switch" aria-checked="' + !!F[kGanz] + '" data-a="tGanz" data-k="' + kGanz + '"><span class="tr"></span>ganztägig (z. B. Klausur, Abgabe, Frist)</button>' +
-    (F[kGanz] ? '<span class="small">Ohne Uhrzeit. Kostet keine Lernzeit und steht hervorgehoben im Kalender und in „Heute“.</span>'
-      : '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px"><div style="display:flex;flex-direction:column;gap:6px;min-width:0"><label class="flabel" for="' + pre + '-von">von</label><input id="' + pre + '-von" type="time" class="inp"' + st + ' data-in="' + kVon + '" value="' + esc(fv(kVon)) + '"></div>' +
-        '<div style="display:flex;flex-direction:column;gap:6px;min-width:0"><label class="flabel" for="' + pre + '-bis">bis</label><input id="' + pre + '-bis" type="time" class="inp"' + st + ' data-in="' + kBis + '" value="' + esc(fv(kBis)) + '"></div></div>');
+/* ---------- Ein Terminformular für alle Stellen (Heute, Woche, Kalender, Einstellungen) ---------- */
+let TF = null; // { id, wo: 'heute' | 'woche' | 'kal' | 'tag' | 'einst', tag }
+const tmSerie = () => { const o = TF && TF.id ? D.termine[TF.id] : null; return o ? !isDate(o.datum) : !!F.tmWdh; };
+// Wöchentlicher Termin, von einem Tag aus geöffnet: gilt die Änderung nur für diesen Tag?
+const tmAmTag = () => !!(TF && TF.id && TF.tag && D.termine[TF.id] && !isDate(D.termine[TF.id].datum));
+const tmNurTag = () => tmAmTag() && F.tmNur !== 'immer';
+function tmTage() { return F.tmTageAuto ? (isDate(F.tmDatum) ? [wdOf(F.tmDatum)] : []) : (F.tmTage || []); }
+function tmOpen(wo, o) {
+  o = o || {};
+  const x = o.id ? D.termine[o.id] : null;
+  if (o.id && !x) return;
+  TF = { id: o.id || null, wo: wo, tag: o.tag || null };
+  K.form = null; ES.rForm = null;
+  F.tmErr = ''; F.tAusVon = ''; F.tAusBis = ''; F.tAusErr = ''; F.tmNur = 'tag';
+  if (x) {
+    const serie = !isDate(x.datum);
+    F.tmTitel = x.titel || ''; F.tmArt = x.art === 'klausur' ? 'klausur' : (x.art === 'privat' ? 'privat' : 'termin'); F.tmGeb = x.gebiet || null;
+    F.tmGanz = !!x.ganztags; F.tmVon = x.von || ''; F.tmBis = x.bis || ''; F.tmWdh = serie;
+    F.tmDatum = serie ? (o.tag || x.ab || '') : x.datum;
+    F.tmTage = serie ? (Array.isArray(x.wochentage) ? x.wochentage.slice() : (typeof x.wochentag === 'number' ? [x.wochentag] : [])) : []; F.tmTageAuto = false;
+    F.tmEnd = x.endet || ''; F.tmOrt = x.ort || ''; F.tmNotiz = x.notiz || ''; F.tmZaehlt = x.zeitZaehlt !== false;
+    F.tmMehr = !!(x.ort || x.notiz || x.zeitZaehlt === false || (serie && !o.tag));
+  } else {
+    F.tmTitel = ''; F.tmArt = o.art || 'termin'; F.tmGeb = null; F.tmGanz = false; F.tmVon = o.von || ''; F.tmBis = o.bis || '';
+    F.tmWdh = !!o.wdh; F.tmDatum = o.d != null ? o.d : today(); F.tmTage = []; F.tmTageAuto = !o.wdh; F.tmEnd = ''; F.tmOrt = ''; F.tmNotiz = ''; F.tmZaehlt = true; F.tmMehr = false;
+    if (F.tmArt === 'klausur' && !F.tmVon) { F.tmVon = '09:00'; F.tmBis = '14:00'; }
+  }
+  focusSoon('tm-titel');
 }
 function terminCheck(titel, von, bis, ganz) {
   if (!String(titel || '').trim()) return 'Bitte einen Titel eintragen.';
@@ -2855,20 +2896,113 @@ function terminCheck(titel, von, bis, ganz) {
   if (!ganz && bis && timeToMin(bis) <= timeToMin(von)) return '„bis“ muss nach „von“ liegen.';
   return '';
 }
-function terminForm(W, imTag) {
-  if (!S.tfOpen) return '';
-  const t = today();
-  const days = typeof imTag === 'string' ? [imTag] : weekDates(W).filter((d) => d >= t);
-  const sel = S.tfDay && days.indexOf(S.tfDay) >= 0 ? S.tfDay : days[0];
-  return '<div class="form" data-k="tform"><h3 style="font-size:15px;font-weight:700">' + (typeof imTag === 'string' ? 'Termin oder Klausur heute' : 'Einmaliger Termin' + (imTag ? ' am ' + esc(WDL[wdOf(sel)]) : '')) + '</h3>' + (imTag ? '' : '<div class="chips" role="group" aria-label="Tag">' +
-    days.map((d) => '<button class="sel" aria-pressed="' + (d === sel) + '" data-a="tfDay" data-d="' + d + '">' + WD[wdOf(d)] + ' ' + fmtDM(d) + '</button>').join('') + '</div>') +
-    '<label for="tf-titel">Titel</label><input id="tf-titel" class="inp" data-in="tfTitel" value="' + esc(fv('tfTitel')) + '" placeholder="z. B. Sprechstunde" autocomplete="off">' +
-    zeitFelder('tf', 'tfVon', 'tfBis', 'tfGanz', false) +
-    '<button class="switch ink" role="switch" aria-checked="' + !!F.tfKlausur + '" data-a="tGanz" data-k="tfKlausur"><span class="tr"></span>Klausur (Punkte trägst du später unter Kalender → Statistik ein)</button>' +
-    (F.tfKlausur && gebiete().length ? '<span class="flabel">Rechtsgebiet</span>' + gebietChips(F.tfGeb || null, 'tfGeb') : '') +
-    '<span class="small">Zählt auf die Obergrenze. Passt ein verteilter Block dann nicht mehr, wandert er auf einen Tag mit Platz oder in „Noch offen“.</span>' +
-    (F.tfErr ? '<span class="err">' + esc(F.tfErr) + '</span>' : '') +
-    '<div class="formbtns"><button class="btn ghost" data-a="tfClose">Abbrechen</button><button class="btn" data-a="tfSave" data-d="' + (sel || '') + '">Eintragen</button></div></div>';
+function terminFormU() {
+  const f = TF; if (!f) return '';
+  const old = f.id ? D.termine[f.id] : null;
+  const serie = tmSerie(); const amTag = tmAmTag(); const nur = tmNurTag();
+  const panel = f.wo === 'kal' || f.wo === 'tag' || f.wo === 'einst';
+  const bg = panel ? ' style="background:var(--card)"' : '';
+  const pick = (act, cur, opts, label) => '<div class="chips" role="group" aria-label="' + label + '">' + opts.map((o) => '<button class="sel" aria-pressed="' + (cur === o[0]) + '" data-a="' + act + '" data-v="' + o[0] + '">' + esc(o[1]) + '</button>').join('') + '</div>';
+  const fld = (id, key, label, type, extra) => '<div style="display:flex;flex-direction:column;gap:6px;min-width:0"><label class="flabel" for="' + id + '">' + label + '</label><input id="' + id + '" type="' + type + '" class="inp"' + bg + ' data-in="' + key + '" value="' + esc(fv(key)) + '"' + (extra || '') + '></div>';
+  const two = (a, b) => '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">' + a + b + '</div>';
+  const art = F.tmArt || 'termin';
+  let h = '<div class="form"' + (panel ? ' style="background:var(--bg)"' : '') + ' data-k="tmform"><h3 style="font-size:15px;font-weight:700">' + (f.id ? 'Termin ändern' : 'Neuer Termin') + '</h3>';
+  if (amTag) h += pick('tmNur', nur ? 'tag' : 'immer', [['tag', 'nur am ' + fmtDM(f.tag)], ['immer', 'ab dem ' + fmtDM(f.tag) + ' immer']], 'Was soll sich ändern');
+  h += '<label for="tm-titel">Titel</label><input id="tm-titel" class="inp"' + bg + ' data-in="tmTitel" value="' + esc(fv('tmTitel')) + '" placeholder="' + (art === 'klausur' ? 'z. B. Probeklausur Zivilrecht' : art === 'privat' ? 'z. B. Abendessen' : 'z. B. Sprechstunde') + '" autocomplete="off">';
+  h += '<span class="flabel">Art</span>' + pick('tmArt', art, [['termin', 'Termin'], ['klausur', 'Klausur'], ['privat', 'Privat']], 'Art');
+  if (art === 'klausur') h += '<span class="flabel">Rechtsgebiet</span>' + (gebiete().length ? gebietChips(F.tmGeb || null, 'tmGeb') : '<span class="small">Lege unter Themen ein Gebiet an, dann kannst du es hier wählen.</span>');
+  if (art === 'privat') h += '<span class="small">Nimmt keinen Platz weg und zählt nicht zur erfassten Zeit.</span>';
+  if (!serie || nur) h += fld('tm-datum', 'tmDatum', 'Tag', 'date', f.id ? '' : ' min="' + today() + '"');
+  else if (!amTag) h += fld('tm-datum', 'tmDatum', f.wo === 'einst' ? 'ab (optional)' : 'ab', 'date');
+  h += pick('tmGanz', F.tmGanz ? '1' : '0', [['0', 'mit Uhrzeit'], ['1', 'ganztägig']], 'Uhrzeit');
+  if (!F.tmGanz) h += two(fld('tm-von', 'tmVon', 'von', 'time'), fld('tm-bis', 'tmBis', 'bis', 'time'));
+  else if (art !== 'privat') h += '<span class="small">Ohne Uhrzeit. Kostet keine Lernzeit und steht hervorgehoben im Kalender und in „Heute“.</span>';
+  if (!f.id) h += '<span class="flabel">Wiederholen</span>' + pick('tmWdh', F.tmWdh ? '1' : '0', [['0', 'einmalig'], ['1', 'jede Woche']], 'Wiederholen');
+  if (serie && !nur) h += '<span class="flabel">Wochentage</span>' + tageChips(tmTage(), 'tmWt', 'Wochentage') + fld('tm-end', 'tmEnd', 'bis (optional)', 'date');
+  h += '<button class="linkbtn" style="color:var(--quiet)" aria-expanded="' + !!F.tmMehr + '" data-a="tmMehr">' + (F.tmMehr ? 'Weniger' : 'Mehr: Ort, Notiz') + '</button>';
+  if (F.tmMehr) {
+    h += '<label for="tm-ort">Ort (optional)</label><input id="tm-ort" class="inp"' + bg + ' data-in="tmOrt" value="' + esc(fv('tmOrt')) + '" placeholder="z. B. Hörsaal 3" autocomplete="off">' +
+      '<label for="tm-notiz">Notiz (optional)</label><input id="tm-notiz" class="inp"' + bg + ' data-in="tmNotiz" value="' + esc(fv('tmNotiz')) + '" placeholder="z. B. Gesetzestext mitnehmen" autocomplete="off">';
+    if (!F.tmGanz && art !== 'privat') h += '<button class="switch ink" style="align-self:flex-start" role="switch" aria-checked="' + (F.tmZaehlt !== false) + '" data-a="tmZaehlt"><span class="tr"></span>zählt zur erfassten Zeit, wenn abgehakt</button>';
+    if (old && serie && !amTag) {
+      const l = ausfallListe(old);
+      h += '<span class="flabel">Fällt aus (z. B. Semesterferien)</span>' + (l.length ? '<div style="display:flex;flex-direction:column;gap:4px">' + l.map((a, i) =>
+        '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px" data-k="aus-' + a.von + '"><span style="font-size:14px">' + esc(a.von === a.bis ? fmtDM(a.von) : fmtDM(a.von) + ' – ' + fmtDM(a.bis)) + '</span><button class="linkbtn" data-a="esTAusDel" data-i="' + i + '">entfernen</button></div>').join('') + '</div>' : '') +
+        two(fld('t-aus-von', 'tAusVon', 'von', 'date'), fld('t-aus-bis', 'tAusBis', 'bis (optional)', 'date')) +
+        '<button class="btn line" style="align-self:flex-start" data-a="esTAusAdd">Ausfall eintragen</button>';
+      if (F.tAusErr) h += '<span class="err" role="status">' + esc(F.tAusErr) + '</span>';
+    }
+  }
+  if (F.tmErr) h += '<span class="err" role="status">' + esc(F.tmErr) + '</span>';
+  return h + '<div class="formbtns">' + (f.id ? '<button class="btn ghost" style="margin-right:auto;text-decoration:underline" data-a="tmDel">' + (nur ? 'Fällt an dem Tag aus' : 'Entfernen') + '</button>' : '') +
+    '<button class="btn ghost" data-a="tmCancel">Abbrechen</button><button class="btn" data-a="tmSave">' + (f.id ? 'Speichern' : 'Eintragen') + '</button></div></div>';
+}
+// In übergebenen Wochen weichen verteilte Blöcke aus, wo der Termin in den nächsten zwei Wochen liegt
+function tmReflow(ab, tage) {
+  const s = isDate(ab) && ab > today() ? ab : today();
+  for (let i = 0; i < 14; i++) { const d = addDays(s, i); if (tage.indexOf(wdOf(d)) >= 0) reflowDay(d); }
+}
+function tmSave() {
+  const f = TF; if (!f) return;
+  const old = f.id ? D.termine[f.id] : null;
+  if (f.id && !old) { TF = null; return; }
+  const serie = tmSerie(); const amTag = tmAmTag(); const nur = tmNurTag(); const einzel = !serie || nur;
+  const titel = String(F.tmTitel || '').trim();
+  const ganz = !!F.tmGanz; const von = ganz ? '' : (F.tmVon || ''); const bis = ganz ? '' : (F.tmBis || '');
+  const art = F.tmArt === 'klausur' ? 'klausur' : (F.tmArt === 'privat' ? 'privat' : null);
+  const tage = tmTage().slice().sort();
+  const ab = amTag ? f.tag : (isDate(F.tmDatum) ? F.tmDatum : null);
+  const endet = isDate(F.tmEnd) ? F.tmEnd : null;
+  let err = terminCheck(titel, von, bis, ganz);
+  if (!err && einzel && !isDate(F.tmDatum)) err = 'Bitte einen Tag wählen.';
+  if (!err && einzel && F.tmDatum < today() && !(old && (old.datum === F.tmDatum || (nur && f.tag === F.tmDatum)))) err = 'Neue Termine gehen ab heute.';
+  if (!err && !einzel && !tage.length) err = 'Bitte mindestens einen Wochentag wählen.';
+  if (!err && !einzel && endet && ab && endet < ab) err = '„bis“ darf nicht vor „ab“ liegen.';
+  F.tmErr = err;
+  if (err) return 'keep';
+  const base = { titel: titel, von: von, bis: bis, ganztags: ganz, art: art, gebiet: art === 'klausur' ? (F.tmGeb || null) : null, ort: String(F.tmOrt || '').trim(), notiz: String(F.tmNotiz || '').trim() };
+  if (F.tmZaehlt === false && !ganz && art !== 'privat') base.zeitZaehlt = false;
+  else if (old && old.zeitZaehlt === false) base.zeitZaehlt = true;
+  // Neu angelegt wird ohne leere Felder
+  const neu = Object.assign({}, base);
+  ['art', 'gebiet', 'ort', 'notiz'].forEach((k) => { if (!neu[k]) delete neu[k]; });
+  const wort = art === 'klausur' ? 'Klausur' : 'Termin';
+  const platz = art !== 'privat';
+  if (!old && !serie) undoable(wort + ' eingetragen', () => { put('termine', uid('t'), Object.assign({ datum: F.tmDatum, erstellt: nowMs() }, neu)); if (platz) reflowDay(F.tmDatum); });
+  else if (!old) undoable(wort + ' eingetragen, jede Woche' + (tage.length === 1 ? ' am ' + WDL[tage[0]] : ''), () => { put('termine', uid('t'), Object.assign({ wochentage: tage, ab: ab, endet: endet, zustand: 'aktiv', erstellt: nowMs() }, neu)); if (platz) tmReflow(ab, tage); });
+  else if (!serie) undoable(wort + ' gespeichert', () => { patch('termine', f.id, Object.assign({ datum: F.tmDatum, beispiel: false }, base)); if (platz) reflowDay(F.tmDatum); });
+  else if (!amTag) undoable(wort + ' gespeichert', () => patch('termine', f.id, Object.assign({ wochentage: tage, ab: ab, endet: endet, datum: null, beispiel: false }, base)));
+  else if (nur) undoable(titel + ' am ' + fmtDM(f.tag) + ' geändert', () => {
+    // Nur dieser Tag: die Reihe fällt an dem Tag aus, an ihre Stelle tritt ein einmaliger Termin
+    const nid = uid('t'); const st = (tag(f.tag).termine || {})[f.id];
+    patch('termine', f.id, { ausfall: ausfallListe(old).concat([{ von: f.tag, bis: f.tag }]).sort((a, b) => (a.von < b.von ? -1 : 1)) });
+    put('termine', nid, Object.assign({ datum: F.tmDatum, erstellt: nowMs() }, neu));
+    if (st && F.tmDatum === f.tag) patch('tage', f.tag, { termine: { [nid]: clone(st) } });
+    if (platz) reflowDay(F.tmDatum);
+  });
+  else undoable(titel + ' gespeichert, ab ' + fmtDM(f.tag), () => {
+    const daten = Object.assign({ wochentage: tage, endet: endet, datum: null, beispiel: false }, base);
+    // Begann die Reihe schon früher, endet sie am Vortag und eine neue beginnt: die Vergangenheit bleibt, wie sie war
+    if (isDate(old.ab) && old.ab >= f.tag) patch('termine', f.id, Object.assign({ ab: f.tag }, daten));
+    else {
+      const nid = uid('t'); const st = (tag(f.tag).termine || {})[f.id];
+      const kopie = clone(old); delete kopie.ergebnisse;
+      patch('termine', f.id, { endet: addDays(f.tag, -1) });
+      put('termine', nid, Object.assign(kopie, daten, { ab: f.tag, erstellt: nowMs() }));
+      if (st) patch('tage', f.tag, { termine: { [nid]: clone(st) } });
+    }
+    if (platz) tmReflow(f.tag, tage);
+  });
+  TF = null;
+}
+function tmDel() {
+  const f = TF; const old = f && f.id ? D.termine[f.id] : null;
+  if (!old) { TF = null; return; }
+  const amTag = tmAmTag();
+  if (amTag && tmNurTag()) setAusfall(f.id, ausfallListe(old).concat([{ von: f.tag, bis: f.tag }]), old.titel + ' fällt am ' + fmtDM(f.tag) + ' aus');
+  else if (amTag && !(isDate(old.ab) && old.ab >= f.tag)) undoable(old.titel + ' endet am ' + fmtDM(addDays(f.tag, -1)), () => patch('termine', f.id, { endet: addDays(f.tag, -1) }));
+  else undoable('Termin entfernt', () => del('termine', f.id));
+  TF = null;
 }
 function planCard(T) {
   const wk = D.wochen[T] || {};
@@ -2905,7 +3039,7 @@ function planCard(T) {
   const platz = Object.keys(cap).reduce((a, d) => a + cap[d], 0);
   const wSum = weekDates(T).filter((d) => d >= from).reduce((a, d) => a + num(split[d], 0), 0);
   const wDue = wSum ? 'Voraussichtlich etwa ' + fmtH(wSum) + ' in dieser Woche, jeden Tag bis etwa ' + cfg().wdhProTag + ' min, am halben Tag die Hälfte.' : 'In dieser Woche ist voraussichtlich nichts fällig.';
-  const nTermine = weekDates(T).filter((d) => d >= from).reduce((a, d) => a + termineAt(d).length, 0);
+  const nTermine = weekDates(T).filter((d) => d >= from).reduce((a, d) => a + termineAt(d).filter((x) => !x.privat).length, 0);
   const rDefs = Object.keys(D.routinen).filter((id) => (D.routinen[id].zustand || 'aktiv') === 'aktiv').sort((a, b) => num(D.routinen[a].reihenfolge, 99) - num(D.routinen[b].reihenfolge, 99));
   const aus = Array.isArray(wk.routinenAus) ? wk.routinenAus : [];
   const rOn = rDefs.filter((id) => aus.indexOf(id) < 0).map((id) => D.routinen[id].titel);
@@ -3029,7 +3163,7 @@ function viewWoche() {
 }
 
 /* ================= Ansicht: Kalender und Zahlen ================= */
-const K = { kl: null, tab: 'kalender', form: null, listOpen: null, groups: {}, period: 'monat', etappe: null, showAll: {} };
+const K = { kl: null, tab: 'kalender', tag: null, form: null, listOpen: null, groups: {}, period: 'monat', etappe: null, showAll: {} };
 
 function spansAll() {
   const out = [];
@@ -3101,14 +3235,13 @@ function kalWeek(W, lanes, spans, runStart) {
     const puf = isPufferDay(d) && !frei;
     const first = dmy(d).d === 1 || (W === K.firstW && k === 0);
     const terms = termineAt(d).filter((x) => !((tag(d).termine || {})[x.id] || {}).faelltAus);
-    const cls = 'cell' + (d < t ? ' before' : '') + (frei ? ' frei' : '') + (puf && d !== t ? ' puffer' : '') + (d === t ? ' today' : '');
-    const tap = d >= t;
+    const cls = 'cell' + (d < t ? ' before' : '') + (frei ? ' frei' : '') + (puf && d !== t ? ' puffer' : '') + (d === t ? ' today' : '') + (K.tag === d ? ' sel' : '');
     const bes = terms.filter((x) => x.einmalig || x.ganztags); const reg = terms.filter((x) => !(x.einmalig || x.ganztags));
     const tip = terms.length ? ' title="' + esc(terms.map((x) => (terminText(x) ? terminText(x) + ' ' : '') + x.titel).join('\n')) + '"' : '';
-    h += (tap ? '<button class="' + cls + '"' + tip + ' data-a="kNew" data-v="termin" data-d="' + d + '" aria-label="' + esc('Termin eintragen am ' + fmtLong(d) + (terms.length ? ', schon ' + terms.length + (terms.length === 1 ? ' Termin' : ' Termine') : '')) + '">' : '<div class="' + cls + '"' + tip + '>') + '<span class="n">' + dmy(d).d + (first && window.innerWidth >= 900 ? '. ' + MONS[dmy(d).m - 1] + (dmy(d).m === 1 ? ' ' + dmy(d).y : '') : '') + '</span>' + (first && window.innerWidth < 900 ? '<span class="m">' + MONS[dmy(d).m - 1] + (dmy(d).m === 1 ? ' ’' + String(dmy(d).y).slice(2) : '') + '</span>' : '') +
-      bes.slice(0, 2).map((x) => '<span class="tm once">' + esc(x.titel) + '</span>').join('') +
-      (bes.length > 2 || reg.length ? '<span class="foot">' + (bes.length > 2 ? '<span class="more">+' + (bes.length - 2) + '</span>' : '') + reg.map(() => '<i></i>').join('') + '</span>' : '') +
-      (terms.length ? '<span class="tdots">' + terms.map((x) => '<i' + (x.einmalig || x.ganztags ? ' class="once"' : '') + '></i>').join('') + '</span>' : '') + (tap ? '</button>' : '</div>');
+    h += '<button class="' + cls + '"' + tip + ' data-a="kTag" data-d="' + d + '" aria-pressed="' + (K.tag === d) + '" aria-label="' + esc(fmtLong(d) + (terms.length ? ', ' + terms.length + (terms.length === 1 ? ' Termin' : ' Termine') : '') + ': Tag ansehen') + '">' + '<span class="n">' + dmy(d).d + (first && window.innerWidth >= 900 ? '. ' + MONS[dmy(d).m - 1] + (dmy(d).m === 1 ? ' ' + dmy(d).y : '') : '') + '</span>' + (first && window.innerWidth < 900 ? '<span class="m">' + MONS[dmy(d).m - 1] + (dmy(d).m === 1 ? ' ’' + String(dmy(d).y).slice(2) : '') + '</span>' : '') +
+      bes.slice(0, 2).map((x) => '<span class="tm once' + (x.privat ? ' priv' : '') + '">' + esc(x.titel) + '</span>').join('') +
+      (bes.length > 2 || reg.length ? '<span class="foot">' + (bes.length > 2 ? '<span class="more">+' + (bes.length - 2) + '</span>' : '') + reg.map((x) => '<i' + (x.privat ? ' class="priv"' : '') + '></i>').join('') + '</span>' : '') +
+      (terms.length ? '<span class="tdots">' + terms.map((x) => '<i class="' + (x.einmalig || x.ganztags ? 'once' : '') + (x.privat ? ' priv' : '') + '"></i>').join('') + '</span>' : '') + '</button>';
   });
   h += '</div>';
   if (past) {
@@ -3119,37 +3252,55 @@ function kalWeek(W, lanes, spans, runStart) {
     const sum = st.pause && !st.n ? 'Pause · ' + (st.pause.name || 'frei') : (st.n ? geschafft + st.n + (st.n === 1 ? ' Block' : ' Blöcke') : 'Keine Blöcke eingetragen') + (st.zeit ? ' · erfasst ' + fmtHM(st.zeit) : '');
     h += '<div class="sum"><span>' + esc(sum) + '</span>' + cl.map((x) => '<span class="okchip">' + ico('check', 'xs') + esc(x.text + ' · ' + fmtDM(x.d)) + '</span>').join('') + '</div>';
   }
+  if (K.tag && K.tag >= W && K.tag <= addDays(W, 6) && window.innerWidth < 900) h += tagBlatt(K.tag);
   return h + '</div>';
+}
+// Tagesblatt: was an einem Tag ist. Ein Tipp auf einen Tag im Kalender öffnet es, eintragen geht von hier aus.
+function tagBlatt(d) {
+  const t = today(); const W = mondayOf(d);
+  const pz = pauseAt(d); const st = tag(d).termine || {};
+  const terms = termineAt(d);
+  // Wöchentliche Termine, die an dem Tag im Voraus ausfallen: stehen durchgestrichen da und lassen sich zurückholen
+  const aus = d >= t && !pz.frei ? wochenTermineAm(d).filter((x) => ausfallAm(x, d)) : [];
+  const row = (x, off) => {
+    const serie = off || !x.einmalig; const s = st[x.id] || {}; const weg = off || !!s.faelltAus;
+    const priv = off ? x.art === 'privat' : x.privat; const kl = x.art === 'klausur';
+    const meta = [serie ? 'jede Woche' : '', x.ort || '', weg ? (d < t ? 'fiel aus' : 'fällt aus') : (s.erledigt ? 'erledigt' : '')].filter((y) => y).join(' · ');
+    const id = esc(x.id);
+    return '<div class="tb-row' + (priv ? ' priv' : '') + (weg ? ' aus' : '') + '" data-k="tb-' + id + '"><span class="zt">' + esc(terminText(x) || '') + '</span><span class="tx"><b>' + esc(x.titel || 'Termin') + (kl ? '<span class="tag-bsp">Klausur</span>' : '') + (priv ? '<span class="tag-bsp">privat</span>' : '') + '</b>' +
+      (meta ? '<span class="small">' + esc(meta) + '</span>' : '') + (x.notiz ? '<span class="small">' + esc(x.notiz) + '</span>' : '') + '</span><span class="acts">' +
+      (!off && (d >= t || !serie) ? '<button class="linkbtn" aria-label="Termin ' + esc(x.titel) + ' ändern" data-a="kEdit" data-v="termin" data-wo="tag" data-id="' + id + '" data-d="' + d + '">ändern</button>' : '') +
+      (serie && d >= t && !s.faelltAus ? '<button class="linkbtn" style="color:var(--quiet)" role="switch" aria-checked="' + !!off + '" data-a="kAusfall" data-id="' + id + '" data-d="' + d + '">' + (off ? 'findet statt' : 'fällt aus') + '</button>' : '') + '</span></div>';
+  };
+  const lern = dayItems(d, W).filter((i) => i.k === 'b' || i.k === 'w').map((i) => itemHtml(Object.assign({}, i, { edit: false }))).join('');
+  let note = '';
+  if (pz.frei) note = 'Pause · ' + (pz.frei.name || 'frei');
+  else if (capH(d) <= 0) note = 'Freier Tag';
+  else if (isPufferDay(d)) note = 'Puffertag';
+  const er = d <= t ? erfasstAt(d) : 0;
+  if (er) note = (note ? note + ' · ' : '') + 'erfasst ' + fmtHM(er);
+  let h = '<section class="panel tagblatt" aria-label="' + esc('Tag: ' + fmtLong(d)) + '" data-k="tagblatt"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><h2>' + esc(fmtLong(d)) + (d === t ? ' · heute' : '') + '</h2><button class="linkbtn" style="flex:0 0 auto;align-self:center;min-height:36px;white-space:nowrap;color:var(--quiet)" data-a="kTag" data-d="">schließen</button></div>' +
+    (note ? '<span class="small">' + esc(note) + '</span>' : '');
+  h += '<div style="display:flex;flex-direction:column" data-k="tb-termine">' + (terms.length + aus.length ? terms.map((x) => row(x, false)).join('') + aus.map((x) => row(x, true)).join('') : '<span class="small">Keine Termine.</span>') + '</div>';
+  if (lern) h += '<span class="flabel">Lernen</span><div style="display:flex;flex-direction:column;gap:8px" data-k="tb-lernen">' + lern + '</div>';
+  if (TF && TF.wo === 'tag') h += terminFormU();
+  else h += '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">' + (d >= t ? '<button class="addbtn" style="flex:0 1 auto;min-height:44px" data-a="kNew" data-v="termin" data-d="' + d + '">' + ico('plus', 'xs') + 'Termin</button>' : '') +
+    '<button class="linkbtn" style="align-self:center;color:var(--quiet)" data-a="kalOpenWeek" data-w="' + W + '">Woche öffnen</button></div>';
+  return h + '</section>';
 }
 function kalForm() {
   const f = K.form;
   if (!f) return '';
-  const isE = f.kind === 'etappe'; const isP = f.kind === 'pause'; const isT = f.kind === 'termin';
-  let h = '<div class="form" style="background:var(--bg)" data-k="kform"><h3 style="font-size:15px;font-weight:700">' + (f.id ? (isE ? 'Etappe ändern' : isP ? 'Pause ändern' : 'Termin ändern') : (isE ? 'Neue Etappe' : isP ? 'Neue Pause' : 'Neuer Termin')) + '</h3>';
+  const isE = f.kind === 'etappe'; const isP = f.kind === 'pause';
+  let h = '<div class="form" style="background:var(--bg)" data-k="kform"><h3 style="font-size:15px;font-weight:700">' + (f.id ? (isE ? 'Etappe ändern' : 'Pause ändern') : (isE ? 'Neue Etappe' : 'Neue Pause')) + '</h3>';
   if (isP) {
     h += '<div role="radiogroup" aria-label="Art der Pause" style="display:flex;flex-direction:column;gap:6px">' +
       [['frei', 'frei', 'Alles ruht: Tagesvorschlag, Wiederholung, Erinnerung, Wochenplanung.'], ['wdh', 'Wiederholungspause', 'Nur die Wiederholung ruht, Tag und Woche laufen normal.']].map((a) =>
         '<button class="radio" role="radio" aria-checked="' + ((F.kArt || 'frei') === a[0]) + '" data-a="kArt" data-v="' + a[0] + '"><span class="o"></span><span style="display:flex;flex-direction:column;gap:2px"><span style="font-size:15px;font-weight:700">' + a[1] + '</span><span class="small">' + a[2] + '</span></span></button>').join('') + '</div>';
   }
-  h += '<label for="k-name">' + (isE ? 'Name' : isP ? 'Bezeichnung (optional)' : 'Titel') + '</label><input id="k-name" class="inp" style="background:var(--card)" data-in="kName" value="' + esc(fv('kName')) + '" placeholder="' + (isE ? 'z. B. Schwerpunkt' : isP ? 'z. B. Urlaub' : 'z. B. Sprechstunde') + '" autocomplete="off">';
-  if (isT && !f.id && isDate(F.kVon)) {
-    const wt = wochenTermineAm(F.kVon);
-    if (wt.length) h += '<div style="display:flex;flex-direction:column;gap:6px" data-k="k-ausfall"><span class="flabel">Wöchentliche Termine am ' + esc(fmtDM(F.kVon)) + '</span>' + wt.map((x) =>
-      '<button class="switch ink" role="switch" aria-checked="' + ausfallAm(x, F.kVon) + '" data-a="kAusfall" data-id="' + esc(x.id) + '" data-d="' + F.kVon + '"><span class="tr"></span>' + esc(x.titel) + (x.von ? ' ' + esc(x.von + (x.bis ? '–' + x.bis : '')) : '') + ' fällt aus</button>').join('') + '</div>';
-  }
-  if (isT) {
-    h += '<label for="k-datum">Tag</label><input id="k-datum" type="date" class="inp" style="background:var(--card)" data-in="kVon" value="' + esc(fv('kVon')) + '"' + (f.id ? '' : ' min="' + today() + '"') + '>' +
-      zeitFelder('k-t', 'kTVon', 'kTBis', 'kGanz', true) +
-      '<button class="switch ink" role="switch" aria-checked="' + !!F.kKlausur + '" data-a="kKlausur"><span class="tr"></span>Klausur</button>';
-    if (F.kKlausur) h += '<span class="flabel">Rechtsgebiet</span>' + (gebiete().length ? gebietChips(F.kGeb || null, 'kGeb') : '<span class="small">Lege unter Themen ein Gebiet an, dann kannst du es hier wählen.</span>');
-    if (!f.id) {
-      h += '<button class="switch ink" role="switch" aria-checked="' + !!F.kWdh + '" data-a="tGanz" data-k="kWdh"><span class="tr"></span>' + (F.kKlausur ? 'jede Woche (z. B. Klausurenkurs)' : 'jede Woche wiederholen') + (isDate(F.kVon) ? ' (' + WDL[wdOf(F.kVon)] + ')' : '') + '</button>';
-      if (F.kWdh) h += '<label for="k-tend">bis (optional)</label><input id="k-tend" type="date" class="inp" style="background:var(--card)" data-in="kTEnd" value="' + esc(fv('kTEnd')) + '"><span class="small">Ändern, pausieren oder beenden kannst du wiederkehrende Termine in den Einstellungen.</span>';
-    }
-  } else {
+  h += '<label for="k-name">' + (isE ? 'Name' : 'Bezeichnung (optional)') + '</label><input id="k-name" class="inp" style="background:var(--card)" data-in="kName" value="' + esc(fv('kName')) + '" placeholder="' + (isE ? 'z. B. Schwerpunkt' : 'z. B. Urlaub') + '" autocomplete="off">';
     h += '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px"><div style="display:flex;flex-direction:column;gap:6px;min-width:0"><label class="flabel" for="k-von">von</label><input id="k-von" type="date" class="inp" style="background:var(--card)" data-in="kVon" value="' + esc(fv('kVon')) + '"></div>' +
       '<div style="display:flex;flex-direction:column;gap:6px;min-width:0"><label class="flabel" for="k-bis">bis</label><input id="k-bis" type="date" class="inp" style="background:var(--card)" data-in="kBis" value="' + esc(fv('kBis')) + '"></div></div>';
-  }
   if (isE) {
     const st = F.kStoff || [];
     h += '<span class="flabel">Stoff (optional)</span><span class="small">Wähle ganze Äste aus deinem Themenbaum. Es zählt immer, was gerade darunter hängt, auch Themen, die du später anlegst.</span>' +
@@ -3215,9 +3366,9 @@ function viewKalender() {
   }
   const head = '<div class="grid khead"><span>KW</span>' + WD.map((w) => '<span>' + w + '</span>').join('') + '</div>' +
     (hiddenPast || K.pastAll ? '<button class="group" data-a="kPast" aria-expanded="' + !!K.pastAll + '"><span class="t"><b>' + (K.pastAll ? 'Ältere Wochen ausblenden' : 'Ältere Wochen zeigen') + '</b><span>' + (K.pastAll ? 'Es werden alle Wochen gezeigt.' : (hiddenPast === 1 ? '1 Woche' : hiddenPast + ' Wochen') + ' ohne Etappe') + '</span></span></button>' : '');
-  let aside = '<section class="panel" aria-label="Etappen und Pausen"><button class="more" style="margin:-8px 0;color:var(--ink);font-size:16px;font-weight:700" aria-expanded="' + K.listOpen + '" data-a="kList">Etappen und Pausen<svg class="ico xs" viewBox="0 0 24 24" aria-hidden="true" style="transform:' + (K.listOpen ? 'rotate(180deg)' : 'none') + '">' + ICON.down + '</svg></button>' +
+  let aside = (K.tag && window.innerWidth >= 900 ? tagBlatt(K.tag) : '') + '<section class="panel" aria-label="Etappen und Pausen"><button class="more" style="margin:-8px 0;color:var(--ink);font-size:16px;font-weight:700" aria-expanded="' + K.listOpen + '" data-a="kList">Etappen und Pausen<svg class="ico xs" viewBox="0 0 24 24" aria-hidden="true" style="transform:' + (K.listOpen ? 'rotate(180deg)' : 'none') + '">' + ICON.down + '</svg></button>' +
     '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px"><button class="addbtn" style="min-height:44px;border-radius:12px" data-a="kNew" data-v="etappe">' + ico('plus', 'xs') + 'Etappe</button><button class="addbtn" style="min-height:44px;border-radius:12px" data-a="kNew" data-v="pause">' + ico('plus', 'xs') + 'Pause</button></div>' +
-    (K.form && K.form.kind !== 'termin' ? kalForm() : '');
+    (K.form ? kalForm() : '');
   if (K.listOpen) {
     aside += '<div style="display:flex;flex-direction:column">' + (spans.length ? spans.map((x) => {
       const isP = x.kind === 'pause';
@@ -3228,10 +3379,10 @@ function viewKalender() {
   }
   aside += '</section>';
   const once = Object.keys(D.termine).map((id) => Object.assign({ id: id }, D.termine[id])).filter((x) => isDate(x.datum) && x.datum >= addDays(t, -14)).sort((a, b) => (a.datum + (a.von || '') < b.datum + (b.von || '') ? -1 : 1));
-  aside += '<section class="panel" aria-label="Termine" id="k-termine"><h2>Einmalige Termine</h2>' + (K.form && K.form.kind === 'termin' ? kalForm() : '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px"><button class="addbtn" style="min-height:44px;border-radius:12px" data-a="kNew" data-v="termin">' + ico('plus', 'xs') + 'Termin</button><button class="addbtn" style="min-height:44px;border-radius:12px" data-a="kNew" data-v="termin" data-kl="1">' + ico('plus', 'xs') + 'Klausur</button></div>') +
-    (once.length ? '<div style="display:flex;flex-direction:column">' + once.map((x) => '<div class="spanrow" data-k="ot-' + esc(x.id) + '"><span class="sw term"></span><span class="tx"><b>' + esc(x.titel) + bsp(x) + (x.art === 'klausur' ? '<span class="tag-bsp">Klausur</span>' : '') + '</b><span class="small">' + esc(fmtShort(x.datum) + (x.von || x.ganztags ? ' · ' + terminText(x) : '')) + '</span></span><button class="linkbtn" style="align-self:center" aria-label="Termin ' + esc(x.titel) + ' ändern" data-a="kEdit" data-v="termin" data-id="' + esc(x.id) + '">ändern</button></div>').join('') + '</div>' : '<span class="small">Keine einmaligen Termine. Tipp im Kalender auf einen Tag, um dort einen einzutragen.</span>') +
+  aside += '<section class="panel" aria-label="Termine" id="k-termine"><h2>Einmalige Termine</h2>' + (TF && TF.wo === 'kal' ? terminFormU() : '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px"><button class="addbtn" style="min-height:44px;border-radius:12px" data-a="kNew" data-v="termin">' + ico('plus', 'xs') + 'Termin</button><button class="addbtn" style="min-height:44px;border-radius:12px" data-a="kNew" data-v="termin" data-kl="1">' + ico('plus', 'xs') + 'Klausur</button></div>') +
+    (once.length ? '<div style="display:flex;flex-direction:column">' + once.map((x) => '<div class="spanrow" data-k="ot-' + esc(x.id) + '"><span class="sw ' + (x.art === 'privat' ? 'priv' : 'term') + '"></span><span class="tx"><b>' + esc(x.titel) + bsp(x) + (x.art === 'klausur' ? '<span class="tag-bsp">Klausur</span>' : '') + (x.art === 'privat' ? '<span class="tag-bsp">privat</span>' : '') + '</b><span class="small">' + esc(fmtShort(x.datum) + (x.von || x.ganztags ? ' · ' + terminText(x) : '')) + '</span></span><button class="linkbtn" style="align-self:center" aria-label="Termin ' + esc(x.titel) + ' ändern" data-a="kEdit" data-v="termin" data-id="' + esc(x.id) + '">ändern</button></div>').join('') + '</div>' : '<span class="small">Keine einmaligen Termine. Tipp im Kalender auf einen Tag, um ihn anzusehen und dort einen einzutragen.</span>') +
     '</section>';
-  aside += '<section class="legend2" aria-label="Legende"><span><i style="background:var(--hl);width:auto;height:auto;padding:1px 5px;color:var(--hl-text);font-style:normal;font-size:12px;font-weight:700">einmalig</i>oder ganztägiger Termin</span><span><i style="background:var(--band)"></i>Etappe</span><span><i style="background:var(--ok-band)"></i>Pause frei</span><span><i style="border:1.5px dashed var(--ring)"></i>Wiederholungspause</span><span><i style="width:16px;height:14px;border:1.5px dashed var(--ring)"></i>Puffer</span><span><i style="width:16px;height:14px;background:var(--ok-soft)"></i>freier Tag</span><span><i style="width:16px;height:14px;border:2px solid var(--ink)"></i>heute</span></section>';
+  aside += '<section class="legend2" aria-label="Legende"><span><i style="background:var(--hl);width:auto;height:auto;padding:1px 5px;color:var(--hl-text);font-style:normal;font-size:12px;font-weight:700">einmalig</i>oder ganztägiger Termin</span><span><i style="background:var(--priv-soft);border:1.5px solid var(--priv)"></i>privat</span><span><i style="background:var(--band)"></i>Etappe</span><span><i style="background:var(--ok-band)"></i>Pause frei</span><span><i style="border:1.5px dashed var(--ring)"></i>Wiederholungspause</span><span><i style="width:16px;height:14px;border:1.5px dashed var(--ring)"></i>Puffer</span><span><i style="width:16px;height:14px;background:var(--ok-soft)"></i>freier Tag</span><span><i style="width:16px;height:14px;border:2px solid var(--ink)"></i>heute</span></section>';
   return h + '<div class="kalwrap"><section class="kal" aria-label="Kalender nach Wochen"><div class="scroll" id="kal-scroll">' + head + rows + '</div></section><aside class="kalaside">' + aside + '</aside></div>';
 }
 
@@ -3670,7 +3821,7 @@ Object.assign(EXTRA_ACT, {
   kOpenWeek: () => {},
   kalOpenWeek: (d) => { S.view = 'woche'; S.wk = d.w === mondayOf(today()) ? null : d.w; window.scrollTo(0, 0); },
   kAusfall: (d) => { toggleAusfall(d.id, d.d); return 'keep'; },
-  kKlausur: () => { F.kKlausur = !F.kKlausur; if (F.kKlausur) { if (!F.kTVon && !F.kGanz) { F.kTVon = '09:00'; F.kTBis = '14:00'; } } return 'keep'; },
+  kTag: (d) => { K.tag = d.d && K.tag !== d.d ? d.d : null; if (TF && TF.wo === 'tag') TF = null; },
   klOpen: (d) => {
     if (K.kl === d.id) { K.kl = null; return; }
     const x = klGet(d.id); if (!x) return;
@@ -3695,17 +3846,19 @@ Object.assign(EXTRA_ACT, {
   },
   klFDel: (d) => { const x = klGet(d.id); if (!x || !Array.isArray(x.fehler)) return 'keep'; undoable('Entfernt', () => klPatch(d.id, { fehler: x.fehler.filter((_, i) => i !== Number(d.i)) })); return 'keep'; },
   klWdh: (d) => { klausurFehlerWdh(d.id, Number(d.i)); return 'keep'; },
-  kGeb: (d) => { F.kGeb = F.kGeb === d.g ? null : d.g; return 'keep'; },
   kStoffAdd: () => { const id = F.kStoffSel; if (id && thema(id) && (F.kStoff || []).indexOf(id) < 0) F.kStoff = (F.kStoff || []).concat([id]); F.kStoffSel = ''; return 'keep'; },
   kStoffDel: (d) => { F.kStoff = (F.kStoff || []).filter((x) => x !== d.id); return 'keep'; },
-  kNew: (d) => { K.form = { kind: d.v, id: null }; F.kStoff = []; F.kKomplett = false; F.kStoffSel = ''; F.kKlausur = d.kl === '1'; F.kGeb = null; F.kName = ''; F.kVon = d.d || (d.v === 'termin' ? today() : ''); F.kBis = ''; F.kZiel = ''; F.kArt = 'frei'; F.kTVon = ''; F.kTBis = ''; F.kGanz = false; F.kWdh = false; F.kTEnd = ''; F.kErr = ''; if (F.kKlausur) { F.kTVon = '09:00'; F.kTBis = '14:00'; } if (d.v !== 'termin') K.listOpen = true; focusSoon('k-name'); },
+  kNew: (d) => {
+    if (d.v === 'termin') { tmOpen(d.d && K.tag === d.d ? 'tag' : 'kal', { d: d.d || today(), art: d.kl === '1' ? 'klausur' : 'termin' }); return; }
+    TF = null; K.form = { kind: d.v, id: null }; F.kStoff = []; F.kKomplett = false; F.kStoffSel = ''; F.kName = ''; F.kVon = d.d || ''; F.kBis = ''; F.kZiel = ''; F.kArt = 'frei'; F.kErr = ''; K.listOpen = true; focusSoon('k-name');
+  },
   kEdit: (d) => {
-    const col = d.v === 'etappe' ? 'etappen' : (d.v === 'pause' ? 'pausen' : 'termine');
+    if (d.v === 'termin') { tmOpen(d.wo === 'tag' ? 'tag' : 'kal', { id: d.id, tag: d.d || null }); return; }
+    const col = d.v === 'etappe' ? 'etappen' : 'pausen';
     const x = D[col][d.id]; if (!x) return;
-    K.form = { kind: d.v, id: d.id };
+    TF = null; K.form = { kind: d.v, id: d.id };
     F.kErr = '';
-    if (d.v === 'termin') { F.kName = x.titel || ''; F.kVon = x.datum || ''; F.kTVon = x.von || ''; F.kTBis = x.bis || ''; F.kGanz = !!x.ganztags; F.kWdh = false; F.kKlausur = x.art === 'klausur'; F.kGeb = x.gebiet || null; }
-    else { F.kName = x.name || ''; F.kVon = x.von || ''; F.kBis = x.bis || ''; F.kZiel = x.ziel || ''; F.kStoff = Array.isArray(x.stoff) ? x.stoff.slice() : []; F.kKomplett = !!x.stoffKomplett; F.kStoffSel = ''; F.kArt = x.art === 'wdh' ? 'wdh' : 'frei'; }
+    F.kName = x.name || ''; F.kVon = x.von || ''; F.kBis = x.bis || ''; F.kZiel = x.ziel || ''; F.kStoff = Array.isArray(x.stoff) ? x.stoff.slice() : []; F.kKomplett = !!x.stoffKomplett; F.kStoffSel = ''; F.kArt = x.art === 'wdh' ? 'wdh' : 'frei';
     focusSoon('k-name');
   },
   kArt: (d) => { F.kArt = d.v; return 'keep'; },
@@ -3713,22 +3866,6 @@ Object.assign(EXTRA_ACT, {
   kSave: () => {
     const f = K.form; if (!f) return;
     const name = String(F.kName || '').trim();
-    if (f.kind === 'termin') {
-      const old = f.id ? D.termine[f.id] : null;
-      F.kErr = terminCheck(name, F.kTVon, F.kTBis, F.kGanz);
-      if (!F.kErr && !isDate(F.kVon)) F.kErr = 'Bitte einen Tag wählen.';
-      if (!F.kErr && F.kVon < today() && !(old && old.datum === F.kVon)) F.kErr = 'Neue Termine gehen ab heute.';
-      if (!F.kErr && !f.id && F.kWdh && isDate(F.kTEnd) && F.kTEnd < F.kVon) F.kErr = '„bis“ darf nicht vor dem Tag liegen.';
-      if (F.kErr) return 'keep';
-      const ganz = !!F.kGanz; const von = ganz ? '' : F.kTVon; const bis = ganz ? '' : (F.kTBis || '');
-      const kl = F.kKlausur ? { art: 'klausur', gebiet: F.kGeb || null } : { art: null, gebiet: null };
-      if (f.id) undoable(F.kKlausur ? 'Klausur gespeichert' : 'Termin gespeichert', () => { patch('termine', f.id, Object.assign({ titel: name, datum: F.kVon, von: von, bis: bis, ganztags: ganz, beispiel: false }, kl)); reflowDay(F.kVon); });
-      else if (F.kKlausur && F.kWdh) undoable('Klausur eingetragen, jede Woche am ' + WDL[wdOf(F.kVon)], () => addTerminWeekly(F.kVon, name, von, bis, ganz, F.kTEnd, kl));
-      else if (F.kKlausur) undoable('Klausur eingetragen', () => addTerminOnce(F.kVon, name, von, bis, ganz, kl));
-      else if (F.kWdh) undoable('Termin eingetragen, jede Woche am ' + WDL[wdOf(F.kVon)], () => addTerminWeekly(F.kVon, name, von, bis, ganz, F.kTEnd));
-      else undoable('Termin eingetragen', () => addTerminOnce(F.kVon, name, von, bis, ganz));
-      K.form = null; return;
-    }
     if (f.kind === 'etappe' && !name) { F.kErr = 'Eine Etappe braucht einen Namen.'; return 'keep'; }
     if (!isDate(F.kVon) || !isDate(F.kBis)) { F.kErr = 'Bitte „von“ und „bis“ eintragen.'; return 'keep'; }
     if (F.kBis < F.kVon) { F.kErr = '„bis“ darf nicht vor „von“ liegen.'; return 'keep'; }
@@ -3740,7 +3877,7 @@ Object.assign(EXTRA_ACT, {
   },
   kDel: () => {
     const f = K.form; if (!f || !f.id) return;
-    const col = f.kind === 'etappe' ? 'etappen' : (f.kind === 'pause' ? 'pausen' : 'termine');
+    const col = f.kind === 'etappe' ? 'etappen' : 'pausen';
     undoable('Entfernt', () => del(col, f.id));
     K.form = null;
   },
@@ -4318,7 +4455,7 @@ Object.assign(EXTRA_ACT, {
 });
 
 /* ================= Ansicht: Einstellungen ================= */
-const ES = { importPending: null, open: null, rForm: null, rArt: 'tage', rTage: [], tForm: null, tTage: [] };
+const ES = { importPending: null, open: null, rForm: null, rArt: 'tage', rTage: [] };
 const zWort = (z) => (z === 'abgeschlossen' ? 'erledigt' : z);
 const ZUST = ['aktiv', 'pausiert', 'abgeschlossen'];
 // Angezeigt wird „erledigt“; gespeichert bleibt 'abgeschlossen'
@@ -4412,40 +4549,24 @@ function routineForm() {
   return h + '<div class="formbtns">' + (f.id ? '<button class="btn ghost" style="margin-right:auto;text-decoration:underline" data-a="esRDel">Entfernen</button>' : '') + '<button class="btn ghost" data-a="esRCancel">Abbrechen</button><button class="btn" data-a="esRSave">' + (f.id ? 'Speichern' : 'Anlegen') + '</button></div></div>';
 }
 function termineHtml() {
-  const ids = Object.keys(D.termine).filter((id) => !isDate(D.termine[id].datum)).sort((a, b) => ZUST.indexOf(D.termine[a].zustand || 'aktiv') - ZUST.indexOf(D.termine[b].zustand || 'aktiv') || String(D.termine[a].von || '').localeCompare(String(D.termine[b].von || '')));
-  let h = '<section class="panel" aria-label="Wiederkehrende Termine"><h2>Wiederkehrende Termine</h2><span class="small">Zählen auf die Obergrenze pro Tag. Einmalige Termine trägst du in der Woche oder im Kalender ein.</span>';
-  if (ES.tForm && !ES.tForm.id) h += terminFormE();
+  // Reihen, die schon geendet haben (auch durch „ab dem … immer“ geteilte), stehen eingeklappt am Ende
+  const alle = Object.keys(D.termine).filter((id) => !isDate(D.termine[id].datum));
+  const vorbei = (id) => isDate(D.termine[id].endet) && D.termine[id].endet < today();
+  const nAlt = alle.filter(vorbei).length;
+  const ids = alle.filter((id) => ES.tAlt || !vorbei(id) || (TF && TF.id === id)).sort((a, b) => (vorbei(a) ? 1 : 0) - (vorbei(b) ? 1 : 0) || ZUST.indexOf(D.termine[a].zustand || 'aktiv') - ZUST.indexOf(D.termine[b].zustand || 'aktiv') || String(D.termine[a].von || '').localeCompare(String(D.termine[b].von || '')));
+  let h = '<section class="panel" aria-label="Wiederkehrende Termine"><h2>Wiederkehrende Termine</h2><span class="small">Zählen auf die Obergrenze pro Tag, private nicht. Ändern kannst du sie auch direkt am Termin in Heute, in der Woche und im Kalender.</span>';
+  if (TF && TF.wo === 'einst' && !TF.id) h += terminFormU();
   h += ids.length ? '<div style="display:flex;flex-direction:column">' + ids.map((id) => {
     const x = D.termine[id]; const z = x.zustand || 'aktiv';
-    if (ES.tForm && ES.tForm.id === id) return '<div style="padding:8px 0;border-top:1px solid var(--line)">' + terminFormE() + '</div>';
+    if (TF && TF.wo === 'einst' && TF.id === id) return '<div style="padding:8px 0;border-top:1px solid var(--line)">' + terminFormU() + '</div>';
     const days = Array.isArray(x.wochentage) ? x.wochentage : (typeof x.wochentag === 'number' ? [x.wochentag] : []);
     const span = (isDate(x.ab) ? 'ab ' + fmtDM(x.ab) : '') + (isDate(x.endet) ? (isDate(x.ab) ? ' ' : '') + 'bis ' + fmtDM(x.endet) : '');
-    return '<div class="spanrow" style="flex-wrap:wrap" data-k="et-' + esc(id) + '"><span class="sw term"></span><span class="tx"><b' + (z !== 'aktiv' ? ' style="color:var(--quiet)"' : '') + '>' + esc(x.titel) + bsp(x) + (x.art === 'klausur' ? '<span class="tag-bsp">Klausur</span>' : '') + '</b><span class="small">' + esc(days.slice().sort().map((i) => WD[i]).join(', ') + (terminText(x) ? ' · ' + terminText(x) : '') + (span ? ' · ' + span : '')) + '</span></span>' +
+    return '<div class="spanrow" style="flex-wrap:wrap" data-k="et-' + esc(id) + '"><span class="sw ' + (x.art === 'privat' ? 'priv' : 'term') + '"></span><span class="tx"><b' + (z !== 'aktiv' ? ' style="color:var(--quiet)"' : '') + '>' + esc(x.titel) + bsp(x) + (x.art === 'klausur' ? '<span class="tag-bsp">Klausur</span>' : '') + (x.art === 'privat' ? '<span class="tag-bsp">privat</span>' : '') + '</b><span class="small">' + esc(days.slice().sort().map((i) => WD[i]).join(', ') + (terminText(x) ? ' · ' + terminText(x) : '') + (span ? ' · ' + span : '')) + '</span></span>' +
       '<button class="linkbtn" style="align-self:center" aria-label="Termin ' + esc(x.titel) + ' ändern" data-a="esTEdit" data-id="' + esc(id) + '">ändern</button><div style="flex:1 1 100%">' + zChips(z, 'esTZ', id, 'Zustand ' + x.titel) + '</div></div>';
   }).join('') + '</div>' : '<span class="small" style="font-size:14px">Noch keine wiederkehrenden Termine.</span>';
-  if (!ES.tForm) h += '<button class="addbtn" style="min-height:44px" data-a="esTNew">' + ico('plus', 'xs') + 'Termin</button>';
+  if (nAlt) h += '<button class="linkbtn" style="color:var(--quiet)" aria-expanded="' + !!ES.tAlt + '" data-a="esTAlt">' + (ES.tAlt ? 'Beendete ausblenden' : 'Beendete zeigen (' + nAlt + ')') + '</button>';
+  if (!(TF && TF.wo === 'einst')) h += '<button class="addbtn" style="min-height:44px" data-a="esTNew">' + ico('plus', 'xs') + 'Termin</button>';
   return h + '</section>';
-}
-function terminFormE() {
-  const f = ES.tForm;
-  const two = (a, b) => '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">' + a + b + '</div>';
-  const fld = (id, key, label, type) => '<div style="display:flex;flex-direction:column;gap:6px;min-width:0"><label class="flabel" for="' + id + '">' + label + '</label><input id="' + id + '" type="' + type + '" class="inp" style="background:var(--card)" data-in="' + key + '" value="' + esc(fv(key)) + '"></div>';
-  let h = '<div class="form" style="background:var(--bg)" data-k="tform-e"><h3 style="font-size:15px;font-weight:700">' + (f.id ? 'Termin ändern' : 'Neuer wiederkehrender Termin') + '</h3>' +
-    '<label for="t-titel">Titel</label><input id="t-titel" class="inp" style="background:var(--card)" data-in="tTitel" value="' + esc(fv('tTitel')) + '" placeholder="z. B. Vorlesung IPR" autocomplete="off">' +
-    '<span class="flabel">Wochentage</span>' + tageChips(ES.tTage, 'esTTag', 'Wochentage') +
-    two(fld('t-von', 'tVon', 'von', 'time'), fld('t-bis', 'tBis', 'bis', 'time')) +
-    two(fld('t-ab', 'tAb', 'ab (optional)', 'date'), fld('t-end', 'tEnd', 'endet (optional)', 'date'));
-  if (f.id && D.termine[f.id]) {
-    const l = ausfallListe(D.termine[f.id]);
-    h += '<span class="flabel">Fällt aus (z. B. Semesterferien)</span>' + (l.length ? '<div style="display:flex;flex-direction:column;gap:4px">' + l.map((a, i) =>
-      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px" data-k="aus-' + a.von + '"><span style="font-size:14px">' + esc(a.von === a.bis ? fmtDM(a.von) : fmtDM(a.von) + ' – ' + fmtDM(a.bis)) + '</span><button class="linkbtn" data-a="esTAusDel" data-i="' + i + '">entfernen</button></div>').join('') + '</div>' : '') +
-      two(fld('t-aus-von', 'tAusVon', 'von', 'date'), fld('t-aus-bis', 'tAusBis', 'bis (optional)', 'date')) +
-      '<button class="btn line" style="align-self:flex-start" data-a="esTAusAdd">Ausfall eintragen</button>';
-    if (F.tAusErr) h += '<span class="err" role="status">' + esc(F.tAusErr) + '</span>';
-  }
-  if (f.id && D.termine[f.id]) h += '<button class="switch ink" style="align-self:flex-start" role="switch" aria-checked="' + terminZaehlt(f.id) + '" data-a="esTZeit" data-id="' + esc(f.id) + '"><span class="tr"></span>zählt zur erfassten Zeit, wenn abgehakt</button>';
-  if (F.tErr) h += '<span class="err" role="status">' + esc(F.tErr) + '</span>';
-  return h + '<div class="formbtns">' + (f.id ? '<button class="btn ghost" style="margin-right:auto;text-decoration:underline" data-a="esTDel">Entfernen</button>' : '') + '<button class="btn ghost" data-a="esTCancel">Abbrechen</button><button class="btn" data-a="esTSave">' + (f.id ? 'Speichern' : 'Eintragen') + '</button></div></div>';
 }
 function moduleHtml() {
   return '<section class="panel" aria-label="Module"><h2>Module</h2><span class="small">Optionale Bausteine, nur wenn sie einem Zweck dienen.</span><div style="display:flex;flex-direction:column">' + MODS.map((m) =>
@@ -4638,7 +4759,7 @@ Object.assign(EXTRA_ACT, {
     const hh = r.haeufigkeit || {};
     ES.rForm = { id: d.id }; ES.rArt = hh.art === 'taeglich' || hh.art === 'alle' ? hh.art : 'tage';
     ES.rTage = Array.isArray(hh.tage) ? hh.tage.slice() : [0, 1, 2, 3, 4];
-    F.rTitel = r.titel || ''; F.rN = String(num(hh.n, 2)); F.rNotiz = r.notiz || ''; F.rErr = ''; ES.tForm = null; focusSoon('r-titel');
+    F.rTitel = r.titel || ''; F.rN = String(num(hh.n, 2)); F.rNotiz = r.notiz || ''; F.rErr = ''; TF = null; focusSoon('r-titel');
   },
   esRArt: (d) => { ES.rArt = d.v; return 'keep'; },
   esRTag: (d) => { const i = Number(d.i); const k = ES.rTage.indexOf(i); if (k >= 0) ES.rTage.splice(k, 1); else ES.rTage.push(i); return 'keep'; },
@@ -4666,14 +4787,11 @@ Object.assign(EXTRA_ACT, {
   esRDel: () => { const f = ES.rForm; if (!f || !f.id) return; undoable('Routine entfernt', () => del('routinen', f.id)); ES.rForm = null; },
   esRZ: (d) => { const r = D.routinen[d.id]; if (r && (r.zustand || 'aktiv') !== d.v) setZustand('routinen', d.id, d.v, r.titel); return 'keep'; },
   /* Wiederkehrende Termine */
-  esTNew: () => { ES.tForm = { id: null }; ES.tTage = []; F.tTitel = ''; F.tVon = ''; F.tBis = ''; F.tAb = ''; F.tEnd = ''; F.tErr = ''; focusSoon('t-titel'); },
-  esTEdit: (d) => {
-    const x = D.termine[d.id]; if (!x) return;
-    ES.tForm = { id: d.id }; ES.tTage = Array.isArray(x.wochentage) ? x.wochentage.slice() : (typeof x.wochentag === 'number' ? [x.wochentag] : []);
-    F.tTitel = x.titel || ''; F.tVon = x.von || ''; F.tBis = x.bis || ''; F.tAb = x.ab || ''; F.tEnd = x.endet || ''; F.tErr = ''; F.tAusVon = ''; F.tAusBis = ''; F.tAusErr = ''; ES.rForm = null; focusSoon('t-titel');
-  },
+  esTAlt: () => { ES.tAlt = !ES.tAlt; },
+  esTNew: () => { tmOpen('einst', { wdh: true, d: '' }); },
+  esTEdit: (d) => { tmOpen('einst', { id: d.id }); },
   esTAusAdd: () => {
-    const f = ES.tForm; const t = f && D.termine[f.id]; if (!t) return;
+    const f = TF; const t = f && D.termine[f.id]; if (!t) return;
     const von = F.tAusVon; const bis = isDate(F.tAusBis) ? F.tAusBis : von;
     if (!isDate(von)) { F.tAusErr = 'Bitte einen Tag (von) wählen.'; return 'keep'; }
     if (bis < von) { F.tAusErr = '„bis“ darf nicht vor „von“ liegen.'; return 'keep'; }
@@ -4682,29 +4800,12 @@ Object.assign(EXTRA_ACT, {
     return 'keep';
   },
   esTAusDel: (d) => {
-    const f = ES.tForm; const t = f && D.termine[f.id]; if (!t) return;
+    const f = TF; const t = f && D.termine[f.id]; if (!t) return;
     const l = ausfallListe(t); const a = l[Number(d.i)]; if (!a) return;
     const frei = []; for (let x = a.von; x <= a.bis && frei.length < 120; x = addDays(x, 1)) frei.push(x);
     setAusfall(f.id, l.filter((_, i) => i !== Number(d.i)), 'Ausfall entfernt', frei);
     return 'keep';
   },
-  esTTag: (d) => { const i = Number(d.i); const k = ES.tTage.indexOf(i); if (k >= 0) ES.tTage.splice(k, 1); else ES.tTage.push(i); return 'keep'; },
-  esTCancel: () => { ES.tForm = null; },
-  esTSave: () => {
-    const f = ES.tForm; if (!f) return;
-    const titel = String(F.tTitel || '').trim();
-    if (!titel) { F.tErr = 'Bitte einen Titel eintragen.'; return 'keep'; }
-    if (!ES.tTage.length) { F.tErr = 'Bitte mindestens einen Wochentag wählen.'; return 'keep'; }
-    if (!F.tVon) { F.tErr = 'Ein Termin braucht eine Uhrzeit (von).'; return 'keep'; }
-    if (F.tBis && timeToMin(F.tBis) <= timeToMin(F.tVon)) { F.tErr = '„bis“ muss nach „von“ liegen.'; return 'keep'; }
-    if (isDate(F.tAb) && isDate(F.tEnd) && F.tEnd < F.tAb) { F.tErr = '„endet“ darf nicht vor „ab“ liegen.'; return 'keep'; }
-    const data = { titel: titel, wochentage: ES.tTage.slice().sort(), von: F.tVon, bis: F.tBis || '', ab: isDate(F.tAb) ? F.tAb : null, endet: isDate(F.tEnd) ? F.tEnd : null, datum: null, beispiel: false };
-    if (f.id) undoable('Termin gespeichert', () => patch('termine', f.id, data));
-    else undoable('Termin eingetragen', () => put('termine', uid('t'), Object.assign({ zustand: 'aktiv', erstellt: nowMs() }, data)));
-    ES.tForm = null;
-  },
-  esTZeit: (d) => { tZeitToggle(d.id); return 'keep'; },
-  esTDel: () => { const f = ES.tForm; if (!f || !f.id) return; undoable('Termin entfernt', () => del('termine', f.id)); ES.tForm = null; },
   esTZ: (d) => { const x = D.termine[d.id]; if (x && (x.zustand || 'aktiv') !== d.v) setZustand('termine', d.id, d.v, x.titel); return 'keep'; },
   /* Module und Vorschläge */
   esModZ: (d) => { const m = MODS.find((x) => x.k === d.id); if (m && modZustand(d.id) !== d.v) setZustand('module', d.id, d.v, m.name); return 'keep'; },
@@ -4788,7 +4889,7 @@ function doRender() {
 /* ---------- Ereignisse ---------- */
 function closeMenus() { S.menu = null; }
 const ACT = {
-  nav: (d) => { S.view = d.v; S.day = null; S.korrAsk = null; closeMenus(); S.edit = null; S.editT = null; if (d.v === 'woche') S.wk = null; try { sessionStorage.setItem('ls-view', d.v); } catch (e) { /* egal */ } window.scrollTo(0, 0); },
+  nav: (d) => { TF = null; S.view = d.v; S.day = null; S.korrAsk = null; closeMenus(); S.edit = null; S.editT = null; if (d.v === 'woche') S.wk = null; try { sessionStorage.setItem('ls-view', d.v); } catch (e) { /* egal */ } window.scrollTo(0, 0); },
   menu: (d) => { const m = S.menu === d.m ? null : d.m; S.menu = m; S.edit = null; S.wvon = null; S.editT = null; return 'keep'; },
   tTermin: (d) => { const day = curDay(); const st = ((tag(day).termine || {})[d.id]) || {}; if (!st.erledigt && !guardAdd(day)) return 'keep'; toggleTermin(day, d.id); },
   tBlock: (d) => { const b = D.bloecke[d.id] || {}; const on = b.status !== 'erledigt'; if (on && !guardAdd(b.tag || curDay())) return 'keep'; setBlockDone(d.id, on); },
@@ -4870,11 +4971,11 @@ const ACT = {
   },
   undo: () => undoToast(),
   /* Woche */
-  wkPrev: () => { S.wk = addDays(S.wk || mondayOf(today()), -7); S.tfOpen = false; },
-  wkNext: () => { S.wk = addDays(S.wk || mondayOf(today()), 7); S.tfOpen = false; },
-  wkCur: () => { S.wk = null; S.tfOpen = false; },
+  wkPrev: () => { S.wk = addDays(S.wk || mondayOf(today()), -7); TF = null; },
+  wkNext: () => { S.wk = addDays(S.wk || mondayOf(today()), 7); TF = null; },
+  wkCur: () => { S.wk = null; TF = null; },
   dayT: (d) => { S.dayOpen[d.key] = d.open !== 'true'; },
-  wAdd: (d) => { S.wAdd = d.d; S.tfOpen = false; S.wMenu = null; F.wAddText = ''; focusSoon('w-add'); },
+  wAdd: (d) => { S.wAdd = d.d; TF = null; S.wMenu = null; F.wAddText = ''; focusSoon('w-add'); },
   wAddClose: () => { S.wAdd = null; },
   wAddSave: (d) => {
     const txt = String(F.wAddText || '').trim();
@@ -4892,25 +4993,25 @@ const ACT = {
   carryKeep: (d) => carryKeep(d.id),
   carryDrop: (d) => carryDrop(d.id),
   tGanz: (d) => { F[d.k] = !F[d.k]; return 'keep'; },
-  tfOpen: (d) => { S.tfOpen = d.d ? true : !S.tfOpen; S.tfHeute = false; S.wAdd = null; F.tfTitel = ''; F.tfVon = ''; F.tfBis = ''; F.tfGanz = false; F.tfKlausur = false; F.tfGeb = null; F.tfErr = ''; S.tfDay = d.d || null; if (S.tfOpen) { S.dayOpen[mondayOf(d.d || today()) + (d.d || today())] = true; focusSoon('tf-titel'); } },
+  tfOpen: (d) => { S.wAdd = null; const tg = d.d || today(); S.dayOpen[mondayOf(tg) + tg] = true; tmOpen('woche', { d: tg, tag: tg }); },
   // Aus „Heute“: spontaner Termin oder spontane Klausur, Uhrzeit ab jetzt
   tfHeute: () => {
     const m = Math.floor(nowMin() / 5) * 5; const hm = (x) => String(Math.floor(x / 60) % 24).padStart(2, '0') + ':' + String(x % 60).padStart(2, '0');
-    S.adding = false; S.addMore = false; S.tfOpen = true; S.tfHeute = true; S.tfDay = today();
-    F.tfTitel = ''; F.tfVon = hm(m); F.tfBis = m + 60 < 24 * 60 ? hm(m + 60) : ''; F.tfGanz = false; F.tfKlausur = false; F.tfGeb = null; F.tfErr = '';
-    focusSoon('tf-titel');
+    S.adding = false; S.addMore = false;
+    tmOpen('heute', { d: today(), von: hm(m), bis: m + 60 < 24 * 60 ? hm(m + 60) : '' });
   },
-  tfGeb: (d) => { F.tfGeb = F.tfGeb === d.g ? null : d.g; return 'keep'; },
-  tfClose: () => { S.tfOpen = false; S.tfHeute = false; },
-  tfDay: (d) => { S.tfDay = d.d; return 'keep'; },
-  tfSave: (d) => {
-    const von = F.tfVon || ''; const bis = F.tfBis || '';
-    F.tfErr = terminCheck(F.tfTitel, von, bis, F.tfGanz);
-    if (F.tfErr) return 'keep';
-    let ok = false;
-    undoable(F.tfKlausur ? 'Klausur eingetragen' : 'Termin eingetragen', () => { ok = addTerminOnce(d.d, F.tfTitel, von, bis, F.tfGanz, F.tfKlausur ? { art: 'klausur', gebiet: F.tfGeb || null } : null); });
-    if (ok) { S.tfOpen = false; S.tfHeute = false; }
-  },
+  tmEdit: (d) => { closeMenus(); S.wAdd = null; S.adding = false; tmOpen(d.wo, { id: d.id, tag: d.d || null }); },
+  tmArt: (d) => { F.tmArt = d.v; if (d.v === 'klausur' && !F.tmGanz && !F.tmVon) { F.tmVon = '09:00'; F.tmBis = '14:00'; } return 'keep'; },
+  tmGanz: (d) => { F.tmGanz = d.v === '1'; return 'keep'; },
+  tmWdh: (d) => { F.tmWdh = d.v === '1'; return 'keep'; },
+  tmNur: (d) => { F.tmNur = d.v; if (d.v === 'tag' && TF) F.tmDatum = TF.tag; return 'keep'; },
+  tmWt: (d) => { const l = tmTage().slice(); const i = Number(d.i); const k = l.indexOf(i); if (k >= 0) l.splice(k, 1); else l.push(i); F.tmTage = l; F.tmTageAuto = false; return 'keep'; },
+  tmGeb: (d) => { F.tmGeb = F.tmGeb === d.g ? null : (d.g || null); return 'keep'; },
+  tmMehr: () => { F.tmMehr = !F.tmMehr; return 'keep'; },
+  tmZaehlt: () => { F.tmZaehlt = F.tmZaehlt === false; return 'keep'; },
+  tmCancel: () => { TF = null; },
+  tmSave: () => tmSave(),
+  tmDel: () => tmDel(),
   goPlanNext: () => { S.wk = addDays(mondayOf(today()), 7); window.scrollTo(0, 0); },
   planShow: (d) => { S.planShow[d.w] = true; },
   vUp: (d) => vorhabenMove(d.w, d.id, -1),
@@ -4990,7 +5091,7 @@ window.addEventListener('resize', () => { const w = window.innerWidth >= 900; if
 document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleRender(); });
 // Zuletzt geöffnete Ansicht gilt, solange die App offen ist (auch nach Neuladen); nach dem Beenden startet „Heute“
 try { const v = sessionStorage.getItem('ls-view'); if (v && VIEW_FN[v]) S.view = v; } catch (e) { /* egal */ }
-window.__ls = { test: { parseDur: parseDur, rateWdh: rateWdh, setBlockDone: setBlockDone, toggleTermin: toggleTermin, planRows: planRows, weekStats: weekStats, weekFacts: weekFacts, backToWeek: backToWeek, pullToday: pullToday, thMerge: thMerge, zsDaten: zsDaten, zeitGruppen: zeitGruppen, patch: patch, undoable: undoable }, abgleich: { jetzt: syncJetzt, stand: () => clone(Object.assign({}, sync, { token: sync.token ? '(gesetzt)' : '' })), T: SYNC_T, merge: syncMerge }, D: D, S: S, F: F, cfg: cfg, today: today, setSim: (d, m) => { setSim(d, m); scheduleRender(); }, progress: progress, pufferDate: pufferDate, capacity2: (T) => capacity(T, wdhSplit(T), planFrom(T), true), srItems: srItems, wdhListe: wdhListe, wdhSplit: wdhSplit, wdhForecast: wdhForecast, wdhRichtwert: wdhRichtwert, wdhUeberhang: wdhUeberhang, allocRegel: allocRegel, fillWdh: fillWdh, srRate: srRate, wdhState: wdhState, poolOf: poolOf, carryOf: carryOf, vorhabenFor: vorhabenFor, capacity: capacity, termineAt: termineAt, routinenAt: routinenAt, pauseAt: pauseAt, erfasstAt: erfasstAt, notizHtml: notizHtml, dbState: () => dbState, moveBlock: moveBlock, clearPlanBlocks: (T) => { clearPlanBlocks(T); scheduleRender(); } };
+window.__ls = { test: { parseDur: parseDur, rateWdh: rateWdh, setBlockDone: setBlockDone, toggleTermin: toggleTermin, planRows: planRows, weekStats: weekStats, weekFacts: weekFacts, backToWeek: backToWeek, pullToday: pullToday, thMerge: thMerge, zsDaten: zsDaten, zeitGruppen: zeitGruppen, patch: patch, undoable: undoable }, abgleich: { jetzt: syncJetzt, stand: () => clone(Object.assign({}, sync, { token: sync.token ? '(gesetzt)' : '' })), T: SYNC_T, merge: syncMerge }, D: D, S: S, F: F, cfg: cfg, today: today, setSim: (d, m) => { setSim(d, m); scheduleRender(); }, progress: progress, pufferDate: pufferDate, capacity2: (T) => capacity(T, wdhSplit(T), planFrom(T), true), srItems: srItems, wdhListe: wdhListe, wdhSplit: wdhSplit, wdhForecast: wdhForecast, wdhRichtwert: wdhRichtwert, wdhUeberhang: wdhUeberhang, allocRegel: allocRegel, fillWdh: fillWdh, srRate: srRate, wdhState: wdhState, poolOf: poolOf, carryOf: carryOf, vorhabenFor: vorhabenFor, capacity: capacity, termineAt: termineAt, freeH: freeH, routinenAt: routinenAt, pauseAt: pauseAt, erfasstAt: erfasstAt, notizHtml: notizHtml, dbState: () => dbState, moveBlock: moveBlock, clearPlanBlocks: (T) => { clearPlanBlocks(T); scheduleRender(); } };
 scheduleRender();
 initDb();
 if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch((e) => console.warn('Offline-Speicher', e));
