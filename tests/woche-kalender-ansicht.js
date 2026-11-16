@@ -23,6 +23,25 @@ L.run(async () => {
   L.has('Donnerstag zeigt Erledigt-Stand', doT, 'von');
   L.ok('Woche: Tage-Spalte breiter als Nebenspalte', await p.$eval('.cols.zweidrittel', (e) => e.children[0].offsetWidth > e.children[1].offsetWidth * 1.6), 'Spaltenbreiten');
 
+  // Woche als Spalten (umschaltbar ab 900 px)
+  await L.click(p, '[data-a=wAnsicht][data-v=sp]');
+  L.expect('Spalten: sieben Tage nebeneinander', await p.$$eval('.wbrett .wcol', (e) => e.filter((x) => x.offsetTop === e[0].offsetTop).length), 7);
+  const sp29 = await L.text(p, '.wcol[data-k="wc-2026-10-29"]');
+  L.ok('Spalte: Termine nach Uhrzeit, dann Lernen', /Termine.*9–12\s*Repetitorium.*14–16\s*Vorlesung Strafrecht.*Lernen.*BGB AT.*Routinen.*Anki/.test(sp29), sp29);
+  L.has('Spalte zeigt Erledigt-Stand', sp29, '0/4');
+  await L.noHScroll(p, 'Woche als Spalten');
+  await L.click(p, '.wcol[data-k="wc-2026-10-30"] [data-a=wAdd]');
+  await L.fill(p, '#w-add', 'Schuldrecht');
+  await L.click(p, '[data-a=wAddSave]');
+  L.has('in der Spalte hinzugefügt', await L.text(p, '.wcol[data-k="wc-2026-10-30"]'), 'Schuldrecht');
+  await L.click(p, '.wcol[data-k="wc-2026-10-29"] [data-a=tmEdit]');
+  L.expect('Terminformular steht unter den Spalten', await p.$$eval('.wbform #tm-titel', (e) => e.length), 1);
+  await L.click(p, '[data-a=wAnsicht][data-v=li]');
+  L.expect('zurück zur Liste', await p.$$eval('.day', (e) => e.length), 7);
+  const schmal = await L.open(seed, 'sim-2026-10-28-1000', 390);
+  await L.go(schmal, 'woche');
+  L.expect('am iPhone kein Umschalter', await schmal.$$eval('[data-a=wAnsicht]', (e) => e.length), 0);
+
   await L.go(p, 'kalender');
   const kw46 = await L.text(p, '.week[data-k="kw-2026-11-09"]');
   L.has('Klausur als Text', kw46, 'Klausur ÖR');
