@@ -371,6 +371,38 @@ select.inp { padding: 0 8px; }
 .chev { flex: 0 0 auto; width: 32px; height: 32px; margin: -6px -8px 0 0; padding: 0; border: 0; border-radius: 10px; background: transparent; display: flex; align-items: center; justify-content: center; color: var(--quiet); }
 .chev svg { transition: transform 160ms ease-out; }
 .chev.open svg { transform: rotate(180deg); }
+/* Woche als Spalten (ab 900 px, umschaltbar): sieben Tage nebeneinander, je Tag Termine, Lernen, Routinen */
+.wbrett { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); background: var(--card); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+.wcol { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 280px; padding: 12px 9px 12px; box-sizing: border-box; border-left: 1px solid var(--line); }
+.wcol:first-child { border-left: 0; }
+.wcol.today { background: color-mix(in srgb, var(--soft) 70%, transparent); }
+.wcol.frei, .wcol.pause { background: color-mix(in srgb, var(--ok-soft) 55%, transparent); }
+.wcol .hd { display: flex; align-items: baseline; gap: 6px; padding-bottom: 8px; border-bottom: 2px solid var(--line); }
+.wcol.today .hd { border-bottom-color: var(--ink); }
+.wcol .hd b { font-size: 12px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--quiet); }
+.wcol.today .hd b { color: var(--ink); }
+.wcol .hd span { font-size: 12px; color: var(--quiet); font-variant-numeric: tabular-nums; }
+.wcol .hd em { margin-left: auto; font-style: normal; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--quiet); }
+.wcol .hd em.all { color: var(--ok-text); font-weight: 600; }
+.wcol .grp { display: flex; flex-direction: column; }
+.wcol .gl { font-size: 10.5px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--quiet); }
+.wcol .it { padding: 7px 0; border-bottom: 1px solid var(--line); }
+.wcol .it { gap: 6px; }
+.wcol .it .tx { font-size: 13px; line-height: 1.35; overflow-wrap: break-word; -webkit-hyphens: auto; hyphens: auto; }
+.wcol .it.done .tx { text-decoration: line-through; text-decoration-color: var(--ring); }
+.wcol .it .tm { display: block; margin: 0; font-size: 11.5px; font-weight: 600; text-decoration: none; }
+.wcol .it .sf { display: block; margin: 0; font-size: 11.5px; white-space: normal; }
+.wcol .it .dots { width: 24px; margin: -12px -6px -12px -6px; opacity: 0.55; }
+.wcol .it .dots:hover, .wcol .it .dots[aria-expanded=true] { opacity: 1; }
+.wcol .wlist { padding: 6px 0 4px 4px; }
+.wcol .wplus { margin: -4px 0 0 -8px; font-size: 13px; }
+.wcol .wadd, .wcol .wmenu { padding: 8px; }
+.wcol .wadd .btn { flex: 1 1 auto; }
+.wcol .daynote { margin-top: auto; font-size: 12px; }
+.wcol .leer { font-size: 12px; color: var(--quiet); }
+.wbform { max-width: 560px; }
+.mkb { flex: 0 0 auto; margin: -6px; padding: 6px; border: 0; border-radius: 14px; background: transparent; cursor: pointer; }
+.mkb:hover .mk:not(.on) { border-color: var(--ok); }
 
 .plancard { display: flex; flex-direction: column; gap: 16px; padding: 18px 16px; border-radius: 18px; background: var(--card); border: 1.5px solid var(--ink); }
 .plancard h2 { font-family: var(--f-display); font-size: 22px; font-weight: 600; }
@@ -2388,7 +2420,8 @@ async function maybeEinschaetzung(W) {
 const S = {
   view: 'heute', menu: null, edit: null, wvon: null, editT: null, wdhTag: {}, poolOpen: null,
   adding: false, addMore: false, addDone: false, addG: undefined, wk: null, dayOpen: {}, 
-  planOpen: {}, vMore: {}, planShow: {}
+  planOpen: {}, vMore: {}, planShow: {},
+  wSp: (() => { try { return localStorage.getItem('lernsystem-woche-spalten') !== '0'; } catch (e) { return true; } })() // Woche als Spalten (ab 900 px Standard): nur Anzeige, je Gerät
 };
 const F = {};
 const fv = (k) => (F[k] == null ? '' : F[k]);
@@ -2746,7 +2779,7 @@ function dayItems(d, W) {
   });
   blocksAt(d).forEach((b) => {
     if (b.status === 'offen' && d < t) return; // liegt in „Noch offen" bzw. „Liegen geblieben"
-    items.push({ k: 'b', id: b.id, title: b.titel, gebiet: b.gebiet, done: b.status === 'erledigt', suffix: b.nachgetragen ? 'nachgetragen' : '', extra: !!b.zusaetzlich && b.status === 'erledigt', edit: b.status === 'offen' && d >= t, date: d, W: W });
+    items.push({ k: 'b', id: b.id, wdhB: !!b.wdhVon, title: b.titel, gebiet: b.gebiet, done: b.status === 'erledigt', suffix: b.nachgetragen ? 'nachgetragen' : '', extra: !!b.zusaetzlich && b.status === 'erledigt', edit: b.status === 'offen' && d >= t, date: d, W: W });
   });
   if (!pz.frei && !pz.wdh) {
     const li = wdhListe(d);
@@ -2759,13 +2792,14 @@ function dayItems(d, W) {
   }
   routinenAt(d).forEach((r) => {
     const st = (td.routinen || {})[r.id] || {};
-    items.push({ k: 'r', title: r.titel, done: !!st.erledigt, suffix: st.heuteNicht ? (d < t ? 'nicht gemacht' : 'heute nicht') : (st.erledigt && st.nachgetragen ? 'nachgetragen' : ''), muted: !!st.heuteNicht });
+    items.push({ k: 'r', id: r.id, title: r.titel, done: !!st.erledigt, suffix: st.heuteNicht ? (d < t ? 'nicht gemacht' : 'heute nicht') : (st.erledigt && st.nachgetragen ? 'nachgetragen' : ''), muted: !!st.heuteNicht });
   });
   return items;
 }
 function itemHtml(it) {
   const mk = it.nz ? '<span class="mk priv"></span>' : '<span class="mk' + (it.done ? ' on' : '') + (it.x ? ' x' : '') + (it.muted && !it.done ? ' aus' : '') + '"' + (it.x ? ' role="img" aria-label="liegen geblieben"' : '') + '>' + (it.x ? '<svg viewBox="0 0 24 24" aria-hidden="true">' + ICON.x + '</svg>' : CHECK_SVG) + '</span>';
   const dot = it.gebiet && thema(it.gebiet) ? '<span class="idot"' + gStyle(it.gebiet) + '></span>' : '';
+  const mkT = it.tick ? '<button class="mkb" aria-pressed="' + !!it.done + '" aria-label="' + esc((it.done ? 'Haken zurücknehmen: ' : 'Abhaken: ') + it.title) + '" data-a="wTick" data-k="' + it.k + '" data-id="' + esc(it.id) + '" data-d="' + it.date + '">' + mk + '</button>' : mk;
   let push = '';
   if (it.edit && it.k === 'b') push = '<button class="dots" aria-label="' + esc('Optionen: ' + it.title) + '" aria-expanded="' + (S.wMenu === it.id) + '" data-a="wMenu" data-id="' + esc(it.id) + '">' + DOTS_SVG + '</button>';
   if (it.edit && it.k === 't') push = '<button class="dots" aria-label="' + esc('Termin ändern: ' + it.title) + '" data-a="tmEdit" data-wo="woche" data-id="' + esc(it.id) + '" data-d="' + it.date + '">' + DOTS_SVG + '</button>';
@@ -2775,7 +2809,7 @@ function itemHtml(it) {
     return '<div class="it' + (it.done ? ' done' : '') + '">' + mk + '<button class="tx wbtn" aria-expanded="' + open + '" data-a="wdhTag" data-d="' + it.date + '">' + esc(it.title) + '<span class="sf">' + esc(it.suffix) + '</span></button></div>' +
       (open ? '<div class="wlist" data-k="wl-' + it.date + '">' + it.liste.map((x) => '<span class="wl">' + wdhRing(x.stufe, !!x.r, null, true) + '<span>' + esc(x.titel) + '</span></span>').join('') + '</div>' : '');
   }
-  return '<div class="it' + (it.done || it.muted ? ' done' : '') + '">' + mk + dot + '<span class="tx">' + (it.time ? '<span class="tm">' + esc(it.time) + '</span>' : '') + esc(it.title) +
+  return '<div class="it' + (it.done || it.muted ? ' done' : '') + '">' + mkT + dot + '<span class="tx">' + (it.time ? '<span class="tm">' + esc(it.time) + '</span>' : '') + esc(it.title) +
     (it.suffix ? '<span class="sf">' + esc(it.suffix) + '</span>' : '') + (it.extra ? '<span class="plus">zusätzlich</span>' : '') + '</span>' + push + '</div>' + (it.edit && it.k === 'b' && S.wMenu === it.id ? blockMenu(it) : '');
 }
 function blockMenu(it) {
@@ -2828,6 +2862,36 @@ function dayCard(d, W) {
   if (d < t) h += '<button class="linkbtn" style="min-height:36px;margin:-4px 0 -8px -4px;font-size:13px;color:var(--quiet)" aria-label="' + esc(WDL[wdOf(d)] + ' ' + fmtDM(d) + (isOpenDay(d) ? ' bearbeiten' : ' ansehen oder korrigieren')) + '" data-a="editDay" data-d="' + d + '">' + (isOpenDay(d) ? 'Tag bearbeiten' : 'Tag ansehen · korrigieren') + '</button>';
   h += '</div>' + (canToggle ? '<button class="chev' + (expanded ? ' open' : '') + '" tabindex="-1" aria-hidden="true" data-a="dayT" data-key="' + key + '" data-open="' + expanded + '">' + ico('down', 'xs') + '</button>' : '') + '</div>';
   return h;
+}
+// Woche als Spalten: ein Tag ist eine Spalte mit Terminen (nach Uhrzeit), Lernen und Routinen
+const wocheSpalten = () => S.wSp && window.innerWidth >= 900;
+function dayCol(d, W) {
+  const t = today();
+  const pz = pauseAt(d);
+  const items = dayItems(d, W);
+  const isToday = d === t;
+  const free = !pz.frei && capH(d) <= 0;
+  const puf = isPufferDay(d) && !pz.frei && !free;
+  const zi = items.filter((i) => !i.nz);
+  const dn = zi.filter((i) => i.done).length;
+  let note = ''; let noteOk = false;
+  if (pz.frei) { note = 'Pause · ' + (pz.frei.name || 'frei'); noteOk = true; }
+  else if (free) { note = 'Freier Tag'; noteOk = true; }
+  else if (puf) note = 'Puffer';
+  if (pz.wdh && !pz.frei) note = (note ? note + ' · ' : '') + 'Wiederholung ruht';
+  const er = erfasstAt(d);
+  if (er && d <= t) note = (note ? note + ' · ' : '') + 'erfasst ' + fmtHM(er);
+  // Abhaken direkt in der Spalte: heute und am Tag davor (wie in „Heute“); Wiederholungen werden dort bewertet
+  const kannTick = (i) => d <= t && isOpenDay(d) && !i.nz && i.id && (i.k === 'r' || (i.k === 't' && !(i.muted && !i.done)) || (i.k === 'b' && !i.wdhB));
+  const grp = (name, ks) => { const li = items.filter((i) => ks.indexOf(i.k) >= 0).map((i) => (kannTick(i) ? Object.assign({}, i, { tick: true, date: d }) : i)); return li.length ? '<div class="grp"><span class="gl">' + name + '</span>' + li.map(itemHtml).join('') + '</div>' : ''; };
+  let h = '<div class="wcol' + (isToday ? ' today' : '') + (pz.frei ? ' pause' : (free ? ' frei' : '')) + '" data-k="wc-' + d + '" role="group" aria-label="' + esc(WDL[wdOf(d)] + ' ' + fmtDM(d) + (isToday ? ', heute' : '')) + '">' +
+    '<div class="hd"><b>' + (isToday ? 'Heute' : WD[wdOf(d)]) + '</b><span>' + fmtDM(d) + '</span>' + (zi.length ? '<em class="' + (dn === zi.length ? 'all' : '') + '">' + dn + '/' + zi.length + '</em>' : '') + '</div>';
+  h += grp('Termine', ['t']) + grp('Lernen', ['b', 'w']) + grp('Routinen', ['r']);
+  if (!items.length && !note) h += '<span class="leer">' + (d < t ? 'Nichts eingetragen' : 'Noch frei') + '</span>';
+  if (d >= t && !pz.frei && !(TF && TF.wo === 'woche' && TF.tag === d)) h += dayAdd(d, W);
+  if (note) h += '<span class="daynote' + (noteOk ? ' ok' : '') + '">' + esc(note) + '</span>';
+  if (d < t) h += '<button class="linkbtn" style="min-height:32px;margin:' + (note ? '-8px' : 'auto') + ' 0 -8px -4px;font-size:12px;color:var(--quiet);text-align:left" aria-label="' + esc(WDL[wdOf(d)] + ' ' + fmtDM(d) + (isOpenDay(d) ? ' bearbeiten' : ' ansehen oder korrigieren')) + '" data-a="editDay" data-d="' + d + '">' + (isOpenDay(d) ? 'Tag bearbeiten' : 'ansehen · korrigieren') + '</button>';
+  return h + '</div>';
 }
 function progressHtml(W) {
   const p = progress(W);
@@ -3169,7 +3233,11 @@ function viewWoche() {
     left.push('<div class="infobox"><span style="font-size:15px;font-weight:700">Rückblick</span><span class="small" style="font-size:14px">' + (f.done.length ? f.done.length + (f.done.length === 1 ? ' Block' : ' Blöcke') + ' erledigt' : 'Keine Blöcke eingetragen') + (f.zeit ? ' · erfasst ' + fmtHM(f.zeit) : '') + '. Tippe einen Tag an, um ihn aufzuklappen.</span></div>');
   }
   const canT = !isPast && !allPause;
-  left.push('<section class="stack"><div class="h2row"><h2 class="h2">Die Tage</h2></div>' + weekDates(W).map((d) => dayCard(d, W)).join('') + '</section>');
+  const sp = wocheSpalten();
+  const tageKopf = '<div class="h2row"><h2 class="h2">Die Tage</h2>' + (window.innerWidth >= 900 ? '<div class="chips" role="group" aria-label="Ansicht der Tage">' + [['li', 'Liste'], ['sp', 'Spalten']].map((o) => '<button class="sel" style="min-height:32px" aria-pressed="' + (sp === (o[0] === 'sp')) + '" data-a="wAnsicht" data-v="' + o[0] + '">' + o[1] + '</button>').join('') + '</div>' : '') + '</div>';
+  let brett = '';
+  if (sp) brett = '<section class="stack">' + tageKopf + '<div class="wbrett">' + weekDates(W).map((d) => dayCol(d, W)).join('') + '</div>' + (TF && TF.wo === 'woche' && weekDates(W).indexOf(TF.tag) >= 0 ? '<div class="wbform">' + terminFormU() + '</div>' : '') + '</section>';
+  else left.push('<section class="stack">' + tageKopf + weekDates(W).map((d) => dayCard(d, W)).join('') + '</section>');
   if (isPast) {
     const lg = Object.keys(D.bloecke).map((id) => Object.assign({ id: id }, D.bloecke[id])).filter((b) => b.woche === W && b.status === 'offen');
     if (lg.length) left.push('<section class="stack"><h2 class="h2">Liegen geblieben</h2><div class="softbox">' + lg.map((b) => '<div class="pitem" data-k="lg-' + esc(b.id) + '"><span class="mk x" role="img" aria-label="liegen geblieben"><svg viewBox="0 0 24 24" aria-hidden="true">' + ICON.x + '</svg></span><div class="body">' + gLine(b.gebiet) + '<span class="t">' + esc(b.titel) + '</span><span class="small">entscheidest du in der aktuellen Woche</span></div></div>').join('') + '</div></section>');
@@ -3190,6 +3258,8 @@ function viewWoche() {
     if (!isCur || planned || S.planShow[W] || planBusy[W]) right.push(planCard(W));
     else right.push('<div class="infobox"><span style="font-size:15px;font-weight:700">Diese Woche ist noch nicht geplant</span><span class="small" style="font-size:14px">Sie läuft trotzdem mit Wiederholung, Terminen und Routinen.</span><button class="linkbtn" data-a="planShow" data-w="' + W + '">Diese Woche planen</button></div>');
   }
+  h += brett;
+  if (sp && !left.length) { left.push.apply(left, right); right.length = 0; }
   h += '<div class="cols' + (right.length ? ' zweidrittel' : '') + '"><div class="stack l">' + left.join('') + '</div>' + (right.length ? '<div class="stack l">' + right.join('') + '</div>' : '') + '</div>';
   return h;
 }
@@ -5053,6 +5123,13 @@ const ACT = {
   wkNext: () => { S.wk = addDays(S.wk || mondayOf(today()), 7); TF = null; },
   wkCur: () => { S.wk = null; TF = null; },
   dayT: (d) => { S.dayOpen[d.key] = d.open !== 'true'; },
+  wTick: (d) => {
+    if (d.k === 't') { const st = ((tag(d.d).termine || {})[d.id]) || {}; if (!st.erledigt && !guardAdd(d.d)) return 'keep'; toggleTermin(d.d, d.id); }
+    else if (d.k === 'r') { const st = ((tag(d.d).routinen || {})[d.id]) || {}; if (!st.erledigt && !st.heuteNicht && !guardAdd(d.d)) return 'keep'; toggleRoutine(d.d, d.id); }
+    else if (d.k === 'b') { const b = D.bloecke[d.id]; if (!b) return 'keep'; const on = b.status !== 'erledigt'; if (on && !guardAdd(b.tag || d.d)) return 'keep'; setBlockDone(d.id, on); }
+    S.wMenu = null;
+  },
+  wAnsicht: (d) => { S.wSp = d.v === 'sp'; try { localStorage.setItem('lernsystem-woche-spalten', S.wSp ? '1' : '0'); } catch (e) { /* nur Anzeige */ } },
   wAdd: (d) => { S.wAdd = d.d; TF = null; S.wMenu = null; F.wAddText = ''; focusSoon('w-add'); },
   wAddClose: () => { S.wAdd = null; },
   wAddSave: (d) => {

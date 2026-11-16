@@ -38,6 +38,7 @@ async function open(seed, hash, opt) {
   await p.route('**/fonts.googleapis.com/**', (r) => r.abort());
   await p.route('**/fonts.gstatic.com/**', (r) => r.abort());
   if (seed !== null) await p.addInitScript('window.__seed = ' + JSON.stringify(seed || {}));
+  if (o.spalten) await p.addInitScript('window.__spalten = true');
   await p.addInitScript({ path: path.join(__dirname, 'mock-app.js') });
   await p.goto('file://' + APP + (hash ? '#' + hash : ''));
   await p.waitForTimeout(350);
