@@ -103,6 +103,50 @@ L.run(async () => {
   L.has('ohne Wochentag: Hinweis', await L.text(p, '[data-k=tmform]'), 'mindestens einen Wochentag');
   await p.context().close();
 
+  // 7) Terminliste: kommende Termine nach Tagen, Suche, Auswahl nach Art, Ändern aus der Liste
+  const viele = { termine: { t1: REP,
+    t2: { titel: 'Abendessen', datum: '2026-11-12', von: '19:00', bis: '21:00', art: 'privat', ort: 'Bei Anna' },
+    t3: { titel: 'Probeklausur', datum: '2026-11-20', von: '09:00', bis: '14:00', art: 'klausur' },
+    t4: { titel: 'Sprechstunde', datum: '2027-03-02', von: '10:00', bis: '11:00' },
+    t5: { titel: 'Alt', datum: '2026-11-03', von: '10:00', bis: '11:00' } } };
+  p = await L.open(viele, 'sim-2026-11-10-1000', 1280);
+  await L.go(p, 'kalender');
+  await L.click(p, '[data-a=kAnsicht][data-v=liste]');
+  let li = await L.text(p, '.terminliste');
+  L.has('Liste: wöchentlicher Termin', li, 'Rep');
+  L.has('Liste: privater Termin mit Ort', li, 'Bei Anna');
+  L.has('Liste: Klausur', li, 'Probeklausur');
+  L.hasNot('Liste: Vergangenes steht nicht drin', li, 'Alt');
+  L.hasNot('Liste: Termin in vier Monaten noch nicht', li, 'Sprechstunde');
+  L.expect('Liste: Rep steht je Woche einmal (acht Wochen)', await p.locator('.terminliste [data-k=tb-t1]').count(), 8);
+  L.has('Liste: „morgen“', await L.text(p, '[data-k="tl-2026-11-11"]'), 'morgen');
+  await L.click(p, '[data-a=kLArt][data-v=privat]');
+  li = await L.text(p, '[data-k=tl-liste]');
+  L.has('Art „Privat“: privater Termin', li, 'Abendessen');
+  L.hasNot('Art „Privat“: sonst nichts', li, 'Rep');
+  await L.click(p, '[data-a=kLArt][data-v=alle]');
+  const suche = async (q) => { await L.fill(p, '#k-suche', q); await p.waitForTimeout(250); };
+  await suche('sprech');
+  L.has('Suche findet den Termin in vier Monaten', await L.text(p, '[data-k=tl-liste]'), 'Sprechstunde');
+  await suche('anna');
+  L.has('Suche findet über den Ort', await L.text(p, '[data-k=tl-liste]'), 'Abendessen');
+  await suche('rep');
+  L.expect('Suche: wöchentlicher Termin nur mit dem nächsten Mal', await p.locator('.terminliste [data-k=tb-t1]').count(), 1);
+  await suche('gibtsnicht');
+  L.has('Suche ohne Treffer', await L.text(p, '.terminliste'), 'Nichts gefunden');
+  await suche('');
+  await L.click(p, '.terminliste [data-a=kEdit][data-id=t3]');
+  await L.fill(p, '#tm-titel', 'Probeklausur ZR'); await L.click(p, '[data-a=tmSave]');
+  L.expect('Ändern aus der Liste gespeichert', (await L.store(p)).termine.t3.titel, 'Probeklausur ZR');
+  await L.click(p, '[data-a=kTagZeig][data-d="2026-11-20"]');
+  L.has('Tag aus der Liste öffnet das Tagesblatt im Monat', await L.text(p, '.tagblatt'), 'Probeklausur ZR');
+  await p.context().close();
+  p = await L.open(viele, 'sim-2026-11-10-1000', 390);
+  await L.go(p, 'kalender');
+  await L.click(p, '[data-a=kAnsicht][data-v=liste]');
+  await L.noHScroll(p, 'Terminliste (390 px)');
+  await p.context().close();
+
   // 6) iPhone: Tagesblatt steht unter der Woche, nichts ragt über den Rand
   p = await L.open(seed, 'sim-2026-11-10-1000', 390);
   await L.go(p, 'kalender');

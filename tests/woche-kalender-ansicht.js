@@ -1,5 +1,5 @@
 // Wochenansicht: Tage zugeklappt mit Terminen (Uhrzeit, zeitlich sortiert) und „Lernen: …“, nur heute offen.
-// Kalender: wöchentliche Termine nur als Punkte, Besonderes als Text (höchstens zwei, dann „+N“), alle Tage gleich hoch.
+// Kalender: Termine mit Uhrzeit und Titel (höchstens drei je Tag, sonst zwei und „+N weitere“), alle Tage gleich hoch.
 const L = require('./lib');
 const seed = {
   routinen: { r1: { titel: 'Anki', haeufigkeit: { art: 'taeglich' }, zustand: 'aktiv', reihenfolge: 1 } },
@@ -26,10 +26,12 @@ L.run(async () => {
   await L.go(p, 'kalender');
   const kw46 = await L.text(p, '.week[data-k="kw-2026-11-09"]');
   L.has('Klausur als Text', kw46, 'Klausur ÖR');
-  L.has('drei Besondere: „+1“', kw46, '+1');
-  L.hasNot('dritter besonderer Termin nicht als Text', kw46, 'Lerngruppe');
-  L.hasNot('wöchentlicher Termin nicht als Text', kw46, 'Repetitorium');
-  L.expect('wöchentliche Termine als Punkte', await p.$$eval('.kal button.cell[data-d="2026-11-12"] .foot i', (e) => e.length), 2);
+  L.has('fünf Termine an einem Tag: zwei als Text, dann „+3 weitere“', kw46, '+3 weitere');
+  L.hasNot('späterer Termin nicht als Text', kw46, 'Lerngruppe');
+  L.hasNot('Einmaliges geht vor: wöchentlicher Termin dann nicht als Text', kw46, 'Repetitorium');
+  const do19 = await L.text(p, '.kal button.cell[data-d="2026-11-19"]');
+  L.ok('wöchentliche Termine mit Uhrzeit und Titel', /9\s*Repetitorium.*14\s*Vorlesung Strafrecht/s.test(do19), do19);
+  L.expect('bei mehr als drei Terminen zwei Zeilen', await p.$$eval('.kal button.cell[data-d="2026-11-12"] .tm', (e) => e.length), 2);
   L.has('volle Liste beim Darüberfahren', await p.getAttribute('.kal button.cell[data-d="2026-11-12"]', 'title'), '17–19 Lerngruppe');
   const hs = await p.$$eval('.kal .cell', (e) => e.map((x) => x.offsetHeight).filter((h, i, a) => a.indexOf(h) === i));
   L.expect('alle Tageskästchen gleich hoch', hs.length, 1);
