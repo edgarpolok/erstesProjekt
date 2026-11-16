@@ -21,5 +21,5 @@ L.run(async () => {
   p = await L.open({ routinen: { r: { titel: 'R', haeufigkeit: { art: 'alle', n: 2, ab: '2026-10-20' }, zustand: 'aktiv' } } }, 'sim-2026-10-25-0230', 1280);
   await L.go(p, 'woche');
   L.expect('Routine alle 2 Tage über die Umstellungen', await p.evaluate(() => ['2026-10-24', '2026-10-25', '2026-10-26', '2026-10-27', '2027-03-27', '2027-03-28', '2027-03-29'].map((d) => window.__ls.routinenAt(d).length)), [1, 0, 1, 0, 1, 0, 1]);
-  L.expect('Woche der Umstellung hat 7 Tage', await p.locator('[data-k^="d-2026-10-"]').count(), 7);
+  L.expect('Woche der Umstellung hat 7 Tage', await p.locator('[data-k^="wc-2026-10-"]').count(), 7);
 });
