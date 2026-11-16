@@ -13,22 +13,28 @@ const seed = {
   bloecke: { b1: { titel: 'BGB AT', woche: '2026-10-26', tag: '2026-10-29', status: 'offen', reihenfolge: 1 } },
 };
 L.run(async () => {
-  const p = await L.open(seed, 'sim-2026-10-28-1000', 1280);
-  await L.go(p, 'woche');
-  L.expect('heute aufgeklappt', await p.getAttribute('.day[data-k="d-2026-10-28"] .lbl', 'aria-expanded'), 'true');
-  L.expect('kommender Tag zugeklappt', await p.getAttribute('.day[data-k="d-2026-10-29"] .lbl', 'aria-expanded'), 'false');
-  const doT = await L.text(p, '.day[data-k="d-2026-10-29"]');
+  // Liste (unter 900 px)
+  const li = await L.open(seed, 'sim-2026-10-28-1000', 880);
+  await L.go(li, 'woche');
+  L.expect('Liste: heute aufgeklappt', await li.getAttribute('.day[data-k="d-2026-10-28"] .lbl', 'aria-expanded'), 'true');
+  L.expect('Liste: kommender Tag zugeklappt', await li.getAttribute('.day[data-k="d-2026-10-29"] .lbl', 'aria-expanded'), 'false');
+  const doT = await L.text(li, '.day[data-k="d-2026-10-29"]');
   L.ok('Donnerstag zeigt Termine zeitlich sortiert', /9–12\s*Repetitorium.*14–16\s*Vorlesung Strafrecht/.test(doT), doT);
   L.has('Donnerstag zeigt Lernblöcke', doT, 'Lernen: BGB AT');
   L.has('Donnerstag zeigt Erledigt-Stand', doT, 'von');
-  L.ok('Woche: Tage-Spalte breiter als Nebenspalte', await p.$eval('.cols.zweidrittel', (e) => e.children[0].offsetWidth > e.children[1].offsetWidth * 1.6), 'Spaltenbreiten');
+  L.expect('Liste ohne Spalten', await li.$$eval('.wbrett', (e) => e.length), 0);
 
-  // Woche als Spalten (umschaltbar ab 900 px)
-  await L.click(p, '[data-a=wAnsicht][data-v=sp]');
+  // Woche als Spalten (ab 900 px immer)
+  const mehr = { b1: seed.bloecke.b1, b2: { titel: 'ZPO', woche: '2026-10-26', tag: '2026-10-28', status: 'offen', reihenfolge: 2, zeit: 50 }, b3: { titel: 'Sachenrecht', woche: '2026-10-26', status: 'offen', reihenfolge: 3 } };
+  const p = await L.open(Object.assign({}, seed, { bloecke: mehr }), 'sim-2026-10-28-1000', 1280);
+  await L.go(p, 'woche');
   L.expect('Spalten: sieben Tage nebeneinander', await p.$$eval('.wbrett .wcol', (e) => e.filter((x) => x.offsetTop === e[0].offsetTop).length), 7);
+  L.expect('keine Liste, kein Umschalter', await p.$$eval('.day, [data-a=wAnsicht]', (e) => e.length), 0);
   const sp29 = await L.text(p, '.wcol[data-k="wc-2026-10-29"]');
   L.ok('Spalte: Termine nach Uhrzeit, dann Lernen', /Termine.*9–12\s*Repetitorium.*14–16\s*Vorlesung Strafrecht.*Lernen.*BGB AT.*Routinen.*Anki/.test(sp29), sp29);
   L.has('Spalte zeigt Erledigt-Stand', sp29, '0/4');
+  L.has('erfasste Zeit im Spaltenkopf', await L.text(p, '.wcol[data-k="wc-2026-10-28"] .hd'), '0:50 h erfasst');
+  L.expect('vergangene Tage abgedunkelt', await p.$$eval('.wcol.before', (e) => e.length), 2);
   await L.noHScroll(p, 'Woche als Spalten');
   await L.click(p, '.wcol[data-k="wc-2026-10-30"] [data-a=wAdd]');
   await L.fill(p, '#w-add', 'Schuldrecht');
@@ -36,26 +42,35 @@ L.run(async () => {
   L.has('in der Spalte hinzugefügt', await L.text(p, '.wcol[data-k="wc-2026-10-30"]'), 'Schuldrecht');
   await L.click(p, '.wcol[data-k="wc-2026-10-29"] [data-a=tmEdit]');
   L.expect('Terminformular steht unter den Spalten', await p.$$eval('.wbform #tm-titel', (e) => e.length), 1);
-  await L.click(p, '[data-a=wAnsicht][data-v=li]');
-  L.expect('zurück zur Liste', await p.$$eval('.day', (e) => e.length), 7);
-  // Spalten sind ab 900 px der Standard; Abhaken direkt in der Spalte (heute und gestern), nicht an kommenden Tagen
-  const sp = await L.open(Object.assign({}, seed, { bloecke: { b1: seed.bloecke.b1, b2: { titel: 'ZPO', woche: '2026-10-26', tag: '2026-10-28', status: 'offen', reihenfolge: 2 } } }), 'sim-2026-10-28-1000', { w: 1280, spalten: true });
-  await L.go(sp, 'woche');
-  L.expect('Spalten ohne Umschalten', await sp.$$eval('.wbrett .wcol', (e) => e.length), 7);
-  await L.click(sp, '.wcol[data-k="wc-2026-10-28"] [data-a=wTick][data-k=b]');
-  L.expect('Block in der Spalte abgehakt', (await L.store(sp)).bloecke.b2.status, 'erledigt');
-  await L.click(sp, '.wcol[data-k="wc-2026-10-28"] [data-a=wTick][data-k=r]');
-  L.expect('Routine in der Spalte abgehakt', (await L.store(sp)).tage['2026-10-28'].routinen.r1.erledigt, true);
-  L.has('Stand im Spaltenkopf', await L.text(sp, '.wcol[data-k="wc-2026-10-28"] .hd'), '2/2');
-  await L.click(sp, '.wcol[data-k="wc-2026-10-28"] [data-a=wTick][data-k=b]');
-  L.expect('nochmal tippen nimmt den Haken zurück', (await L.store(sp)).bloecke.b2.status, 'offen');
-  await L.click(sp, '.wcol[data-k="wc-2026-10-27"] [data-a=wTick][data-k=r]');
-  L.expect('gestern geht noch', (await L.store(sp)).tage['2026-10-27'].routinen.r1.erledigt, true);
-  L.expect('kommende Tage ohne Abhaken', await sp.$$eval('.wcol[data-k="wc-2026-10-29"] [data-a=wTick]', (e) => e.length), 0);
-  L.expect('älter als gestern ohne Abhaken', await sp.$$eval('.wcol[data-k="wc-2026-10-26"] [data-a=wTick]', (e) => e.length), 0);
-  const schmal = await L.open(seed, 'sim-2026-10-28-1000', 390);
-  await L.go(schmal, 'woche');
-  L.expect('am iPhone kein Umschalter', await schmal.$$eval('[data-a=wAnsicht]', (e) => e.length), 0);
+  await L.click(p, '.wbform [data-a=tmCancel]');
+
+  // Abhaken direkt in der Spalte (heute und gestern), nicht an kommenden Tagen
+  await L.click(p, '.wcol[data-k="wc-2026-10-28"] [data-a=wTick][data-k=b]');
+  L.expect('Block in der Spalte abgehakt', (await L.store(p)).bloecke.b2.status, 'erledigt');
+  await L.click(p, '.wcol[data-k="wc-2026-10-28"] [data-a=wTick][data-k=r]');
+  L.expect('Routine in der Spalte abgehakt', (await L.store(p)).tage['2026-10-28'].routinen.r1.erledigt, true);
+  L.has('Stand im Spaltenkopf', await L.text(p, '.wcol[data-k="wc-2026-10-28"] .hd'), '2/2');
+  await L.click(p, '.wcol[data-k="wc-2026-10-28"] [data-a=wTick][data-k=b]');
+  L.expect('nochmal tippen nimmt den Haken zurück', (await L.store(p)).bloecke.b2.status, 'offen');
+  await L.click(p, '.wcol[data-k="wc-2026-10-27"] [data-a=wTick][data-k=r]');
+  L.expect('gestern geht noch', (await L.store(p)).tage['2026-10-27'].routinen.r1.erledigt, true);
+  L.expect('kommende Tage ohne Abhaken', await p.$$eval('.wcol[data-k="wc-2026-10-29"] [data-a=wTick]', (e) => e.length), 0);
+  L.expect('älter als gestern ohne Abhaken', await p.$$eval('.wcol[data-k="wc-2026-10-26"] [data-a=wTick]', (e) => e.length), 0);
+
+  // „Noch offen" am Brett und Ziehen mit der Maus
+  L.has('„Noch offen“ liegt am Brett', await L.text(p, '.wpool'), 'Sachenrecht');
+  await p.dragAndDrop('.wpool [data-drag=b3]', '.wcol[data-k="wc-2026-10-31"]'); await p.waitForTimeout(200);
+  let st = await L.store(p);
+  L.expect('aus „Noch offen“ auf einen Tag gezogen', [st.bloecke.b3.tag, st.bloecke.b3.fest], ['2026-10-31', true]);
+  await p.dragAndDrop('.wcol [data-drag=b1]', '.wcol[data-k="wc-2026-11-01"]'); await p.waitForTimeout(200);
+  L.expect('Block auf einen anderen Tag gezogen', (await L.store(p)).bloecke.b1.tag, '2026-11-01');
+  L.has('Ziehen lässt sich rückgängig machen', await L.toast(p), 'Rückgängig');
+  await p.dragAndDrop('.wcol [data-drag=b2]', '.wcol[data-k="wc-2026-10-26"]'); await p.waitForTimeout(200);
+  L.expect('vergangener Tag ist kein Ziel', (await L.store(p)).bloecke.b2.tag, '2026-10-28');
+  await p.dragAndDrop('.wcol [data-drag=b3]', '.wpool'); await p.waitForTimeout(200);
+  st = await L.store(p);
+  L.expect('zurück nach „Noch offen“ gezogen', [st.bloecke.b3.tag, st.bloecke.b3.zurueckgelegt], [null, true]);
+  L.expect('Termine sind nicht ziehbar', await p.$$eval('.wcol .it[draggable]', (e) => e.filter((x) => !x.dataset.drag || !/^b/.test(x.dataset.drag)).length), 0);
 
   await L.go(p, 'kalender');
   const kw46 = await L.text(p, '.week[data-k="kw-2026-11-09"]');

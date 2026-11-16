@@ -9,7 +9,7 @@ const seed = {
 };
 const blockBy = (s, titel) => Object.keys(s.bloecke).map((id) => Object.assign({ id: id }, s.bloecke[id])).find((b) => b.titel === titel);
 L.run(async () => {
-  const p = await L.open(seed, 'sim-2026-10-28-1000', 1280);
+  const p = await L.open(seed, 'sim-2026-10-28-1000', 880);
   await L.go(p, 'woche');
   L.expect('vergangener Tag ohne „+ Hinzufügen“', await p.locator('.day[data-k="d-2026-10-27"] [data-a=wAdd]').count(), 0);
   L.expect('kein „+ Termin“ mehr oben', await p.locator('.h2row [data-a=tfOpen]').count(), 0);

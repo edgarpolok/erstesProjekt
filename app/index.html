@@ -377,7 +377,8 @@ select.inp { padding: 0 8px; }
 .wcol:first-child { border-left: 0; }
 .wcol.today { background: color-mix(in srgb, var(--soft) 70%, transparent); }
 .wcol.frei, .wcol.pause { background: color-mix(in srgb, var(--ok-soft) 55%, transparent); }
-.wcol .hd { display: flex; align-items: baseline; gap: 6px; padding-bottom: 8px; border-bottom: 2px solid var(--line); }
+.wcol .hd { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; padding-bottom: 6px; border-bottom: 2px solid var(--line); }
+.wcol .hd i { flex: 0 0 100%; min-height: 15px; font-style: normal; font-size: 11.5px; line-height: 15px; color: var(--quiet); font-variant-numeric: tabular-nums; }
 .wcol.today .hd { border-bottom-color: var(--ink); }
 .wcol .hd b { font-size: 12px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--quiet); }
 .wcol.today .hd b { color: var(--ink); }
@@ -401,6 +402,22 @@ select.inp { padding: 0 8px; }
 .wcol .daynote { margin-top: auto; font-size: 12px; }
 .wcol .leer { font-size: 12px; color: var(--quiet); }
 .wbform { max-width: 560px; }
+.wcol.before > * { opacity: 0.62; }
+.wcol.before:hover > * { opacity: 1; }
+.wcol .it[draggable=true], .wpool .pitem[draggable=true] { cursor: grab; }
+body.zieht .wcol[data-drop], body.zieht .wpool { transition: background-color 120ms ease-out; }
+.wcol.drop-on { background: color-mix(in srgb, var(--ok-soft) 80%, transparent); box-shadow: inset 0 0 0 2px var(--ok); }
+.wpool { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1.5px dashed var(--line); border-radius: 16px; }
+.wpool.drop-on { border-color: var(--ok); background: color-mix(in srgb, var(--ok-soft) 80%, transparent); }
+.wpool .gl { font-size: 10.5px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--quiet); }
+.wpool .reihe { display: flex; flex-wrap: wrap; gap: 8px; }
+.wpool .pitem { flex: 0 1 260px; min-width: 0; border: 1px solid var(--line); padding: 6px 4px 6px 12px; }
+.wpool .pitem .body { flex: 1 1 auto; }
+.wpool .pitem .t { font-size: 14px; }
+.wpool .pull { min-height: 36px; }
+.wchev { flex: 0 0 auto; width: 28px; height: 28px; margin: -4px -6px -4px 0; padding: 0; border: 0; border-radius: 10px; background: transparent; display: flex; align-items: center; justify-content: center; color: var(--quiet); cursor: pointer; }
+.wchev svg { transition: transform 160ms ease-out; }
+.wchev.open svg { transform: rotate(180deg); }
 .mkb { flex: 0 0 auto; margin: -6px; padding: 6px; border: 0; border-radius: 14px; background: transparent; cursor: pointer; }
 .mkb:hover .mk:not(.on) { border-color: var(--ok); }
 
@@ -2420,8 +2437,7 @@ async function maybeEinschaetzung(W) {
 const S = {
   view: 'heute', menu: null, edit: null, wvon: null, editT: null, wdhTag: {}, poolOpen: null,
   adding: false, addMore: false, addDone: false, addG: undefined, wk: null, dayOpen: {}, 
-  planOpen: {}, vMore: {}, planShow: {},
-  wSp: (() => { try { return localStorage.getItem('lernsystem-woche-spalten') !== '0'; } catch (e) { return true; } })() // Woche als Spalten (ab 900 px Standard): nur Anzeige, je Gerät
+  planOpen: {}, vMore: {}, planShow: {}
 };
 const F = {};
 const fv = (k) => (F[k] == null ? '' : F[k]);
@@ -2606,7 +2622,7 @@ function poolItemMeta(b, t) {
   if (b.quelle === 'liste') return 'aus der Wochenliste' + (b.std ? ' · ' + fmtH(b.std * 60) : '');
   return '';
 }
-function poolList(W, t, withPull) {
+function poolList(W, t, withPull, zieh) {
   const pool = poolOf(W);
   const wk = D.wochen[W] || {};
   let h = '';
@@ -2617,7 +2633,7 @@ function poolList(W, t, withPull) {
       (withPull ? '<button class="pull" aria-label="' + esc('Heute machen: ' + it.titel) + '" data-a="pullW" data-ref="' + esc(it.ref) + '">+ Heute</button>' : '') + '</div>';
   });
   pool.forEach((b) => {
-    h += '<div class="pitem" data-k="p-' + esc(b.id) + '"><div class="body">' + gLine(b.gebiet) + '<span class="t">' + esc(b.titel) + bsp(b) + '</span><span class="small">' + esc(poolItemMeta(b, t)) + '</span></div>' +
+    h += '<div class="pitem" data-k="p-' + esc(b.id) + '"' + (zieh ? ' draggable="true" data-drag="' + esc(b.id) + '"' : '') + '><div class="body">' + gLine(b.gebiet) + '<span class="t">' + esc(b.titel) + bsp(b) + '</span><span class="small">' + esc(poolItemMeta(b, t)) + '</span></div>' +
       (withPull ? '<button class="pull" aria-label="Heute machen: ' + esc(b.titel) + '" data-a="pull" data-id="' + esc(b.id) + '">+ Heute</button>' : '') + '</div>';
   });
   return { html: h, n: pool.length + ueb.length };
@@ -2806,10 +2822,10 @@ function itemHtml(it) {
   if (it.k === 'w' && it.liste) {
     const key = it.date;
     const open = !!S.wdhTag[key];
-    return '<div class="it' + (it.done ? ' done' : '') + '">' + mk + '<button class="tx wbtn" aria-expanded="' + open + '" data-a="wdhTag" data-d="' + it.date + '">' + esc(it.title) + '<span class="sf">' + esc(it.suffix) + '</span></button></div>' +
+    return '<div class="it' + (it.done ? ' done' : '') + '">' + mk + '<button class="tx wbtn" aria-expanded="' + open + '" data-a="wdhTag" data-d="' + it.date + '">' + esc(it.title) + '<span class="sf">' + esc(it.suffix) + '</span></button><button class="wchev' + (open ? ' open' : '') + '" tabindex="-1" aria-hidden="true" data-a="wdhTag" data-d="' + it.date + '">' + ico('down', 'xs') + '</button></div>' +
       (open ? '<div class="wlist" data-k="wl-' + it.date + '">' + it.liste.map((x) => '<span class="wl">' + wdhRing(x.stufe, !!x.r, null, true) + '<span>' + esc(x.titel) + '</span></span>').join('') + '</div>' : '');
   }
-  return '<div class="it' + (it.done || it.muted ? ' done' : '') + '">' + mkT + dot + '<span class="tx">' + (it.time ? '<span class="tm">' + esc(it.time) + '</span>' : '') + esc(it.title) +
+  return '<div class="it' + (it.done || it.muted ? ' done' : '') + '"' + (it.drag ? ' draggable="true" data-drag="' + esc(it.id) + '"' : '') + '>' + mkT + dot + '<span class="tx">' + (it.time ? '<span class="tm">' + esc(it.time) + '</span>' : '') + esc(it.title) +
     (it.suffix ? '<span class="sf">' + esc(it.suffix) + '</span>' : '') + (it.extra ? '<span class="plus">zusätzlich</span>' : '') + '</span>' + push + '</div>' + (it.edit && it.k === 'b' && S.wMenu === it.id ? blockMenu(it) : '');
 }
 function blockMenu(it) {
@@ -2864,7 +2880,7 @@ function dayCard(d, W) {
   return h;
 }
 // Woche als Spalten: ein Tag ist eine Spalte mit Terminen (nach Uhrzeit), Lernen und Routinen
-const wocheSpalten = () => S.wSp && window.innerWidth >= 900;
+const wocheSpalten = () => window.innerWidth >= 900; // am breiten Bildschirm immer Spalten, darunter die Liste
 function dayCol(d, W) {
   const t = today();
   const pz = pauseAt(d);
@@ -2880,12 +2896,12 @@ function dayCol(d, W) {
   else if (puf) note = 'Puffer';
   if (pz.wdh && !pz.frei) note = (note ? note + ' · ' : '') + 'Wiederholung ruht';
   const er = erfasstAt(d);
-  if (er && d <= t) note = (note ? note + ' · ' : '') + 'erfasst ' + fmtHM(er);
   // Abhaken direkt in der Spalte: heute und am Tag davor (wie in „Heute“); Wiederholungen werden dort bewertet
   const kannTick = (i) => d <= t && isOpenDay(d) && !i.nz && i.id && (i.k === 'r' || (i.k === 't' && !(i.muted && !i.done)) || (i.k === 'b' && !i.wdhB));
-  const grp = (name, ks) => { const li = items.filter((i) => ks.indexOf(i.k) >= 0).map((i) => (kannTick(i) ? Object.assign({}, i, { tick: true, date: d }) : i)); return li.length ? '<div class="grp"><span class="gl">' + name + '</span>' + li.map(itemHtml).join('') + '</div>' : ''; };
-  let h = '<div class="wcol' + (isToday ? ' today' : '') + (pz.frei ? ' pause' : (free ? ' frei' : '')) + '" data-k="wc-' + d + '" role="group" aria-label="' + esc(WDL[wdOf(d)] + ' ' + fmtDM(d) + (isToday ? ', heute' : '')) + '">' +
-    '<div class="hd"><b>' + (isToday ? 'Heute' : WD[wdOf(d)]) + '</b><span>' + fmtDM(d) + '</span>' + (zi.length ? '<em class="' + (dn === zi.length ? 'all' : '') + '">' + dn + '/' + zi.length + '</em>' : '') + '</div>';
+  const grp = (name, ks) => { const li = items.filter((i) => ks.indexOf(i.k) >= 0).map((i) => Object.assign({}, i, { tick: kannTick(i), drag: i.k === 'b' && i.edit, date: d })); return li.length ? '<div class="grp"><span class="gl">' + name + '</span>' + li.map(itemHtml).join('') + '</div>' : ''; };
+  let h = '<div class="wcol' + (isToday ? ' today' : (d < t ? ' before' : '')) + (pz.frei ? ' pause' : (free ? ' frei' : '')) + '" data-k="wc-' + d + '"' + (d >= t && !pz.frei ? ' data-drop="' + d + '"' : '') + ' role="group" aria-label="' + esc(WDL[wdOf(d)] + ' ' + fmtDM(d) + (isToday ? ', heute' : '')) + '">' +
+    '<div class="hd"><b>' + (isToday ? 'Heute' : WD[wdOf(d)]) + '</b><span>' + fmtDM(d) + '</span>' + (zi.length ? '<em class="' + (dn === zi.length ? 'all' : '') + '" title="' + dn + ' von ' + zi.length + ' erledigt">' + dn + '/' + zi.length + '</em>' : '') +
+    '<i>' + (er && d <= t ? esc(fmtHM(er)) + ' erfasst' : '') + '</i></div>';
   h += grp('Termine', ['t']) + grp('Lernen', ['b', 'w']) + grp('Routinen', ['r']);
   if (!items.length && !note) h += '<span class="leer">' + (d < t ? 'Nichts eingetragen' : 'Noch frei') + '</span>';
   if (d >= t && !pz.frei && !(TF && TF.wo === 'woche' && TF.tag === d)) h += dayAdd(d, W);
@@ -3234,15 +3250,25 @@ function viewWoche() {
   }
   const canT = !isPast && !allPause;
   const sp = wocheSpalten();
-  const tageKopf = '<div class="h2row"><h2 class="h2">Die Tage</h2>' + (window.innerWidth >= 900 ? '<div class="chips" role="group" aria-label="Ansicht der Tage">' + [['li', 'Liste'], ['sp', 'Spalten']].map((o) => '<button class="sel" style="min-height:32px" aria-pressed="' + (sp === (o[0] === 'sp')) + '" data-a="wAnsicht" data-v="' + o[0] + '">' + o[1] + '</button>').join('') + '</div>' : '') + '</div>';
+  const tageKopf = '<div class="h2row"><h2 class="h2">Die Tage</h2></div>';
   let brett = '';
-  if (sp) brett = '<section class="stack">' + tageKopf + '<div class="wbrett">' + weekDates(W).map((d) => dayCol(d, W)).join('') + '</div>' + (TF && TF.wo === 'woche' && weekDates(W).indexOf(TF.tag) >= 0 ? '<div class="wbform">' + terminFormU() + '</div>' : '') + '</section>';
+  if (sp) {
+    brett = '<section class="stack">' + tageKopf + '<div class="wbrett">' + weekDates(W).map((d) => dayCol(d, W)).join('') + '</div>' + (TF && TF.wo === 'woche' && weekDates(W).indexOf(TF.tag) >= 0 ? '<div class="wbform">' + terminFormU() + '</div>' : '');
+    // „Noch offen" liegt direkt am Brett: von hier auf einen Tag ziehen, von einem Tag hierher zurücklegen
+    if (!isPast && !allPause) {
+      const pl = poolList(W, t, isCur, true);
+      brett += '<div class="wpool" data-drop="pool" data-k="wpool"><span class="gl">Noch offen ' + (isCur ? 'diese Woche' : 'in dieser Woche') + '</span>' +
+        (pl.n ? '<div class="reihe">' + pl.html + '</div>' : '') +
+        '<span class="small">' + (pl.n ? 'Zieh einen Block auf einen Tag' + (isCur ? ' oder hol ihn mit „+ Heute“.' : '.') : 'Nichts offen. Zieh einen Block hierher, um ihn ohne Tag zurückzulegen.') + '</span></div>';
+    }
+    brett += '</section>';
+  }
   else left.push('<section class="stack">' + tageKopf + weekDates(W).map((d) => dayCard(d, W)).join('') + '</section>');
   if (isPast) {
     const lg = Object.keys(D.bloecke).map((id) => Object.assign({ id: id }, D.bloecke[id])).filter((b) => b.woche === W && b.status === 'offen');
     if (lg.length) left.push('<section class="stack"><h2 class="h2">Liegen geblieben</h2><div class="softbox">' + lg.map((b) => '<div class="pitem" data-k="lg-' + esc(b.id) + '"><span class="mk x" role="img" aria-label="liegen geblieben"><svg viewBox="0 0 24 24" aria-hidden="true">' + ICON.x + '</svg></span><div class="body">' + gLine(b.gebiet) + '<span class="t">' + esc(b.titel) + '</span><span class="small">entscheidest du in der aktuellen Woche</span></div></div>').join('') + '</div></section>');
   } else if (!allPause) {
-    const pl = poolList(W, t, isCur);
+    const pl = sp ? { n: 0 } : poolList(W, t, isCur);
     if (pl.n) {
       left.push('<section class="stack"><h2 class="h2">Noch offen diese Woche</h2><div class="softbox">' + pl.html + '</div><span class="small" style="margin:0 4px">' +
         (isCur ? 'Mit „+ Heute“ holst du sie dir in den Tag, ' + (cfg().pufferTag >= 0 ? 'am Puffertag sind sie dran.' : 'sonst bleiben sie hier liegen.') + ' Über „⋯“ an einem Block legst du ihn hierher zurück.' : 'Diese Vorhaben liegen ohne Tag in der Woche.') + '</span></section>');
@@ -5129,7 +5155,6 @@ const ACT = {
     else if (d.k === 'b') { const b = D.bloecke[d.id]; if (!b) return 'keep'; const on = b.status !== 'erledigt'; if (on && !guardAdd(b.tag || d.d)) return 'keep'; setBlockDone(d.id, on); }
     S.wMenu = null;
   },
-  wAnsicht: (d) => { S.wSp = d.v === 'sp'; try { localStorage.setItem('lernsystem-woche-spalten', S.wSp ? '1' : '0'); } catch (e) { /* nur Anzeige */ } },
   wAdd: (d) => { S.wAdd = d.d; TF = null; S.wMenu = null; F.wAddText = ''; focusSoon('w-add'); },
   wAddClose: () => { S.wAdd = null; },
   wAddSave: (d) => {
@@ -5242,6 +5267,39 @@ setInterval(() => {
 }, 1000);
 setInterval(scheduleRender, 30000);
 let lastWide = window.innerWidth >= 900;
+/* Ziehen mit der Maus (Woche als Spalten): Lernblock auf einen anderen Tag oder nach „Noch offen" */
+let ziehId = null; let ziehZiel = null;
+function ziehMark(z) { if (ziehZiel && ziehZiel !== z) ziehZiel.classList.remove('drop-on'); ziehZiel = z || null; if (z) z.classList.add('drop-on'); }
+function ziehEnde() { ziehMark(null); ziehId = null; document.body.classList.remove('zieht'); }
+function ziehPasst(z) {
+  const b = ziehId && D.bloecke[ziehId];
+  if (!b || !z) return false;
+  return z.dataset.drop === 'pool' ? !!b.tag && b.tag >= today() : b.tag !== z.dataset.drop;
+}
+document.addEventListener('dragstart', (e) => {
+  const el = e.target.closest && e.target.closest('[data-drag]');
+  if (!el || !D.bloecke[el.dataset.drag]) return;
+  ziehId = el.dataset.drag;
+  try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', D.bloecke[ziehId].titel || ''); } catch (err) { /* egal */ }
+  document.body.classList.add('zieht');
+});
+document.addEventListener('dragover', (e) => {
+  if (!ziehId) return;
+  const z = e.target.closest && e.target.closest('[data-drop]');
+  if (z && ziehPasst(z)) { e.preventDefault(); try { e.dataTransfer.dropEffect = 'move'; } catch (err) { /* egal */ } ziehMark(z); } else ziehMark(null);
+});
+document.addEventListener('drop', (e) => {
+  if (!ziehId) return;
+  const z = e.target.closest && e.target.closest('[data-drop]');
+  const id = ziehId;
+  const ok = z && ziehPasst(z);
+  if (z) e.preventDefault();
+  ziehEnde();
+  if (!ok) return;
+  if (z.dataset.drop === 'pool') pushToPool(id); else moveBlock(id, z.dataset.drop);
+  S.wMenu = null; scheduleRender();
+});
+document.addEventListener('dragend', ziehEnde);
 window.addEventListener('resize', () => { const w = window.innerWidth >= 900; if (w !== lastWide) { lastWide = w; scheduleRender(); } });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleRender(); });
 // Zuletzt geöffnete Ansicht gilt, solange die App offen ist (auch nach Neuladen); nach dem Beenden startet „Heute“

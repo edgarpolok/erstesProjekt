@@ -46,7 +46,7 @@ L.run(async () => {
   await L.click(p, '[data-a=menu][data-m=tt1]');
   await L.click(p, '[data-a=cancelTermin][data-id=t1]');
   await L.go(p, 'woche');
-  L.expect('Woche: ausgefallener Termin ohne Kreis', await p.locator('.day.today .mk.aus').count(), 1);
+  L.expect('Woche: ausgefallener Termin ohne Kreis', await p.locator('.wcol.today .mk.aus').count(), 1);
   await L.go(p, 'kalender');
   L.expect('Kalender: kein Punkt am 12.11.', await p.locator('.kal [data-d="2026-11-12"] .tdots i').count(), 0);
   L.expect('Kalender: Punkt am 19.11.', await p.locator('.kal [data-d="2026-11-19"] .tdots i').count(), 1);
