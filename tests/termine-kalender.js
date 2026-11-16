@@ -23,10 +23,10 @@ L.run(async () => {
     await L.click(p, '.kal button.cell[data-d="2026-11-04"]'); await L.click(p, '.tagblatt [data-a=kNew]'); await L.fill(p, '#tm-titel', 'AG Zivilrecht'); await L.fill(p, '#tm-von', '14:00'); await L.fill(p, '#tm-bis', '16:00'); await L.click(p, '[data-a=tmWdh][data-v="1"]'); await L.fill(p, '#tm-end', '2026-12-16'); await L.click(p, '[data-a=tmSave]');
     // Fehlerfälle
     await L.click(p, '[data-a=kNew][data-v=termin]'); await L.fill(p, '#tm-titel', 'Alt'); await L.fill(p, '#tm-datum', '2026-11-01'); await L.fill(p, '#tm-von', '10:00'); await L.click(p, '[data-a=tmSave]');
-    L.expect(tg + 'Termin in der Vergangenheit abgelehnt', await L.text(p, '.kalaside .err'), 'Neue Termine gehen ab heute.');
+    L.expect(tg + 'Termin in der Vergangenheit abgelehnt', await L.text(p, '[data-k=tmform] .err'), 'Neue Termine gehen ab heute.');
     await L.fill(p, '#tm-datum', '2026-11-10'); await L.fill(p, '#tm-von', ''); await L.click(p, '[data-a=tmSave]');
-    L.expect(tg + 'Termin ohne Uhrzeit abgelehnt', await L.text(p, '.kalaside .err'), 'Ein Termin braucht eine Uhrzeit (von) oder „ganztägig“.');
-    await L.click(p, '[data-a=kCancel]');
+    L.expect(tg + 'Termin ohne Uhrzeit abgelehnt', await L.text(p, '[data-k=tmform] .err'), 'Ein Termin braucht eine Uhrzeit (von) oder „ganztägig“.');
+    await L.click(p, '[data-a=tmCancel]');
     const term = Object.values((await L.store(p)).termine).map((t) => [t.titel, t.datum || ('wö ' + (t.wochentage || []).join()), t.von, t.bis, !!t.ganztags, t.ab || '', t.endet || '']).sort();
     L.expect(tg + 'gespeicherte Termine', term, [
       ['AG Zivilrecht', 'wö 2', '14:00', '16:00', false, '2026-11-04', '2026-12-16'],
