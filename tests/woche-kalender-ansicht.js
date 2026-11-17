@@ -29,6 +29,7 @@ L.run(async () => {
   const p = await L.open(Object.assign({}, seed, { bloecke: mehr }), 'sim-2026-10-28-1000', 1280);
   await L.go(p, 'woche');
   L.expect('Spalten: sieben Tage nebeneinander', await p.$$eval('.wbrett .wcol', (e) => e.filter((x) => x.offsetTop === e[0].offsetTop).length), 7);
+  L.hasNot('keine Überschrift „Die Tage“ über den Spalten', await L.text(p, '#main'), 'Die Tage');
   L.expect('keine Liste, kein Umschalter', await p.$$eval('.day, [data-a=wAnsicht]', (e) => e.length), 0);
   const sp29 = await L.text(p, '.wcol[data-k="wc-2026-10-29"]');
   L.ok('Spalte: Termine nach Uhrzeit, dann Lernen', /Termine.*9–12\s*Repetitorium.*14–16\s*Vorlesung Strafrecht.*Lernen.*BGB AT.*Routinen.*Anki/.test(sp29), sp29);
