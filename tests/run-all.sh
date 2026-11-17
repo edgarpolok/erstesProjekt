@@ -11,10 +11,14 @@ APP="$(realpath "${1:-$(dirname "$0")/../app/index.html}")"
 [ -f "$APP" ] || { echo "FEHLER  App nicht gefunden: $APP"; exit 1; }
 cd "$DIR" || exit 1
 fail=0; bekannt=""
+# Die Dateien laufen nebeneinander (JOBS, Standard 4; JOBS=1 = nacheinander), berichtet wird in fester Reihenfolge
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+export APP TMP
+ls *.js | grep -v -x -e lib.js -e mock-app.js | xargs -P "${JOBS:-4}" -I{} sh -c 'timeout 600 node "$1" "$APP" > "$TMP/$1.out" 2>&1; echo $? > "$TMP/$1.code"' _ {}
 for f in *.js; do
   case "$f" in lib.js|mock-app.js) continue ;; esac
   t="${f%.js}"
-  out=$(timeout 600 node "$f" "$APP" 2>&1); code=$?
+  out=$(cat "$TMP/$f.out" 2>/dev/null); code=$(cat "$TMP/$f.code" 2>/dev/null || echo 1)
   erg=$(echo "$out" | grep '^ERGEBNIS ' | tail -1)
   if [ $code -eq 0 ] && echo "$erg" | grep -q -E ': [1-9][0-9]* Prüfungen, 0 Fehler'; then
     echo "ok      $t  (${erg#*: })"
