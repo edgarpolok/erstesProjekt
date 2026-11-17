@@ -3269,7 +3269,7 @@ function viewWoche() {
   const tageKopf = '<div class="h2row"><h2 class="h2">Die Tage</h2></div>';
   let brett = '';
   if (sp) {
-    brett = '<section class="stack">' + tageKopf + '<div class="wbrett">' + weekDates(W).map((d) => dayCol(d, W)).join('') + '</div>' + (TF && TF.wo === 'woche' && weekDates(W).indexOf(TF.tag) >= 0 ? '<div class="wbform">' + terminFormU() + '</div>' : '');
+    brett = '<section class="stack" aria-label="Die Tage"><div class="wbrett">' + weekDates(W).map((d) => dayCol(d, W)).join('') + '</div>' + (TF && TF.wo === 'woche' && weekDates(W).indexOf(TF.tag) >= 0 ? '<div class="wbform">' + terminFormU() + '</div>' : '');
     // „Noch offen" liegt direkt am Brett: von hier auf einen Tag ziehen, von einem Tag hierher zurücklegen
     if (!isPast && !allPause) {
       const pl = poolList(W, t, isCur, true);
