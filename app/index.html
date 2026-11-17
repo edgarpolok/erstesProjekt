@@ -2171,6 +2171,7 @@ function addBlock(f) {
     status: 'offen', quelle: 'frei', zusaetzlich: true, wdhVon: f.wdhVon || null, thema: f.wdhVon || f.thema || null,
     wiederholen: f.wdhVon ? false : cfg().wdhStandard, zeit: null, erstellt: nowMs()
   };
+  if (typeof f.std === 'number' && f.std > 0) data.std = f.std;
   if (markNach(t)) data.nachgetragen = true;
   put('bloecke', id, data);
   if (f.done) setBlockDone(id, true);
@@ -2855,6 +2856,7 @@ function dayAdd(d, W) {
   if (TF && TF.wo === 'woche' && TF.tag === d) return terminFormU();
   if (S.wAdd !== d) return '<button class="wplus" data-a="wAdd" data-d="' + d + '">' + ico('plus', 'xs') + 'Hinzufügen</button>';
   return '<div class="wadd" data-k="wa-' + d + '"><div style="display:flex;gap:8px;flex-wrap:wrap"><label class="sr-only" for="w-add">Was willst du am ' + esc(WDL[wdOf(d)]) + ' lernen?</label><input id="w-add" class="inp grow" data-in="wAddText" data-enter="wAddSave" data-d="' + d + '" value="' + esc(fv('wAddText')) + '" placeholder="Was willst du lernen?" autocomplete="off"><button class="btn" data-a="wAddSave" data-d="' + d + '">Eintragen</button></div>' +
+    '<div style="display:flex;align-items:center;gap:8px"><label class="small" for="w-add-std">Stunden (wenn du magst)</label><input id="w-add-std" class="inp" style="width:64px;text-align:center;background:var(--card)" type="text" inputmode="decimal" autocomplete="off" data-in="wAddStd" data-enter="wAddSave" data-d="' + d + '" value="' + esc(fv('wAddStd')) + '" placeholder="–"></div>' +
     '<div style="display:flex;gap:4px;justify-content:space-between"><button class="linkbtn" style="color:var(--quiet)" data-a="tfOpen" data-d="' + d + '">stattdessen Termin</button><button class="linkbtn" style="color:var(--quiet);text-decoration:none" data-a="wAddClose">Abbrechen</button></div></div>';
 }
 function dayCard(d, W) {
@@ -5169,13 +5171,16 @@ const ACT = {
     else if (d.k === 'b') { const b = D.bloecke[d.id]; if (!b) return 'keep'; const on = b.status !== 'erledigt'; if (on && !guardAdd(b.tag || d.d)) return 'keep'; setBlockDone(d.id, on); }
     S.wMenu = null;
   },
-  wAdd: (d) => { S.wAdd = d.d; TF = null; S.wMenu = null; F.wAddText = ''; focusSoon('w-add'); },
+  wAdd: (d) => { S.wAdd = d.d; TF = null; S.wMenu = null; F.wAddText = ''; F.wAddStd = ''; focusSoon('w-add'); },
   wAddClose: () => { S.wAdd = null; },
   wAddSave: (d) => {
     const txt = String(F.wAddText || '').trim();
     if (!txt) { toast('Schreib kurz, was du lernen willst.', false); focusSoon('w-add'); return 'keep'; }
-    undoable('Eingetragen am ' + WDL[wdOf(d.d)], () => addBlock({ text: txt, date: d.d }));
-    F.wAddText = ''; focusSoon('w-add');
+    const raw = String(F.wAddStd || '').trim().replace(',', '.').replace(/\s*h$/i, '');
+    const n = raw === '' ? 0 : Number(raw); // leer oder 0 = ohne Umfang
+    if (!(isFinite(n) && n >= 0 && n <= 24)) { toast('Bitte Stunden von 0 bis 24 eintragen oder das Feld leer lassen.', false); focusSoon('w-add-std'); return 'keep'; }
+    undoable('Eingetragen am ' + WDL[wdOf(d.d)], () => addBlock({ text: txt, date: d.d, std: n > 0 ? Math.max(0.25, Math.round(n * 4) / 4) : null }));
+    F.wAddText = ''; F.wAddStd = ''; focusSoon('w-add');
   },
   wMenu: (d) => { S.wMenu = S.wMenu === d.id ? null : d.id; S.wRen = null; },
   wRen: (d) => { S.wRen = d.id; F.wRen = (D.bloecke[d.id] || {}).titel || ''; focusSoon('w-ren'); },

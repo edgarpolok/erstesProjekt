@@ -83,6 +83,12 @@ L.run(async () => {
   L.expect('gezogener Block liegt fest am Tag', [(await L.store(q)).bloecke.x3.tag, (await L.store(q)).bloecke.x3.fest], ['2026-10-29', true]);
   await L.click(q, '.toast [data-a=undo], [data-a=undo]');
   L.expect('Rückgängig stellt Tag und Reihenfolge wieder her', [await reihe('2026-10-29'), await reihe('2026-10-30')], [['x2', 'x1'], ['x3']]);
+  await L.click(q, '.wcol[data-k="wc-2026-10-31"] [data-a=wAdd]');
+  await L.fill(q, '#w-add', 'Ohne Umfang'); await L.click(q, '[data-a=wAddSave]');
+  await L.fill(q, '#w-add', 'Mit Umfang'); await L.fill(q, '#w-add-std', '1,5'); await L.click(q, '[data-a=wAddSave]');
+  const neu = Object.values((await L.store(q)).bloecke).filter((b) => b.tag === '2026-10-31').map((b) => [b.titel, b.std == null ? null : b.std]);
+  L.expect('Hinzufügen: Stunden nur, wenn eingetragen', neu, [['Ohne Umfang', null], ['Mit Umfang', 1.5]]);
+  L.has('eingetragene Stunden zählen im Kopf', await L.text(q, '.wcol[data-k="wc-2026-10-31"] .hd'), '1½ h geplant');
   L.ok('breiter Bildschirm wird genutzt', await q.$eval('.wbrett', (e) => e.offsetWidth > 1100), 'Breite');
   await L.noHScroll(q, 'Woche bei 1440');
   L.expect('Termine sind nicht ziehbar', await p.$$eval('.wcol .it[draggable]', (e) => e.filter((x) => !x.dataset.drag || !/^b/.test(x.dataset.drag)).length), 0);
