@@ -70,6 +70,21 @@ L.run(async () => {
   await p.dragAndDrop('.wcol [data-drag=b3]', '.wpool'); await p.waitForTimeout(200);
   st = await L.store(p);
   L.expect('zurück nach „Noch offen“ gezogen', [st.bloecke.b3.tag, st.bloecke.b3.zurueckgelegt], [null, true]);
+  // Reihenfolge innerhalb eines Tages und Stundenangabe
+  const q = await L.open({ bloecke: { x1: { titel: 'Eins', woche: '2026-10-26', tag: '2026-10-29', status: 'offen', erstellt: 1, std: 2 }, x2: { titel: 'Zwei', woche: '2026-10-26', tag: '2026-10-29', status: 'offen', erstellt: 2, std: 1.5 }, x3: { titel: 'Drei', woche: '2026-10-26', tag: '2026-10-30', status: 'offen', erstellt: 3 } } }, 'sim-2026-10-28-1000', 1440);
+  await L.go(q, 'woche');
+  const reihe = (d) => q.$$eval('.wcol[data-k="wc-' + d + '"] .it[data-b]', (e) => e.map((x) => x.dataset.b));
+  L.has('Stunden am Block', await L.text(q, '.it[data-b=x1]'), '2 h');
+  L.has('geplante Stunden im Spaltenkopf', await L.text(q, '.wcol[data-k="wc-2026-10-29"] .hd'), '3½ h geplant');
+  await q.dragAndDrop('.it[data-b=x2]', '.it[data-b=x1]', { targetPosition: { x: 40, y: 3 } }); await q.waitForTimeout(200);
+  L.expect('im Tag nach oben gezogen', await reihe('2026-10-29'), ['x2', 'x1']);
+  await q.dragAndDrop('.it[data-b=x3]', '.it[data-b=x1]', { targetPosition: { x: 40, y: 3 } }); await q.waitForTimeout(200);
+  L.expect('von einem anderen Tag an eine Stelle gezogen', await reihe('2026-10-29'), ['x2', 'x3', 'x1']);
+  L.expect('gezogener Block liegt fest am Tag', [(await L.store(q)).bloecke.x3.tag, (await L.store(q)).bloecke.x3.fest], ['2026-10-29', true]);
+  await L.click(q, '.toast [data-a=undo], [data-a=undo]');
+  L.expect('Rückgängig stellt Tag und Reihenfolge wieder her', [await reihe('2026-10-29'), await reihe('2026-10-30')], [['x2', 'x1'], ['x3']]);
+  L.ok('breiter Bildschirm wird genutzt', await q.$eval('.wbrett', (e) => e.offsetWidth > 1100), 'Breite');
+  await L.noHScroll(q, 'Woche bei 1440');
   L.expect('Termine sind nicht ziehbar', await p.$$eval('.wcol .it[draggable]', (e) => e.filter((x) => !x.dataset.drag || !/^b/.test(x.dataset.drag)).length), 0);
 
   await L.go(p, 'kalender');

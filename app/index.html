@@ -70,6 +70,7 @@ h1, .serif { font-family: var(--f-display); font-weight: 600; letter-spacing: -0
   display: flex; flex-direction: column; gap: 20px;
 }
 .wrap.narrow { max-width: 620px; }
+@media (min-width: 900px) { .wrap.breit { max-width: 1640px; padding-left: 28px; padding-right: 28px; } .wrap.breit > .cols { max-width: 1160px; } }
 .wrap { overflow-wrap: anywhere; }
 .bottom {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
@@ -393,6 +394,9 @@ select.inp { padding: 0 8px; }
 .wcol .it.done .tx { text-decoration: line-through; text-decoration-color: var(--ring); }
 .wcol .it .tm { display: block; margin: 0; font-size: 11.5px; font-weight: 600; text-decoration: none; }
 .wcol .it .sf { display: block; margin: 0; font-size: 11.5px; white-space: normal; }
+.wcol .it .sf.std { display: inline; margin-left: 6px; white-space: nowrap; text-decoration: none; }
+.wcol .it.ein-vor { box-shadow: 0 -2px 0 var(--ok); }
+.wcol .it.ein-nach { box-shadow: 0 2px 0 var(--ok); }
 .wcol .it .dots { width: 24px; margin: -12px -6px -12px -6px; opacity: 0.55; }
 .wcol .it .dots:hover, .wcol .it .dots[aria-expanded=true] { opacity: 1; }
 .wcol .wlist { padding: 6px 0 4px 4px; }
@@ -1678,7 +1682,7 @@ function wdhPlanned(date) {
 function blocksAt(date) {
   return Object.keys(D.bloecke).filter((id) => D.bloecke[id].tag === date && D.bloecke[id].status !== 'gestrichen')
     .map((id) => Object.assign({ id: id }, D.bloecke[id]))
-    .sort((a, b) => num(a.erstellt, 0) - num(b.erstellt, 0));
+    .sort((a, b) => num(a.platz, 1e6) - num(b.platz, 1e6) || num(a.erstellt, 0) - num(b.erstellt, 0)); // platz: von Hand gezogene Reihenfolge im Tag
 }
 // „Noch offen diese Woche": Blöcke ohne Tag und nicht Abgehaktes aus Vortagen
 function poolOf(W) {
@@ -2143,6 +2147,15 @@ function pullToday(id) {
 function moveBlock(id, d) {
   if (!D.bloecke[id] || !isDate(d)) return;
   undoable('Liegt jetzt am ' + WDL[wdOf(d)], () => patch('bloecke', id, Object.assign({ tag: d, fest: true, zurueckgelegt: false }, D.bloecke[id].tag !== d ? zeitBleibt(D.bloecke[id]) : {})));
+}
+// Gezogen: Block liegt am Tag d in der Reihenfolge ids (Ids aller Blöcke des Tages)
+function legeBlock(id, d, ids) {
+  const b = D.bloecke[id];
+  if (!b || !isDate(d)) return;
+  undoable(b.tag === d ? 'Reihenfolge geändert' : 'Liegt jetzt am ' + WDL[wdOf(d)], () => {
+    if (b.tag !== d) patch('bloecke', id, Object.assign({ tag: d, fest: true, zurueckgelegt: false }, zeitBleibt(b)));
+    ids.forEach((k, n) => { if (D.bloecke[k] && num(D.bloecke[k].platz, -1) !== n + 1) patch('bloecke', k, { platz: n + 1 }); });
+  });
 }
 function pushToPool(id) {
   if (timerRef() === 'b:' + id) stopTimer();
@@ -2795,7 +2808,7 @@ function dayItems(d, W) {
   });
   blocksAt(d).forEach((b) => {
     if (b.status === 'offen' && d < t) return; // liegt in „Noch offen" bzw. „Liegen geblieben"
-    items.push({ k: 'b', id: b.id, wdhB: !!b.wdhVon, title: b.titel, gebiet: b.gebiet, done: b.status === 'erledigt', suffix: b.nachgetragen ? 'nachgetragen' : '', extra: !!b.zusaetzlich && b.status === 'erledigt', edit: b.status === 'offen' && d >= t, date: d, W: W });
+    items.push({ k: 'b', id: b.id, wdhB: !!b.wdhVon, std: num(b.std, 0), title: b.titel, gebiet: b.gebiet, done: b.status === 'erledigt', suffix: b.nachgetragen ? 'nachgetragen' : '', extra: !!b.zusaetzlich && b.status === 'erledigt', edit: b.status === 'offen' && d >= t, date: d, W: W });
   });
   if (!pz.frei && !pz.wdh) {
     const li = wdhListe(d);
@@ -2825,7 +2838,7 @@ function itemHtml(it) {
     return '<div class="it' + (it.done ? ' done' : '') + '">' + mk + '<button class="tx wbtn" aria-expanded="' + open + '" data-a="wdhTag" data-d="' + it.date + '">' + esc(it.title) + '<span class="sf">' + esc(it.suffix) + '</span></button><button class="wchev' + (open ? ' open' : '') + '" tabindex="-1" aria-hidden="true" data-a="wdhTag" data-d="' + it.date + '">' + ico('down', 'xs') + '</button></div>' +
       (open ? '<div class="wlist" data-k="wl-' + it.date + '">' + it.liste.map((x) => '<span class="wl">' + wdhRing(x.stufe, !!x.r, null, true) + '<span>' + esc(x.titel) + '</span></span>').join('') + '</div>' : '');
   }
-  return '<div class="it' + (it.done || it.muted ? ' done' : '') + '"' + (it.drag ? ' draggable="true" data-drag="' + esc(it.id) + '"' : '') + '>' + mkT + dot + '<span class="tx">' + (it.time ? '<span class="tm">' + esc(it.time) + '</span>' : '') + esc(it.title) +
+  return '<div class="it' + (it.done || it.muted ? ' done' : '') + '"' + (it.sp && it.k === 'b' ? ' data-b="' + esc(it.id) + '"' : '') + (it.drag ? ' draggable="true" data-drag="' + esc(it.id) + '"' : '') + '>' + mkT + dot + '<span class="tx">' + (it.time ? '<span class="tm">' + esc(it.time) + '</span>' : '') + esc(it.title) + (it.sp && it.k === 'b' && it.std > 0 ? '<span class="sf std">' + esc(fmtH(it.std * 60)) + '</span>' : '') +
     (it.suffix ? '<span class="sf">' + esc(it.suffix) + '</span>' : '') + (it.extra ? '<span class="plus">zusätzlich</span>' : '') + '</span>' + push + '</div>' + (it.edit && it.k === 'b' && S.wMenu === it.id ? blockMenu(it) : '');
 }
 function blockMenu(it) {
@@ -2896,12 +2909,13 @@ function dayCol(d, W) {
   else if (puf) note = 'Puffer';
   if (pz.wdh && !pz.frei) note = (note ? note + ' · ' : '') + 'Wiederholung ruht';
   const er = erfasstAt(d);
+  const gepl = items.filter((i) => i.k === 'b' && !i.done).reduce((a, i) => a + num(i.std, 0), 0); // Stunden der offenen Blöcke mit Umfang
   // Abhaken direkt in der Spalte: heute und am Tag davor (wie in „Heute“); Wiederholungen werden dort bewertet
   const kannTick = (i) => d <= t && isOpenDay(d) && !i.nz && i.id && (i.k === 'r' || (i.k === 't' && !(i.muted && !i.done)) || (i.k === 'b' && !i.wdhB));
-  const grp = (name, ks) => { const li = items.filter((i) => ks.indexOf(i.k) >= 0).map((i) => Object.assign({}, i, { tick: kannTick(i), drag: i.k === 'b' && i.edit, date: d })); return li.length ? '<div class="grp"><span class="gl">' + name + '</span>' + li.map(itemHtml).join('') + '</div>' : ''; };
+  const grp = (name, ks) => { const li = items.filter((i) => ks.indexOf(i.k) >= 0).map((i) => Object.assign({}, i, { sp: true, tick: kannTick(i), drag: i.k === 'b' && i.edit, date: d })); return li.length ? '<div class="grp"><span class="gl">' + name + '</span>' + li.map(itemHtml).join('') + '</div>' : ''; };
   let h = '<div class="wcol' + (isToday ? ' today' : (d < t ? ' before' : '')) + (pz.frei ? ' pause' : (free ? ' frei' : '')) + '" data-k="wc-' + d + '"' + (d >= t && !pz.frei ? ' data-drop="' + d + '"' : '') + ' role="group" aria-label="' + esc(WDL[wdOf(d)] + ' ' + fmtDM(d) + (isToday ? ', heute' : '')) + '">' +
     '<div class="hd"><b>' + (isToday ? 'Heute' : WD[wdOf(d)]) + '</b><span>' + fmtDM(d) + '</span>' + (zi.length ? '<em class="' + (dn === zi.length ? 'all' : '') + '" title="' + dn + ' von ' + zi.length + ' erledigt">' + dn + '/' + zi.length + '</em>' : '') +
-    '<i>' + (er && d <= t ? esc(fmtHM(er)) + ' erfasst' : '') + '</i></div>';
+    '<i>' + (er && d <= t ? esc(fmtHM(er)) + ' erfasst' : (gepl && d >= t ? esc(fmtH(gepl * 60)) + ' geplant' : '')) + '</i></div>';
   h += grp('Termine', ['t']) + grp('Lernen', ['b', 'w']) + grp('Routinen', ['r']);
   if (!items.length && !note) h += '<span class="leer">' + (d < t ? 'Nichts eingetragen' : 'Noch frei') + '</span>';
   if (d >= t && !pz.frei && !(TF && TF.wo === 'woche' && TF.tag === d)) h += dayAdd(d, W);
@@ -4881,7 +4895,7 @@ Object.assign(EXTRA_ACT, {
   abgAus: () => { syncAus(); toast('Abgleich ausgeschaltet. Die Daten bleiben auf diesem Gerät.', false); },
   abgVergiss: () => { syncAus(); try { localStorage.removeItem(SYNC_KEY); } catch (e) { /* egal */ } sync = syncLoad(); F.abgToken = ''; toast('Schlüssel von diesem Gerät entfernt', false); return 'keep'; }
 });
-const APP_STAND = '2026-11-16'; // bei jeder Veröffentlichung anpassen
+const APP_STAND = '2026-11-17'; // bei jeder Veröffentlichung anpassen
 function viewEinstellungen() {
   const t = today();
   const h = '<header class="head"><div class="col"><span class="date">' + esc(fmtLong(t)) + '</span><h1>Einstellungen</h1><p class="line">Selten gebraucht. Im Tagesablauf tauchen diese Werte nie auf.</p></div></header>';
@@ -5038,7 +5052,7 @@ function doRender() {
   else {
     try { body = VIEW_FN[S.view](); } catch (e) { console.error(e); body = '<div class="err" role="alert">Diese Ansicht konnte nicht angezeigt werden. Lade die Seite neu. (' + esc(e && e.message) + ')</div>'; }
   }
-  const html = '<div class="app">' + navSide() + '<div class="main">' + timerBar() + '<main class="wrap' + (S.view === 'heute' ? '' : '') + '" id="main">' + body + '</main></div></div>' + navBottom() +
+  const html = '<div class="app">' + navSide() + '<div class="main">' + timerBar() + '<main class="wrap' + (S.view === 'woche' ? ' breit' : '') + '" id="main">' + body + '</main></div></div>' + navBottom() +
     (toastState ? '<div class="toast" role="status"><span>' + esc(toastState.text) + '</span>' + (toastState.snap ? '<button data-a="undo">Rückgängig</button>' : '') + '</div>' : '');
   const tpl = document.createElement('template');
   tpl.innerHTML = html;
@@ -5268,13 +5282,33 @@ setInterval(() => {
 setInterval(scheduleRender, 30000);
 let lastWide = window.innerWidth >= 900;
 /* Ziehen mit der Maus (Woche als Spalten): Lernblock auf einen anderen Tag oder nach „Noch offen" */
-let ziehId = null; let ziehZiel = null;
-function ziehMark(z) { if (ziehZiel && ziehZiel !== z) ziehZiel.classList.remove('drop-on'); ziehZiel = z || null; if (z) z.classList.add('drop-on'); }
-function ziehEnde() { ziehMark(null); ziehId = null; document.body.classList.remove('zieht'); }
-function ziehPasst(z) {
+let ziehId = null; let ziehZiel = null; let ziehBei = null;
+function ziehMark(z, bei, vor) {
+  if (ziehZiel && ziehZiel !== z) ziehZiel.classList.remove('drop-on');
+  if (ziehBei && (ziehBei !== bei || !bei)) ziehBei.classList.remove('ein-vor', 'ein-nach');
+  ziehZiel = z || null; ziehBei = bei || null;
+  if (z) z.classList.toggle('drop-on', !bei);
+  if (bei) { bei.classList.toggle('ein-vor', !!vor); bei.classList.toggle('ein-nach', !vor); }
+}
+function ziehEnde() { ziehMark(null, null); ziehId = null; document.body.classList.remove('zieht'); }
+// Wohin fällt der Block? { z: Ziel, bei: Zeile, vor: davor/dahinter, ids: neue Reihenfolge des Tages } oder null
+function ziehWohin(e) {
   const b = ziehId && D.bloecke[ziehId];
-  if (!b || !z) return false;
-  return z.dataset.drop === 'pool' ? !!b.tag && b.tag >= today() : b.tag !== z.dataset.drop;
+  const z = e.target.closest && e.target.closest('[data-drop]');
+  if (!b || !z) return null;
+  if (z.dataset.drop === 'pool') return b.tag && b.tag >= today() ? { z: z } : null;
+  const d = z.dataset.drop;
+  const ids = blocksAt(d).map((x) => x.id).filter((k) => k !== ziehId);
+  let bei = e.target.closest('.it[data-b]');
+  if (bei && (!z.contains(bei) || bei.dataset.b === ziehId)) bei = null;
+  if (!bei) { if (b.tag === d) return null; return { z: z, ids: ids.concat([ziehId]) }; }
+  const r = bei.getBoundingClientRect();
+  const vor = e.clientY < r.top + r.height / 2;
+  const i = ids.indexOf(bei.dataset.b);
+  if (i < 0) return null;
+  ids.splice(vor ? i : i + 1, 0, ziehId);
+  if (b.tag === d && blocksAt(d).every((x, n) => x.id === ids[n])) return null; // läge wieder an derselben Stelle
+  return { z: z, bei: bei, vor: vor, ids: ids };
 }
 document.addEventListener('dragstart', (e) => {
   const el = e.target.closest && e.target.closest('[data-drag]');
@@ -5285,18 +5319,17 @@ document.addEventListener('dragstart', (e) => {
 });
 document.addEventListener('dragover', (e) => {
   if (!ziehId) return;
-  const z = e.target.closest && e.target.closest('[data-drop]');
-  if (z && ziehPasst(z)) { e.preventDefault(); try { e.dataTransfer.dropEffect = 'move'; } catch (err) { /* egal */ } ziehMark(z); } else ziehMark(null);
+  const w = ziehWohin(e);
+  if (w) { e.preventDefault(); try { e.dataTransfer.dropEffect = 'move'; } catch (err) { /* egal */ } ziehMark(w.z, w.bei, w.vor); } else ziehMark(null, null);
 });
 document.addEventListener('drop', (e) => {
   if (!ziehId) return;
-  const z = e.target.closest && e.target.closest('[data-drop]');
+  const w = ziehWohin(e);
   const id = ziehId;
-  const ok = z && ziehPasst(z);
-  if (z) e.preventDefault();
+  if (e.target.closest && e.target.closest('[data-drop]')) e.preventDefault();
   ziehEnde();
-  if (!ok) return;
-  if (z.dataset.drop === 'pool') pushToPool(id); else moveBlock(id, z.dataset.drop);
+  if (!w) return;
+  if (w.z.dataset.drop === 'pool') pushToPool(id); else legeBlock(id, w.z.dataset.drop, w.ids);
   S.wMenu = null; scheduleRender();
 });
 document.addEventListener('dragend', ziehEnde);
